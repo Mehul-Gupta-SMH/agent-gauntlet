@@ -294,27 +294,49 @@ adding a single feature. **M0 is a decision gate, not a demo.**
 
 ## Open questions
 
-1. **Does the seed-stability gate pass at an affordable k?** If ranking
-   stability needs k=20, the economics change completely. Unknown until M0.
-2. **How much of "quality" can be made mechanical?** The judge's share of the
-   score is the system's noise floor. Task-type-dependent, and worth measuring
-   per domain rather than assuming.
-3. **Is auto-generated MCP realistic, or is it really selection?** Authoring
-   novel MCP servers from scratch is speculative; *discovering and selecting*
-   servers from a registry and generating thin wrappers is tractable today. The
-   plan assumes selection; revisit if generation proves out.
-4. **Does robustness rank differently from quality?** The bet is yes — that the
-   happy-path champion is often credulous under fault injection, and that this
-   is the finding people will pay for. If the two axes correlate near-perfectly,
-   the chaos layer is expensive confirmation and should be demoted.
-5. **Does the debate phase earn its cost?** Post-critique gains must exceed the
-   inference they consume, or the phase is a feature nobody should run.
-6. **How is a self-generated tool that games a check detected?** A variant that
-   writes a tool returning exactly what the executable check wants is
-   reward hacking. Stub detection is a start; it is probably not sufficient.
-7. **Price table drift.** Costs are the most falsifiable number the board
-   reports and the fastest to go stale. Pinning it into the run record makes
-   old runs honest, not current.
+Every open question has a GitHub issue — **discussion happens on the issues**,
+this section is the map. Questions marked **⚠** are ones where a bad answer
+invalidates a pillar of the design rather than merely changing it.
+
+### Measurement — can this system measure anything at all?
+
+| | Question | Why it matters | Issue |
+|---|---|---|---|
+| ⚠ | Does the leaderboard survive a seed change — and at what k? | The M0 gate. If the ranking is seed-dependent, every transformation built on top of it is elaborate noise | [#1](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/1) |
+| | How much of "quality" can actually be made mechanical? | The judge's share of the score is the system's noise floor — and it is probably a property of the task domain, not one number | [#2](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/2) |
+| | Judge protocol: which bias controls, and how do we validate the judge itself? | Self-preference bias is fatal when the whole point is comparing models. Every control is currently an assumption, not a measurement | [#3](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/3) |
+
+### Chaos — does adversity tell us something quality doesn't?
+
+| | Question | Why it matters | Issue |
+|---|---|---|---|
+| ⚠ | Does robustness actually rank differently from quality? | The bet the whole chaos layer rests on. Near-perfect correlation makes it expensive confirmation of a ranking we already had | [#4](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/4) |
+| | Fault taxonomy: which faults are worth scoring, and how weighted? | Discriminating power is probably concentrated in integrity faults. Without a stated fair-fault principle the robustness score is arbitrary | [#5](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/5) |
+| ⚠ | Does the debate phase earn its cost — and is post-critique a second leaderboard? | Cold and post-critique scores select for different properties, and groupthink may make revision actively worse | [#8](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/8) |
+
+### Generation — can we trust what the architect writes?
+
+| | Question | Why it matters | Issue |
+|---|---|---|---|
+| ⚠ | Reward hacking: a variant that writes a tool to satisfy the check | Self-generated tools and executable checks interact badly. Structural fixes likely matter more than any detector | [#6](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/6) |
+| | Auto-generated MCPs: authoring, or selection? | The plan assumes selection; whether that suffices depends on registry coverage nobody has surveyed | [#7](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/7) |
+| | What is a task spec? | The narrowest part of the funnel and the least specified. Spec quality and measurement quality turn out to be the same problem | [#15](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/15) |
+
+### Economics — what does an answer cost?
+
+| | Question | Why it matters | Issue |
+|---|---|---|---|
+| | Search strategy and the budget model | Cost is multiplicative, and successive halving may eliminate the eventual winner on noise from the least informative signal | [#10](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/10) |
+| | Leaderboard presentation: Pareto frontier vs. a default scalar | The truthful object and the one users actually want are not the same object | [#11](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/11) |
+| | Price table drift and the honesty of cost numbers | The most falsifiable number the board reports. Unmodelled caching systematically misprices the configs that are best in production | [#14](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/14) |
+
+### Boundaries — what is ours to build?
+
+| | Question | Why it matters | Issue |
+|---|---|---|---|
+| ⚠ | Framework axis: the SDK, or CommonADK's adapter fidelity? | The one axis nobody else can run — and currently confounded, since the adapters map edges with unequal fidelity | [#9](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/9) |
+| | Sandboxing model: what isolation, and what does it forbid? | Settled that it exists; unsettled in ways that constrain the architecture. Whether credentials enter the sandbox decides what the architect may generate | [#12](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/12) |
+| | What belongs upstream in CommonADK vs. here? | The tool interposer has to sit at a seam that lives inside CommonADK | [#13](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/13) |
 
 ## Prior art
 
