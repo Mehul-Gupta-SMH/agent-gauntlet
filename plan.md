@@ -17,7 +17,7 @@ generates many candidate agent configurations, runs them against the task under
 seeded adversarial conditions, and returns a ranked, cost-aware answer —
 together with the winning configuration as a runnable artifact.
 
-**Success criterion (the go/no-go, see [M0](#m0--the-go-no-go-experiment)):**
+**Success criterion (the go/no-go, see [M0](#m0--the-measurement-gate)):**
 two independent runs of the same gauntlet, differing only in random seed,
 produce leaderboards whose rankings agree. If they do not, the system is an
 expensive random number generator and no feature work fixes that.
@@ -263,34 +263,80 @@ should land upstream rather than here.
 
 ## Milestones
 
-### M0 — the go/no-go experiment
+**M0 is a slice, not a stage.** It cuts a thin path through *every* layer —
+fixtures, runner, interposer, scorer, ledger, analysis — because the gate it
+exists to answer cannot be reached any other way. Everything after M0 is a
+**deepening pass over one layer**, not the first construction of it. Reading
+the milestones as a sequential build order is a mistake: M1 does not come
+after M0 in the sense of building the next thing, it comes after in the sense
+of making the thing M0 built honest.
 
-Before any subsystem is built properly, a deliberately thin vertical slice:
+### M0 — the measurement gate
 
-- 1 task, 4 variants (2 models × 2 prompt strategies),
-- 3 scenarios × 3 repeats, clean and faulted,
-- 2 fault types, executable checks + 1 judge,
-- a Pareto board.
+The only question: **does the ranking survive a seed change?**
 
-Then the only question that matters: **run the whole gauntlet twice under
-different seeds and measure rank correlation between the two leaderboards.**
+Everything not required to answer that is deliberately excluded, including
+things the architecture treats as core.
 
-High correlation → the measurement is real, build the rest. Low → stop and fix
-measurement (more repeats, more objective checks, better judge protocol) before
-adding a single feature. **M0 is a decision gate, not a demo.**
-
-| Milestone | Content |
+| In | Out — and why it's safe to cut |
 |---|---|
-| **M0** | Vertical slice + the seed-stability gate above |
-| **M1** | `spec` and pre-registered rubrics; deterministic `architect`; ledger |
-| **M2** | `harness`: sandbox, runner, trace capture, token/cost/latency meters |
-| **M3** | `chaos`: interposer, fault taxonomy, counterfactual pairs, robustness scoring |
-| **M4** | `tribunal`: executable checks, judge ensemble, bias controls |
-| **M5** | LLM `architect` with tool verification and stub detection |
-| **M6** | Search: successive halving, budget ceilings, marginal effects |
-| **M7** | Debate phase: cold vs post-critique scoring |
-| **M8** | `board`: Pareto UI, budget queries, winning-config export |
-| **M9** | Synthetic data generation across field domains |
+| 1 task, hand-written spec + executable checks | **The architect** — hand-writing variants removes generation yield as a confound |
+| 4 hand-written variants (2 models × 2 prompts) | **The LLM judge** — see the judge-off protocol below |
+| 1 SDK target | The other five; the framework axis is a later question (#9) |
+| Runner: build, execute, capture trace + tokens + cost + latency | **Sandboxing** — safe *only* because tools are hand-written. See the tripwire |
+| Interposer: 2 fault types, seeded and deterministic | The full taxonomy (#5), detection metrics (#16), hypotheses (#17) |
+| Mechanical scorer: executable checks + propagation | Pareto board (a table is fine), Shapley, successive halving |
+| Ledger: run records on disk, replayable | Debate (#8), synthetic data, workflows (#23), multi-agent (#26) |
+| Analysis: rank correlation, stability-vs-k, search-vs-holdout gap | |
+
+**⚠ Tripwire.** Cutting the sandbox is safe *only* while every tool is
+hand-written and trusted. The moment the architect generates a tool (M3),
+#12 becomes blocking, not deferred.
+
+#### The judge-off protocol
+
+Run M0 **with zero LLM judging first** — executable checks and propagation
+only. This splits one gate into a two-stage diagnostic:
+
+1. **Judge off.** If the ranking is not stable with *zero* judge noise, nothing
+   downstream will save it. The problem is in task or variant design, and no
+   amount of judge engineering is the fix. Stop and go back.
+2. **Judge on.** If it *is* stable, add one judge and re-measure. The drop in
+   stability **is the judge's noise contribution, measured** — which answers
+   #2 and #3 empirically instead of by assumption, for free.
+
+#### Checkpoints
+
+| | Checkpoint | Done when |
+|---|---|---|
+| C0.1 | Fixtures | 1 task spec + 4 variants, all pass `commonadk validate` (exit 0) |
+| C0.2 | Runner | One variant executes a full trajectory on one target; emits a run record with non-zero token counts and a step trace |
+| C0.3 | Ledger | Run record persists seed, model pins, price table; a replay reproduces the score without re-spending |
+| C0.4 | Interposer | 2 fault types inject deterministically; same seed → identical fault schedule; clean/faulted counterfactual pairs run |
+| C0.5 | Scorer | Executable checks pass/fail correctly, and a variant that propagates an injected falsehood is flagged. **Zero judge** |
+| C0.6 | Matrix | 4 variants × 3 scenarios × k ∈ {1,3,5} × {clean, faulted} completes under a budget cap, with cost recorded |
+| C0.7 | **GATE** | Three numbers, judge off: seed rank correlation · stability-vs-k curve · search-vs-holdout gap (#20) |
+| C0.8 | Judge delta | C0.7 repeated with one judge; the stability cost of judging is quantified |
+
+**Gate criteria must be written down before C0.7 runs** — which correlation
+statistic, and what value counts as stable. Choosing the threshold after
+seeing the number is the same error pre-registration exists to prevent.
+
+### After the gate — deepening passes
+
+Each takes one layer M0 built thinly and makes it real. Ordering is a
+recommendation, not a dependency chain; only M1 is strongly ordered.
+
+| Milestone | Deepens | Content | Issues |
+|---|---|---|---|
+| **M1** | Analysis | Honest reporting: held-out validation split, intervals, no-winner-when-tied, overhead accounting | #20, #1, #14 |
+| **M2** | Chaos | Real taxonomy, detection latency, steady-state hypotheses, counterfactual robustness profile | #5, #16, #17, #25 |
+| **M3** | Generation | LLM architect + validate-and-repair loop, tool verification. **Sandboxing becomes blocking** | #6, #12, #15, #7 |
+| **M4** | Search | Successive halving, budget ceilings, factor attribution | #10, #22 |
+| **M5** | Scoring | Judge ensemble and bias controls, proper scoring rules, metamorphic relations | #3, #21, #28 |
+| **M6** | The answer | Pareto board, budget queries, winning-config export | #11 |
+| **M7** | Product | Continuous gauntlets, CI gates | #19, #27 |
+| **M8** | Scope | Workflows as the unit; exploration mode; debate phase | #23, #24, #18, #8, #26 |
 
 ## Open questions
 

@@ -78,7 +78,7 @@ There is a single go/no-go experiment: run the whole gauntlet twice, changing
 only the random seed, and measure whether the two leaderboards agree.
 
 If they do not, this is an expensive random number generator and no amount of
-feature work fixes that. See [`plan.md`](plan.md#m0--the-go-no-go-experiment).
+feature work fixes that. See [`plan.md`](plan.md#m0--the-measurement-gate).
 
 ## Related
 
