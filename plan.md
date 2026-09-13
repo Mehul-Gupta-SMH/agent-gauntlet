@@ -322,6 +322,86 @@ only. This splits one gate into a two-stage diagnostic:
 statistic, and what value counts as stable. Choosing the threshold after
 seeing the number is the same error pre-registration exists to prevent.
 
+#### Sequence and parallelism
+
+Bar lengths below are **relative weights, not estimates** — they say C0.2 is
+much larger than the rest, not how many days anything takes. The value of the
+chart is the dependency structure and the parallelism it exposes: once the
+runner lands, the ledger, interposer and scorer proceed independently.
+
+```mermaid
+gantt
+    title M0 checkpoints — relative sequence, not calendar commitments
+    dateFormat YYYY-MM-DD
+    axisFormat %d %b
+
+    section Fixtures
+    C0.1  Task spec + 4 variants        :c1, 2026-01-06, 3d
+
+    section Harness
+    C0.2  Runner  (the bulk)            :crit, c2, after c1, 10d
+    C0.3  Ledger + replay               :c3, after c2, 4d
+    C0.4  Interposer, seeded faults     :c4, after c2, 5d
+
+    section Scoring
+    C0.5  Mechanical scorer, judge off  :c5, after c1, 5d
+
+    section The gate
+    C0.6  Full matrix run               :c6, after c3 c4 c5, 3d
+    C0.7  GATE - judge off              :milestone, crit, g1, after c6, 0d
+    C0.8  Judge delta                   :c8, after g1, 3d
+```
+
+#### What the gate actually gates
+
+A Gantt cannot express "and if this fails, none of the rest happens." This can:
+
+```mermaid
+flowchart TD
+    M0["M0 — thin slice through every layer"]
+    GATE{"C0.7 — does the ranking<br/>survive a seed change?"}
+    STOP["STOP — the problem is task or<br/>variant design. No downstream<br/>work fixes it."]
+    M1["M1 — Honest reporting<br/>#20 #1 #14"]
+    M2["M2 — Chaos depth<br/>#5 #16 #17 #25"]
+    M3["M3 — Generation<br/>#6 #12 #15 #7"]
+    M4["M4 — Search<br/>#10 #22"]
+    M5["M5 — Scoring depth<br/>#3 #21 #28"]
+    M6["M6 — The board<br/>#11"]
+    M7["M7 — Product: CI + continuous<br/>#19 #27"]
+    M8["M8 — Scope: workflows<br/>#23 #24 #18 #8 #26"]
+    UP(["Upstream: CommonADK<br/>richer edge semantics"])
+
+    M0 --> GATE
+    GATE -- "unstable" --> STOP
+    GATE -- "stable" --> M1
+    M1 --> M2
+    M1 --> M4
+    M1 --> M5
+    M2 --> M6
+    M4 --> M6
+    M5 --> M6
+    M1 --> M3
+    M6 --> M7
+    UP -.-> M8
+    M3 -.-> M8
+    M2 -.-> M8
+
+    style GATE fill:#5b21b6,stroke:#4c1d95,color:#fff
+    style STOP fill:#7f1d1d,stroke:#991b1b,color:#fff
+    style M0 fill:#1e3a5f,stroke:#1e40af,color:#fff
+    style UP fill:#3f3f46,stroke:#52525b,color:#fff,stroke-dasharray: 4 4
+```
+
+Three things this makes visible that the milestone table does not:
+
+- **M1 is the only strongly-ordered successor.** Everything else fans out from
+  it, so M2/M4/M5 can proceed in parallel or in any order the team prefers.
+- **M8 (workflows) has an upstream dependency** that is not ours to schedule —
+  CommonADK's edge vocabulary (#24). It can be blocked by work in another repo
+  no matter how the rest progresses.
+- **The STOP branch is a real outcome**, not a formality. It is the branch the
+  project is most likely to take, and the one the plan exists to catch early.
+
 ### After the gate — deepening passes
 
 Each takes one layer M0 built thinly and makes it real. Ordering is a
