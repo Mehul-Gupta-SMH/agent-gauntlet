@@ -298,45 +298,93 @@ Every open question has a GitHub issue — **discussion happens on the issues**,
 this section is the map. Questions marked **⚠** are ones where a bad answer
 invalidates a pillar of the design rather than merely changing it.
 
-### Measurement — can this system measure anything at all?
+### Settled decisions now under challenge
+
+The [Decisions (settled)](#decisions-settled) table above predates the design
+discussion these issues came out of. Five of its rows are now contested, and
+the table has deliberately **not** been rewritten — the arguments belong on the
+issues until they resolve.
+
+| Settled decision | Challenged by | How |
+|---|---|---|
+| Chaos is the defensible differentiator | [#25](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/25) | Fault injection for agents already exists in published work; the novelty claim narrows to the *search* half |
+| Robustness = degradation from a clean baseline | [#16](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/16), [#17](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/17) | Replace one scalar with falsifiable bounds plus a detection profile |
+| The output is a deployable config | [#27](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/27) | The output may be a *test suite wired into CI*, with the config a by-product |
+| A variant is a generated `common/` folder | [#23](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/23), [#24](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/24) | That representation cannot express a workflow at all |
+| Successive halving over the factor grid | [#20](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/20) | Needs a held-out validation phase; the search score must never be reported |
+
+### Measurement validity — can we trust the numbers at all?
 
 | | Question | Why it matters | Issue |
 |---|---|---|---|
-| ⚠ | Does the leaderboard survive a seed change — and at what k? | The M0 gate. If the ranking is seed-dependent, every transformation built on top of it is elaborate noise | [#1](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/1) |
-| | How much of "quality" can actually be made mechanical? | The judge's share of the score is the system's noise floor — and it is probably a property of the task domain, not one number | [#2](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/2) |
-| | Judge protocol: which bias controls, and how do we validate the judge itself? | Self-preference bias is fatal when the whole point is comparing models. Every control is currently an assumption, not a measurement | [#3](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/3) |
+| ⚠ | Does the leaderboard survive a seed change — and at what k? | The M0 gate. If the ranking is seed-dependent, every transformation built on it is elaborate noise | [#1](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/1) |
+| ⚠ | The winner's curse: the search score must never be the reported score | Selection manufactures a biased-high top score. Ship it and the product systematically overstates what the user gets | [#20](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/20) |
+
+### Scoring — where do the numbers come from?
+
+| | Question | Why it matters | Issue |
+|---|---|---|---|
+| | How much of "quality" can actually be made mechanical? | The judge's share is the system's noise floor — and it may be a function of our effort, not just the task domain | [#2](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/2) |
+| | Judge protocol: bias controls, and validating the judge itself | Self-preference bias is fatal when the point is comparing models. Every control is an assumption, not a measurement | [#3](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/3) |
+| ⚠ | Does the debate phase earn its cost — and is post-critique a second leaderboard? | Cold and post-critique scores select for different properties; groupthink may make revision actively worse | [#8](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/8) |
+| | Proper scoring rules: honest uncertainty as the dominant strategy | Makes calibration mechanical and incentive-compatible, instead of a judged quality | [#21](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/21) |
+| | Metamorphic testing: objective checks with no oracle | Assert *relations between outputs* rather than outputs. Attacks the judged bucket exactly where the judge was going to dominate | [#28](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/28) |
 
 ### Chaos — does adversity tell us something quality doesn't?
 
 | | Question | Why it matters | Issue |
 |---|---|---|---|
-| ⚠ | Does robustness actually rank differently from quality? | The bet the whole chaos layer rests on. Near-perfect correlation makes it expensive confirmation of a ranking we already had | [#4](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/4) |
-| | Fault taxonomy: which faults are worth scoring, and how weighted? | Discriminating power is probably concentrated in integrity faults. Without a stated fair-fault principle the robustness score is arbitrary | [#5](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/5) |
-| ⚠ | Does the debate phase earn its cost — and is post-critique a second leaderboard? | Cold and post-critique scores select for different properties, and groupthink may make revision actively worse | [#8](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/8) |
+| ⚠ | Does robustness actually rank differently from quality? | The bet the whole chaos layer rests on. Near-perfect correlation makes it expensive confirmation | [#4](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/4) |
+| | Fault taxonomy: which faults, and how weighted? | Adopt a published taxonomy rather than invent one; a stated fair-fault principle or the score is arbitrary | [#5](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/5) |
+| | Detection latency: how fast is a fault surfaced, instead of anything else? | Oracle-backed and trace-derived, so judge-free. Four terminal outcomes, not two | [#16](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/16) |
+| | Steady-state hypotheses: falsifiable bounds, not a score | Binary outcomes are less noisy than scalars, define "robust enough", and turn failures into findings | [#17](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/17) |
+| | Comparison mode vs. exploration mode | Pre-registration is right for ranking and wrong for discovery. They shouldn't share a leaderboard | [#18](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/18) |
 
-### Generation — can we trust what the architect writes?
+### Inputs and generation — what comes in, and can we trust what we write?
 
 | | Question | Why it matters | Issue |
 |---|---|---|---|
-| ⚠ | Reward hacking: a variant that writes a tool to satisfy the check | Self-generated tools and executable checks interact badly. Structural fixes likely matter more than any detector | [#6](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/6) |
+| | What is a task spec? | The narrowest part of the funnel and the least specified. Spec quality and measurement quality are the same problem | [#15](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/15) |
+| ⚠ | Reward hacking: a variant that writes a tool to satisfy the check | An incentive-compatibility failure. Structural fixes matter more than any detector | [#6](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/6) |
 | | Auto-generated MCPs: authoring, or selection? | The plan assumes selection; whether that suffices depends on registry coverage nobody has surveyed | [#7](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/7) |
-| | What is a task spec? | The narrowest part of the funnel and the least specified. Spec quality and measurement quality turn out to be the same problem | [#15](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/15) |
+| | Generating multi-agent systems: contracts, yield, research boundary | Not N× harder — the interfaces are. Yield collapses multiplicatively, so the validator dominates effort | [#26](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/26) |
+
+### Scope — what is the unit that competes?
+
+| | Question | Why it matters | Issue |
+|---|---|---|---|
+| ⚠ | Workflows as the unit of competition | A change of problem class (HPO → program synthesis), but where the real fault surface and the real observability live | [#23](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/23) |
+| | Blocked upstream: CommonADK's edge vocabulary | `delegate`/`handoff` cannot express a workflow. The gating dependency, and it's in the other repo | [#24](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/24) |
 
 ### Economics — what does an answer cost?
 
 | | Question | Why it matters | Issue |
 |---|---|---|---|
-| | Search strategy and the budget model | Cost is multiplicative, and successive halving may eliminate the eventual winner on noise from the least informative signal | [#10](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/10) |
-| | Leaderboard presentation: Pareto frontier vs. a default scalar | The truthful object and the one users actually want are not the same object | [#11](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/11) |
-| | Price table drift and the honesty of cost numbers | The most falsifiable number the board reports. Unmodelled caching systematically misprices the configs that are best in production | [#14](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/14) |
+| | Search strategy and the budget model | Cost is multiplicative, and three reserved allocations now compete with the search itself | [#10](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/10) |
+| | Price table drift and the honesty of cost numbers | The most falsifiable number the board reports. Unmodelled caching misprices the best production configs | [#14](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/14) |
 
-### Boundaries — what is ours to build?
+### The answer — what do we hand back?
 
 | | Question | Why it matters | Issue |
 |---|---|---|---|
-| ⚠ | Framework axis: the SDK, or CommonADK's adapter fidelity? | The one axis nobody else can run — and currently confounded, since the adapters map edges with unequal fidelity | [#9](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/9) |
-| | Sandboxing model: what isolation, and what does it forbid? | Settled that it exists; unsettled in ways that constrain the architecture. Whether credentials enter the sandbox decides what the architect may generate | [#12](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/12) |
-| | What belongs upstream in CommonADK vs. here? | The tool interposer has to sit at a seam that lives inside CommonADK | [#13](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/13) |
+| | Leaderboard presentation: Pareto frontier vs. a default scalar | The truthful object and the one users want are not the same object | [#11](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/11) |
+| | Shapley values for per-factor attribution | Marginal effects are the headline deliverable, and naive one-at-a-time marginals are wrong under interaction | [#22](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/22) |
+
+### Boundaries and safety — what is ours to build, and what must never happen?
+
+| | Question | Why it matters | Issue |
+|---|---|---|---|
+| ⚠ | Framework axis: the SDK, or CommonADK's adapter fidelity? | The one axis nobody else can run — and currently confounded, since adapters map edges with unequal fidelity | [#9](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/9) |
+| | Sandboxing model: what isolation, and what does it forbid? | Settled that it exists; unsettled in ways that constrain the architecture | [#12](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/12) |
+| | What belongs upstream in CommonADK vs. here? | The interposer and the trace vocabulary sit at a seam inside CommonADK | [#13](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/13) |
+
+### Product and positioning — what is this, and who is it for?
+
+| | Question | Why it matters | Issue |
+|---|---|---|---|
+| | Continuous gauntlets: a robustness certificate that expires | Possibly the core product rather than a roadmap item — and there are no pinned dependencies to trigger on | [#19](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/19) |
+| ⚠ | Prior-art audit: revise the novelty claim | Fault injection for agents is published work. The claim narrows to searching config space under fault | [#25](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/25) |
+| | The software-engineering reframe | The whole system reads as test infrastructure. More legible to buyers — and flakiness inverts, dangerously | [#27](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/27) |
 
 ## Prior art
 
