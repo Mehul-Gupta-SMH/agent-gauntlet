@@ -18,16 +18,20 @@ from .offline import run_policy
 from .score import Answer, score_run
 from .spec import TaskSpec, VariantSpec
 
-Executor = Callable[[VariantSpec], Answer]
+Executor = Callable[[VariantSpec, str], Answer]
 """Given a variant, produce its answer. The offline executor runs a scripted
 policy; a live one would drive `commonadk.runners.get_runner(target).run_sync`
 and parse the final message."""
 
 
-def offline_executor(variant: VariantSpec) -> Answer:
-    """Execute a variant's scripted policy. No model, no cost."""
+def offline_executor(variant: VariantSpec, seed: str) -> Answer:
+    """Execute a variant's scripted policy. No model, no cost.
+
+    The seed is threaded through so the policy's occasional slip is
+    reproducible: variance without losing determinism.
+    """
     policy = variant.factors.get("prompt", "naive")
-    return run_policy(policy)
+    return run_policy(policy, seed, variant.factors.get("model"))
 
 
 def seed_for(*, base: str, variant: str, scenario: str, repeat: int) -> str:
@@ -86,8 +90,10 @@ def run_matrix(
                     ("clean", FaultSchedule.clean(seed)),
                     ("faulted", faulted),
                 ):
-                    with run_context(scenario.records, schedule) as ctx:
-                        answer = execute(variant)
+                    with run_context(
+                        scenario.records, schedule, _allowed_tools(variant)
+                    ) as ctx:
+                        answer = execute(variant, f"{seed}:{condition}")
                         score = score_run(
                             task=task,
                             scenario=scenario,
@@ -129,3 +135,17 @@ def _has_evidence(variant: VariantSpec) -> bool:
     from .architect import TOOLSETS
 
     return "get_summary" in TOOLSETS.get(toolset, [])
+
+
+def _allowed_tools(variant: VariantSpec) -> Optional[set[str]]:
+    """The tool grant implied by this variant's factors.
+
+    None (unrestricted) when no toolset factor is declared, so variants
+    exercised directly in tests keep working.
+    """
+    toolset = variant.factors.get("toolset")
+    if toolset is None:
+        return None
+    from .architect import TOOLSETS
+
+    return set(TOOLSETS.get(toolset, []))

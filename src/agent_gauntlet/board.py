@@ -48,8 +48,15 @@ class VariantResult(BaseModel):
     propagation_rate: float
     detection_rate: Optional[float]
     false_alarm_rate: float
+    accuracy: float = 0.0
+    """Graded quality. Ranking uses this: binary correctness ties too
+    readily to correlate across seeds (#17 vs #29 correction 3)."""
     cost_usd: float
     mean_steps: float
+    n_propagation_undecidable: int = 0
+    """Faulted runs where the corruption was too small to separate a
+    propagated answer from an honest miscount. Reported, never folded into
+    the rate as a zero."""
 
     @property
     def robustness_drop(self) -> float:
@@ -77,6 +84,7 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
         clean = [r for r in runs if r.condition == "clean"]
         faulted = [r for r in runs if r.condition == "faulted"]
         with_evidence = [r for r in faulted if r.score.evidence_available]
+        decidable = [r for r in faulted if r.score.propagation_determinable]
 
         results.append(
             VariantResult(
@@ -84,6 +92,7 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
                 factors=dict(runs[0].factors),
                 n_runs=len(runs),
                 quality=mean(float(r.score.correct) for r in runs),
+                accuracy=mean(float(r.score.accuracy) for r in runs),
                 clean_quality=mean(float(r.score.correct) for r in clean) if clean else 0.0,
                 faulted_quality=(
                     mean(float(r.score.correct) for r in faulted) if faulted else 0.0
@@ -95,9 +104,10 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
                 # propagation to it lets the worst kind of variant (one that
                 # propagates AND cannot detect) read 0% and slip the gate.
                 propagation_rate=(
-                    mean(float(r.score.propagated) for r in faulted)
-                    if faulted else 0.0
+                    mean(float(r.score.propagated) for r in decidable)
+                    if decidable else 0.0
                 ),
+                n_propagation_undecidable=len(faulted) - len(decidable),
                 # None, not 0.0: no reachable evidence means "not measured",
                 # which is a different claim from "never detected".
                 detection_rate=(
@@ -128,20 +138,36 @@ def rank(
     pool = [r for r in results if not (exclude_sentinels and r.is_sentinel)]
     tiers: dict[float, list[VariantResult]] = defaultdict(list)
     for r in pool:
-        tiers[r.quality].append(r)
+        tiers[round(r.accuracy, 4)].append(r)
     return [
         sorted(tiers[q], key=lambda r: r.variant_id)
         for q in sorted(tiers, reverse=True)
     ]
 
 
-def winner(results: Sequence[VariantResult]) -> Optional[VariantResult]:
-    """The single best config, or None if the top tier is tied or gated."""
-    tiers = rank(results)
-    if not tiers:
+def winner(
+    results: Sequence[VariantResult],
+    *,
+    objectives: Sequence[str] = ("accuracy", "false_alarm_rate"),
+    maximize: Sequence[bool] = (True, False),
+) -> Optional[VariantResult]:
+    """The single non-dominated, ungated config -- or None.
+
+    Deliberately *not* "the top of the accuracy ranking". Two configs can
+    tie on accuracy and differ sharply on how often they cry wolf, and a
+    ranking on one axis throws that away. Domination uses the extra axis
+    without inventing weights for it: a config wins only if nothing is at
+    least as good everywhere and better somewhere.
+
+    Returns None when several configs remain non-dominated. That is a real
+    answer -- the tradeoff is the user's to make (#11) -- not a failure to
+    compute one.
+    """
+    eligible = [r for r in results if not r.gated and not r.is_sentinel]
+    if not eligible:
         return None
-    top = [r for r in tiers[0] if not r.gated]
-    return top[0] if len(top) == 1 else None
+    front = pareto(eligible, objectives=objectives, maximize=maximize)
+    return front[0] if len(front) == 1 else None
 
 
 def pareto(

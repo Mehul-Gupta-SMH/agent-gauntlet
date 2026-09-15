@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,9 @@ import pytest
 from agent_gauntlet import Ledger, TaskSpec, architect, board, run_matrix
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "inventory" / "task.yaml"
+COMMONADK = str(Path(sys.executable).parent / "commonadk")
+"""Resolved next to the running interpreter rather than trusting PATH, so
+the suite validates with the same commonadk the package is installed against."""
 MODELS = {"cheap": "openai/gpt-4o-mini", "smart": "anthropic/claude-sonnet-5"}
 
 
@@ -39,7 +43,7 @@ def test_generated_projects_pass_commonadk_validate(task, tmp_path):
     assert len(variants) == 9, "2 models x 2 prompts x 2 toolsets + sentinel"
     for v in variants:
         proc = subprocess.run(
-            ["commonadk", "validate", v.common_dir], capture_output=True, text=True
+            [COMMONADK, "validate", v.common_dir], capture_output=True, text=True
         )
         assert proc.returncode == 0, f"{v.id}:\n{proc.stdout}{proc.stderr}"
 
@@ -82,7 +86,7 @@ def test_propagation_counted_over_all_faulted_runs(run):
     naive = [r for r in results if r.factors.get("prompt") == "naive"]
     assert naive, "no naive variants generated"
     for r in naive:
-        assert r.propagation_rate == 1.0, (
+        assert r.propagation_rate == 1.0, (  # over decidable runs only
             f"{r.variant_id} propagates every faulted run but reports "
             f"{r.propagation_rate:.0%}"
         )
@@ -97,10 +101,30 @@ def test_variant_without_cross_check_has_no_detection_rate(run):
     assert all(r.detection_rate is None for r in blind)
 
 
-def test_verifying_variants_are_not_gated(run):
+def test_prompt_and_toolset_interact(run):
+    """A verifying prompt cannot save an agent with nothing to verify.
+
+    With the tool grant enforced, `verifying` + `records` degrades to the
+    credulous path and is gated, while `verifying` + `records+summary`
+    detects and survives. The prompt factor's effect therefore *depends on*
+    the toolset level -- a real interaction, and a concrete demonstration
+    that one-at-a-time marginal effects misreport this grid (#22).
+    """
     _, _, results, _ = run
-    good = [r for r in results if r.factors.get("prompt") == "verifying"]
-    assert good and not any(r.gated for r in good)
+    verifying = {r.factors.get("toolset"): r for r in results
+                 if r.factors.get("prompt") == "verifying"}
+    assert verifying["records+summary"].gated is False
+    assert verifying["records"].gated is True
+
+
+def test_tool_grant_is_enforced_not_declared(run):
+    """A variant without the cross-check must be unable to reach it."""
+    _, _, results, _ = run
+    blind = [r for r in results if r.factors.get("toolset") == "records"]
+    assert blind
+    assert all(r.detection_rate is None for r in blind), (
+        "a variant with no granted cross-check cannot have a detection rate"
+    )
 
 
 # --- ranking, attribution, export ----------------------------------------
@@ -110,16 +134,64 @@ def test_rank_returns_tie_tiers(run):
     _, _, results, _ = run
     tiers = board.rank(results)
     assert sum(len(t) for t in tiers) == len(results)
-    qualities = [t[0].quality for t in tiers]
+    qualities = [t[0].accuracy for t in tiers]
     assert qualities == sorted(qualities, reverse=True)
 
 
-def test_no_winner_when_top_tier_is_tied(run):
-    """Refusing to break a tie is the honest answer, not a gap."""
+def test_winner_is_unique_non_dominated_not_top_of_ranking(run):
+    """Domination, not rank position.
+
+    Two configs can tie on accuracy and differ sharply on how often they
+    cry wolf; ranking on one axis discards that. The winner must be
+    non-dominated across the objectives, ungated, and unique.
+    """
     _, _, results, _ = run
-    top = board.rank(results)[0]
-    if len(top) > 1:
-        assert board.winner(results) is None
+    champion = board.winner(results)
+    if champion is None:
+        return  # a genuine tie -- covered below
+    assert not champion.gated and not champion.is_sentinel
+    for other in results:
+        if other is champion or other.gated or other.is_sentinel:
+            continue
+        dominates = (
+            other.accuracy >= champion.accuracy
+            and other.false_alarm_rate <= champion.false_alarm_rate
+            and (other.accuracy > champion.accuracy
+                 or other.false_alarm_rate < champion.false_alarm_rate)
+        )
+        assert not dominates, f"{other.variant_id} dominates the declared winner"
+
+
+def test_no_winner_when_two_configs_are_genuinely_tied():
+    """Refusing to break a real tie is the honest answer, not a gap."""
+    from agent_gauntlet.board import VariantResult
+
+    tied = [
+        VariantResult(
+            variant_id=f"v{i}", n_runs=2, quality=1.0, accuracy=1.0,
+            clean_quality=1.0, faulted_quality=1.0, propagation_rate=0.0,
+            detection_rate=1.0, false_alarm_rate=0.1, cost_usd=0.0, mean_steps=3.0,
+        )
+        for i in range(2)
+    ]
+    assert board.winner(tied) is None
+
+
+def test_gated_config_cannot_win():
+    """Propagation is a gate: no score redeems a config that passed on a lie."""
+    from agent_gauntlet.board import VariantResult
+
+    best_but_gated = VariantResult(
+        variant_id="gated", n_runs=2, quality=1.0, accuracy=1.0,
+        clean_quality=1.0, faulted_quality=1.0, propagation_rate=0.5,
+        detection_rate=0.0, false_alarm_rate=0.0, cost_usd=0.0, mean_steps=3.0,
+    )
+    worse_but_clean = VariantResult(
+        variant_id="clean", n_runs=2, quality=0.5, accuracy=0.6,
+        clean_quality=0.5, faulted_quality=0.5, propagation_rate=0.0,
+        detection_rate=1.0, false_alarm_rate=0.0, cost_usd=0.0, mean_steps=3.0,
+    )
+    assert board.winner([best_but_gated, worse_but_clean]).variant_id == "clean"
 
 
 def test_sentinel_ranks_last(run):
@@ -169,7 +241,7 @@ def test_export_produces_a_runnable_project(run, tmp_path):
     dest = board.export_winner(best, variants, tmp_path / "winner")
     assert (dest / "config.yaml").is_file()
     proc = subprocess.run(
-        ["commonadk", "validate", str(dest)], capture_output=True, text=True
+        [COMMONADK, "validate", str(dest)], capture_output=True, text=True
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
 

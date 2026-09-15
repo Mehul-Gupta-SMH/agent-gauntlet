@@ -157,10 +157,25 @@ def test_propagation_is_confined_to_the_credulous_variant(task, tmp_path):
     assert propagators == {"v_naive"}, propagators
 
 
-def test_no_false_alarms_on_clean_runs(task, tmp_path):
+def test_false_alarms_are_measured_not_assumed_away(task, tmp_path):
+    """A verifier that miscounts will cry wolf, and that must be visible.
+
+    Scripted policies slip occasionally (seeded, reproducible), which makes
+    `verifying` disagree with the cross-check on a clean run and flag an
+    anomaly that is not there. That is the precision/recall tension #16 and
+    #21 describe, arising on its own rather than by construction -- so the
+    assertion is that the rate is tracked and small, never that it is zero.
+    A harness that could not produce a false alarm could not measure one.
+    """
     ledger = Ledger(tmp_path / "runs.jsonl")
-    run_matrix(task=task, variants=VARIANTS, ledger=ledger, base_seed="s", repeats=2)
-    assert not [r for r in ledger if r.score.false_alarm]
+    run_matrix(task=task, variants=VARIANTS, ledger=ledger, base_seed="s", repeats=4)
+    clean = [r for r in ledger if r.condition == "clean"]
+    alarms = [r for r in clean if r.score.false_alarm]
+    rate = len(alarms) / len(clean)
+    assert rate < 0.25, f"false-alarm rate {rate:.0%} is too high to be a slip"
+    assert all(r.factors.get("prompt") == "verifying" for r in alarms), (
+        "only a variant that cross-checks can raise a false alarm"
+    )
 
 
 # --- the gate statistic ---------------------------------------------------

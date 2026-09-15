@@ -28,6 +28,16 @@ class ToolTimeout(RuntimeError):
     """Raised in place of a result when a TIMEOUT fault fires."""
 
 
+class ToolUnavailable(RuntimeError):
+    """Raised when a variant calls a tool its factor set does not grant.
+
+    Enforced rather than assumed: a declared factor that nothing checks is
+    not a factor, it is a label. A variant whose tool set excludes the
+    cross-check must actually be unable to reach it, or the toolset axis
+    measures nothing and the censoring logic built on it is a fiction.
+    """
+
+
 class RunContext:
     """Per-run state: the world the tools serve, the schedule, the log.
 
@@ -37,9 +47,17 @@ class RunContext:
     time-to-detect clock starts (#16).
     """
 
-    def __init__(self, records: dict[str, int], schedule: FaultSchedule) -> None:
+    def __init__(
+        self,
+        records: dict[str, int],
+        schedule: FaultSchedule,
+        allowed_tools: Optional[set[str]] = None,
+    ) -> None:
         self.records = dict(records)
         self.schedule = schedule
+        self.allowed_tools = allowed_tools
+        """None means unrestricted. Otherwise, the only tools this variant
+        may call."""
         self.calls: list[dict[str, object]] = []
         self.evidence_available_at: Optional[int] = None
 
@@ -58,6 +76,10 @@ class RunContext:
             }
         )
 
+    def require(self, tool: str) -> None:
+        if self.allowed_tools is not None and tool not in self.allowed_tools:
+            raise ToolUnavailable(f"{tool} is not available to this variant")
+
     def note_evidence(self) -> None:
         """Mark that a cross-check has now been observed.
 
@@ -69,10 +91,12 @@ class RunContext:
 
 @contextmanager
 def run_context(
-    records: dict[str, int], schedule: FaultSchedule
+    records: dict[str, int],
+    schedule: FaultSchedule,
+    allowed_tools: Optional[set[str]] = None,
 ) -> Iterator[RunContext]:
-    """Activate a run's world and fault schedule for the enclosing block."""
-    ctx = RunContext(records, schedule)
+    """Activate a run's world, fault schedule and tool grant."""
+    ctx = RunContext(records, schedule, allowed_tools)
     token = _ACTIVE.set(ctx)
     try:
         yield ctx
@@ -96,6 +120,7 @@ def active() -> RunContext:
 def fetch_quantity(record_id: str) -> int:
     """Return a record's quantity, corrupted if the schedule says so."""
     ctx = active()
+    ctx.require("fetch_record")
     if record_id not in ctx.records:
         ctx._log("fetch_record", record_id, False, None)
         raise KeyError(f"no such record: {record_id}")
@@ -117,6 +142,7 @@ def fetch_quantity(record_id: str) -> int:
 
 def list_record_ids() -> list[str]:
     ctx = active()
+    ctx.require("list_records")
     ids = sorted(ctx.records)
     ctx._log("list_records", "*", False, ids)
     return ids
@@ -132,6 +158,7 @@ def summary_total() -> int:
     nothing (#5 fair-fault, #16 evidence availability).
     """
     ctx = active()
+    ctx.require("get_summary")
     total = sum(ctx.records.values())
     ctx.note_evidence()
     ctx._log("get_summary", "*", False, total)

@@ -112,14 +112,16 @@ def _run(args) -> int:
 
 def _print_board(results) -> None:
     print("\n--- board " + "-" * 62)
-    print(f"{'variant':<48}{'qual':>6}{'clean':>7}{'fault':>7}{'prop':>6}{'det':>6}")
+    print(f"{'variant':<46}{'qual':>6}{'acc':>6}{'clean':>7}{'fault':>7}"
+          f"{'prop':>6}{'det':>6}{'FA':>5}")
     for tier in board.rank(results):
         for r in tier:
             det = "  n/a" if r.detection_rate is None else f"{r.detection_rate:>5.0%}"
             flag = "  [GATED: propagated]" if r.gated else ("  [sentinel]" if r.is_sentinel else "")
             print(
-                f"{r.variant_id:<48}{r.quality:>6.0%}{r.clean_quality:>7.0%}"
-                f"{r.faulted_quality:>7.0%}{r.propagation_rate:>6.0%}{det}{flag}"
+                f"{r.variant_id:<46}{r.quality:>6.0%}{r.accuracy:>6.2f}"
+                f"{r.clean_quality:>7.0%}{r.faulted_quality:>7.0%}"
+                f"{r.propagation_rate:>6.0%}{det}{r.false_alarm_rate:>5.0%}{flag}"
             )
 
 
@@ -159,11 +161,14 @@ def _export(results, variants, out: Path) -> None:
     print("\n--- winner " + "-" * 61)
     champion = board.winner(results)
     if champion is None:
-        print("  NO WINNER -- the top tier is tied or gated on propagation.")
-        print("  That is the honest answer, not a failure to compute one.")
+        print("  NO WINNER -- more than one config is non-dominated, or every")
+        print("  config is gated. That is the honest answer, not a failure to")
+        print("  compute one: the remaining tradeoff is yours to make.")
         return
     dest = board.export_winner(champion, variants, out / "winner")
-    print(f"  {champion.variant_id}  quality={champion.quality:.0%}")
+    print(f"  {champion.variant_id}")
+    print(f"  accuracy={champion.accuracy:.2f}  quality={champion.quality:.0%}  "
+          f"false alarms={champion.false_alarm_rate:.0%}  propagation={champion.propagation_rate:.0%}")
     print(f"  exported to {dest}")
     print(f"  run it:  commonadk validate {dest}")
 

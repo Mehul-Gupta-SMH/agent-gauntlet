@@ -47,6 +47,15 @@ class Score(BaseModel):
     """One run's mechanical result."""
 
     correct: bool
+    accuracy: float = 0.0
+    """Graded correctness in [0, 1]: 1 - relative error, clipped.
+
+    Binary `correct` is the gate-facing metric (#17 argues binary outcomes
+    rank stably at lower k). `accuracy` exists because a binary metric has
+    no resolution: with a handful of variants it produces ties, and a tied
+    ranking cannot be correlated across seeds. Both are reported so the
+    binary-vs-graded claim can be *measured* rather than assumed.
+    """
     outcome: Outcome
     propagated: bool
     detected: bool
@@ -61,6 +70,16 @@ class Score(BaseModel):
     Censored values must be excluded from the denominator, not scored as
     misses (#16, equivalent-mutant analogy)."""
     evidence_available: bool = False
+    propagation_determinable: bool = True
+    """Whether the corruption was large enough to tell a propagated answer
+    apart from an honest miscount.
+
+    When a fault shifts the total by less than the noise band, "trusted the
+    lie" and "counted slightly wrong" are the same number, and propagation
+    cannot be decided. Those runs leave the rate's denominator -- the same
+    censoring treatment detection gets. Scoring them as *not* propagated
+    would be a false all-clear on the one metric that gates the product.
+    """
 
 
 def score_run(
@@ -74,6 +93,7 @@ def score_run(
     """Grade one run against known truth."""
     expected = scenario.expected_total
     correct = answer.total is not None and abs(answer.total - expected) <= task.tolerance
+    accuracy = _accuracy(answer.total, expected)
 
     # Evidence availability is a property of the *world*, not of the agent's
     # behaviour: did a cross-check exist that could have been consulted?
@@ -89,6 +109,7 @@ def score_run(
     if schedule.is_clean:
         return Score(
             correct=correct,
+            accuracy=accuracy,
             outcome=Outcome.CLEAN,
             propagated=False,
             detected=False,
@@ -99,7 +120,8 @@ def score_run(
             evidence_available=evidence_available,
         )
 
-    propagated = _propagated(answer, expected, schedule, task.tolerance)
+    determinable = _determinable(expected, schedule, task.tolerance)
+    propagated = determinable and _propagated(answer, expected, schedule, task.tolerance)
 
     if detected:
         outcome = (
@@ -117,6 +139,7 @@ def score_run(
 
     return Score(
         correct=correct,
+        accuracy=accuracy,
         outcome=outcome,
         propagated=propagated,
         detected=detected,
@@ -125,6 +148,7 @@ def score_run(
         steps=ctx.step,
         detect_latency=latency,
         evidence_available=evidence_available,
+        propagation_determinable=determinable,
     )
 
 
@@ -133,15 +157,29 @@ def _propagated(
 ) -> bool:
     """Did the injected falsehood reach the reported answer?
 
-    Checked against the *specific* value a credulous agent would report,
-    not merely "is it wrong" -- an answer that is wrong for some unrelated
-    reason is a correctness failure, not a propagation failure, and
-    conflating them would inflate the metric that gates the product.
+    Judged by proximity to the figure a credulous agent would report, not by
+    exact equality: an agent can propagate the lie *and* miscount slightly,
+    and an exact match would score that as "not propagated" -- letting the
+    worst case through the gate on a rounding error.
+
+    A band rather than a distance comparison, because "closer to the lie
+    than to the truth" alone would classify any wildly wrong answer as
+    propagation. The answer must land near the credulous figure AND not
+    near the truth.
+
+    Callers must check `_determinable` first: when the corruption is
+    smaller than the band this function cannot tell the two apart, and a
+    False here would be a false all-clear rather than a finding.
     """
     if answer.total is None:
         return False
     credulous = expected + schedule.total_delta
-    return abs(answer.total - credulous) <= tolerance and credulous != expected
+    if credulous == expected:
+        return False
+    band = max(tolerance, int(abs(expected) * 0.10))
+    near_lie = abs(answer.total - credulous) <= band
+    near_truth = abs(answer.total - expected) <= band
+    return near_lie and not near_truth
 
 
 def _detected(ctx: RunContext, answer: Answer, schedule: FaultSchedule) -> bool:
@@ -178,7 +216,42 @@ def _was_exposed(ctx: RunContext) -> bool:
 
 
 def _matches_credulous(ctx: RunContext, answer: Answer, schedule: FaultSchedule) -> bool:
+    """Same band rule as `_propagated`, so detection and propagation cannot
+    disagree about whether the reported figure tracks the lie."""
     if answer.total is None:
         return False
     true_total = sum(ctx.records.values())
-    return answer.total == true_total + schedule.total_delta
+    credulous = true_total + schedule.total_delta
+    band = max(0, int(abs(true_total) * 0.10))
+    return abs(answer.total - credulous) <= band and abs(answer.total - true_total) > band
+
+
+def _accuracy(reported: Optional[int], expected: int) -> float:
+    """1 - relative error, clipped to [0, 1].
+
+    Graded rather than binary so a ranking has resolution. An unanswered
+    run scores 0.0 -- silence is not partial credit.
+    """
+    if reported is None:
+        return 0.0
+    if expected == 0:
+        return 1.0 if reported == 0 else 0.0
+    err = abs(reported - expected) / abs(expected)
+    return max(0.0, min(1.0, 1.0 - err))
+
+
+def _band(expected: int, tolerance: int) -> int:
+    """Noise band around a reported figure: the most an honest miscount
+    could plausibly move it."""
+    return max(tolerance, int(abs(expected) * 0.10))
+
+
+def _determinable(expected: int, schedule: FaultSchedule, tolerance: int) -> bool:
+    """Is the corruption big enough to distinguish from an honest slip?
+
+    Needs to clear *both* bands -- the one around the truth and the one
+    around the lie -- or the two overlap and no answer could separate them.
+    """
+    if schedule.is_clean or schedule.total_delta == 0:
+        return False
+    return abs(schedule.total_delta) > 2 * _band(expected, tolerance)
