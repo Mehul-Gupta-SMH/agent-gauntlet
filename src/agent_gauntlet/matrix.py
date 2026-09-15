@@ -1,0 +1,108 @@
+"""Run the M0 matrix: variants x scenarios x repeats x {clean, faulted}.
+
+Fairness invariants enforced here rather than left to the caller: every
+variant sees the same scenarios, the same fault seeds, and the same task
+statement, and the clean/faulted halves of a pair share a seed so
+robustness is measured against a variant's own baseline.
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import Callable, Optional, Sequence
+
+from .faults import FaultKind, FaultSchedule
+from .interpose import run_context
+from .ledger import Ledger, RunRecord
+from .offline import run_policy
+from .score import Answer, score_run
+from .spec import TaskSpec, VariantSpec
+
+Executor = Callable[[VariantSpec], Answer]
+"""Given a variant, produce its answer. The offline executor runs a scripted
+policy; a live one would drive `commonadk.runners.get_runner(target).run_sync`
+and parse the final message."""
+
+
+def offline_executor(variant: VariantSpec) -> Answer:
+    """Execute a variant's scripted policy. No model, no cost."""
+    policy = variant.factors.get("prompt", "naive")
+    return run_policy(policy)
+
+
+def seed_for(*, base: str, variant: str, scenario: str, repeat: int) -> str:
+    """Deterministic per-run seed.
+
+    Deliberately includes the variant id: two variants facing the *same*
+    scenario get different corrupted values, so a ranking cannot be an
+    artifact of one variant happening to draw an easier corruption. It
+    excludes the condition, so a clean/faulted pair stays twinned.
+    """
+    return f"{base}:{variant}:{scenario}:{repeat}"
+
+
+def run_matrix(
+    *,
+    task: TaskSpec,
+    variants: Sequence[VariantSpec],
+    ledger: Ledger,
+    base_seed: str,
+    repeats: int = 3,
+    fault_kind: FaultKind = FaultKind.WRONG_VALUE,
+    executor: Optional[Executor] = None,
+    offline: bool = True,
+) -> list[RunRecord]:
+    """Run the full matrix and append every run to `ledger`."""
+    if repeats < 1:
+        raise ValueError("repeats must be >= 1")
+    if not variants:
+        raise ValueError("no variants to run")
+
+    execute = executor or offline_executor
+    fingerprint = task.fingerprint()
+    produced: list[RunRecord] = []
+
+    for variant in variants:
+        for scenario in task.scenarios:
+            for repeat in range(repeats):
+                seed = seed_for(
+                    base=base_seed,
+                    variant=variant.id,
+                    scenario=scenario.id,
+                    repeat=repeat,
+                )
+                faulted = FaultSchedule.build(
+                    seed=seed, records=scenario.records, kind=fault_kind
+                )
+                for condition, schedule in (
+                    ("clean", FaultSchedule.clean(seed)),
+                    ("faulted", faulted),
+                ):
+                    with run_context(scenario.records, schedule) as ctx:
+                        answer = execute(variant)
+                        score = score_run(
+                            task=task,
+                            scenario=scenario,
+                            schedule=schedule,
+                            ctx=ctx,
+                            answer=answer,
+                        )
+                    record = RunRecord(
+                        run_id=uuid.uuid4().hex[:12],
+                        task_id=task.id,
+                        task_fingerprint=fingerprint,
+                        variant_id=variant.id,
+                        factors=dict(variant.factors),
+                        scenario_id=scenario.id,
+                        repeat=repeat,
+                        seed=seed,
+                        condition=condition,
+                        schedule=schedule,
+                        score=score,
+                        tool_calls=list(ctx.calls),
+                        offline=offline,
+                    )
+                    ledger.append(record)
+                    produced.append(record)
+
+    return produced

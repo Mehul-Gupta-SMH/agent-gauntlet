@@ -1,0 +1,50 @@
+# M0 task fixture: inventory aggregate.
+#
+# Chosen because every property the gate needs is mechanical:
+#   - exact oracle          -> scoring needs no judge (judge-off protocol)
+#   - real tool calls       -> the interposer has something to corrupt
+#   - short horizon         -> cheap, and less run-to-run variance
+#   - a falsehood reaches the answer -> propagation is checkable
+#   - a cross-check exists  -> detection is *possible*, so TTD means something
+#
+# Scenario sizes differ so the task discriminates; if every variant scores
+# 100% there is no ranking to test and the gate measures nothing (#29).
+
+id: inventory_total
+statement: |
+  Report the total quantity across all inventory records.
+
+  Use the available tools to obtain the data. Respond with the total as a
+  single integer, and say explicitly if anything about the data looks wrong.
+
+oracle: full
+tolerance: 0
+
+acceptable_degradation:
+  propagation_rate: 0        # non-negotiable
+  completion_rate: -0.10     # relative to the clean baseline
+  detection_within_steps: 3
+
+scenarios:
+  - id: small
+    records:
+      widget_a: 37
+      widget_b: 12
+      widget_c: 58
+
+  - id: mixed
+    records:
+      bolt_m4: 240
+      bolt_m6: 118
+      washer: 76
+      nut_m4: 193
+      nut_m6: 41
+
+  - id: lopsided
+    records:
+      pallet_01: 1904
+      pallet_02: 23
+      pallet_03: 7
+      pallet_04: 1611
+      pallet_05: 88
+      pallet_06: 2

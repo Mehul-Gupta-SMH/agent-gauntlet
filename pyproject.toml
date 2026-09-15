@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-gauntlet"
+version = "0.0.0.dev0"
+description = "Search the space of agent configurations under adversarial fault injection, and return the config."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Mehul Gupta", email = "mehulgupta85@gmail.com" }]
+dependencies = [
+    # The variant representation, the six SDK targets, and -- as of 0.0.2 --
+    # the runner/trace layer this project meters runs with.
+    "commonadk>=0.0.2",
+    "pydantic>=2",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_gauntlet"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
