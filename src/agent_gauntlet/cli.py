@@ -73,7 +73,8 @@ def _run(args) -> int:
     print(f"fingerprint {task.fingerprint()}")
 
     variants = architect.generate(
-        out_dir=out / "variants", task=task, models=DEFAULT_MODELS
+        out_dir=out / "variants", task=task, models=DEFAULT_MODELS,
+        targets=[args.target],
     )
     print(f"variants    {len(variants)} generated "
           f"({sum(v.is_sentinel for v in variants)} sentinel)")

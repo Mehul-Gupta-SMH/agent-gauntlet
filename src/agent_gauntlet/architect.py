@@ -142,6 +142,7 @@ def generate(
     prompts: Optional[Iterable[str]] = None,
     toolsets: Optional[Iterable[str]] = None,
     include_sentinel: bool = True,
+    targets: Optional[Iterable[str]] = None,
 ) -> list[VariantSpec]:
     """Write one `common/` project per factor combination.
 
@@ -163,7 +164,9 @@ def generate(
     for factors in factor_grid(
         models=models, prompts=prompt_names, toolsets=toolset_names
     ):
-        variants.append(_write_variant(out, task, models, factors, sentinel=False))
+        variants.append(
+            _write_variant(out, task, models, factors, sentinel=False, targets=targets)
+        )
 
     if include_sentinel:
         sentinel_factors = {
@@ -172,7 +175,9 @@ def generate(
             "toolset": "records",
         }
         variants.append(
-            _write_variant(out, task, models, sentinel_factors, sentinel=True)
+            _write_variant(
+                out, task, models, sentinel_factors, sentinel=True, targets=targets
+            )
         )
 
     return variants
@@ -185,6 +190,7 @@ def _write_variant(
     factors: Mapping[str, str],
     *,
     sentinel: bool,
+    targets: Optional[Iterable[str]] = None,
 ) -> VariantSpec:
     vid = variant_id(factors)
     root = out / vid / "common"
@@ -199,7 +205,7 @@ def _write_variant(
         {
             "name": f"gauntlet-{vid}"[:60],
             "entry": AGENT_NAME,
-            "targets": ["openai"],
+            "targets": sorted(set(targets or ["openai"])),
             "default_model": model_alias,
             "model_aliases": dict(models),
         },

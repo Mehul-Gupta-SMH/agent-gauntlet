@@ -1,0 +1,105 @@
+name: live-gauntlet
+
+# Manual only, deliberately. A live gauntlet spends real money on every run,
+# and variants x scenarios x repeats x seeds x 2 conditions is multiplicative
+# -- firing this on push would be a cost incident waiting to happen. The
+# offline suite (ci.yml) is what guards every commit.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "CommonADK SDK target"
+        type: choice
+        default: langgraph
+        options: [langgraph, claude, openai, crewai, autogen, google-adk]
+      repeats:
+        description: "k per (variant, scenario)"
+        default: "2"
+      seeds:
+        description: "independent seeds (>=2 enables the stability gate)"
+        default: "2"
+      smoke_only:
+        description: "Run a single cheap call first and stop"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          # The target decides which CommonADK extra is needed. langgraph is
+          # the default because it reaches Anthropic models through a pure
+          # Python path (langchain-anthropic) with no extra system deps.
+          pip install -e .
+          pip install "commonadk[${{ inputs.target == 'google-adk' && 'google' || inputs.target }}]"
+
+      - name: Check the credential is actually present
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::error::ANTHROPIC_API_KEY is empty or not set for this repository."
+            echo "Add it under Settings -> Secrets and variables -> Actions."
+            echo "Only the NAME is checked here; the value is never printed."
+            exit 1
+          fi
+          echo "ANTHROPIC_API_KEY present (length ${#ANTHROPIC_API_KEY})"
+
+      - name: Smoke test — one cheap call before spending on a matrix
+        if: ${{ inputs.smoke_only == true }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import anthropic
+          client = anthropic.Anthropic()
+          r = client.messages.create(
+              model="claude-sonnet-5",
+              max_tokens=16,
+              messages=[{"role": "user", "content": "Reply with the single word: ok"}],
+          )
+          print("stop_reason:", r.stop_reason)
+          print("usage:", r.usage.input_tokens, "in /", r.usage.output_tokens, "out")
+          print("text:", "".join(b.text for b in r.content if b.type == "text"))
+          PY
+
+      - name: Live gauntlet
+        if: ${{ inputs.smoke_only == false }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          gauntlet run fixtures/inventory/task.yaml \
+            --out runs \
+            --live \
+            --target "${{ inputs.target }}" \
+            --repeats "${{ inputs.repeats }}" \
+            --seeds "${{ inputs.seeds }}"
+
+      - name: Upload the ledger and the winning config
+        if: ${{ always() && inputs.smoke_only == false }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: gauntlet-run
+          path: |
+            runs/runs.jsonl
+            runs/summary.json
+            runs/winner/**
+          if-no-files-found: warn
