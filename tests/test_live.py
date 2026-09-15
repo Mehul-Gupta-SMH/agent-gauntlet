@@ -177,3 +177,66 @@ def test_final_text_is_empty_when_nothing_carries_it():
     )
     assert _final_text(trace) == ""
     assert parse_answer(_final_text(trace)).total is None
+
+
+# --- replies that arrive as content blocks --------------------------------
+
+# Captured verbatim from the first successful live run (langgraph target,
+# claude-sonnet-5). RunFinished.final_text carried repr() of the model's
+# content-block list rather than plain text, so the newlines were backslash
+# escapes and no line-anchored pattern could match -- even though the model
+# had followed the output contract exactly.
+LIVE_REPLY = (
+    "[{'signature': 'Ev8CCpABCBEYAipA5nYJ', 'thinking': '', 'type': 'thinking'}, "
+    "{'text': \"I audited all three inventory records and cross-checked against "
+    "the warehouse's independent summary total.\\n\\n- widget_a: 37\\n- widget_b: 12"
+    "\\n- widget_c: 58\\n\\nSum of records: 37 + 12 + 58 = 107\\nWarehouse-reported "
+    "summary total: 107\\n\\nThe per-record sum matches the independently computed "
+    "summary exactly, so the data is consistent.\\n\\nTOTAL: 107\\nANOMALY: no\", "
+    "'type': 'text'}]"
+)
+
+
+def test_parses_the_real_live_reply():
+    """The regression that cost two live runs to find.
+
+    Treating this as "the model ignored the format" would blame the model
+    for a harness defect and score a perfect run as unanswered.
+    """
+    answer = parse_answer(LIVE_REPLY)
+    assert answer.total == 107
+    assert not answer.flagged_anomaly
+
+
+def test_thinking_blocks_are_excluded():
+    """Scoring an agent on its reasoning rather than its answer would
+    measure something else entirely."""
+    from agent_gauntlet.live import normalize_reply
+
+    flat = normalize_reply(LIVE_REPLY)
+    assert "signature" not in flat and "Ev8CCpAB" not in flat
+    assert "TOTAL: 107" in flat
+
+
+def test_flattening_leaves_plain_text_alone():
+    from agent_gauntlet.live import normalize_reply
+
+    plain = "TOTAL: 42\nANOMALY: yes"
+    assert normalize_reply(plain) == plain
+
+
+def test_malformed_pseudo_literal_is_not_executed_or_crashed():
+    """literal_eval, never eval -- a model's output must never execute."""
+    from agent_gauntlet.live import normalize_reply
+
+    hostile = "[{'text': __import__('os').system('echo pwned')}]"
+    assert normalize_reply(hostile) == hostile  # unparseable as a literal
+    assert parse_answer(hostile).total is None
+
+
+def test_multiple_text_blocks_are_joined():
+    from agent_gauntlet.live import normalize_reply
+
+    reply = "[{'text': 'first', 'type': 'text'}, {'text': 'TOTAL: 9\\nANOMALY: no', 'type': 'text'}]"
+    assert parse_answer(reply).total == 9
+    assert "first" in normalize_reply(reply)

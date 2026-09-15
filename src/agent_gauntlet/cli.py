@@ -154,13 +154,17 @@ def _probe(args) -> int:
 
     if answer.total is None:
         print("\nFAILED: no TOTAL:/ANOMALY: contract in the reply.")
+        from .live import normalize_reply
+
         if not raw:
-            print("Cause: the trace carried NO final text. This is a harness")
-            print("problem, not a model problem -- the reply exists but is not")
-            print("reachable through the events this runner emits.")
+            print("Cause: the trace carried NO final text. Harness problem --")
+            print("the reply exists but is unreachable through these events.")
+        elif normalize_reply(raw) != raw:
+            print("Cause: the reply arrived as structured content blocks and")
+            print("needed flattening. Harness problem, not a model problem.")
         else:
-            print("Cause: the model produced text but not in the required")
-            print("format. That is a real instruction-following result.")
+            print("Cause: the model produced plain text but not in the")
+            print("required format. A real instruction-following result.")
         print("Do NOT run the matrix until this parses -- every run would")
         print("score as unanswered and the whole spend would be wasted.")
         return 1

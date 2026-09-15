@@ -20,6 +20,7 @@ another name and would forfeit the oracle the whole design rests on (#28).
 
 from __future__ import annotations
 
+import ast
 import re
 from typing import TYPE_CHECKING, Optional
 
@@ -47,6 +48,44 @@ class MissingCredentials(RuntimeError):
     """Raised by the preflight, before anything is spent."""
 
 
+def normalize_reply(text: str) -> str:
+    """Flatten a reply that arrived as stringified content blocks.
+
+    Observed live on the langgraph target: `RunFinished.final_text` carried
+    `repr()` of the model's content-block list --
+
+        [{'signature': ..., 'thinking': '', 'type': 'thinking'},
+         {'text': '...\\nTOTAL: 107\\nANOMALY: no', 'type': 'text'}]
+
+    -- so the newlines were backslash escapes inside a Python literal and no
+    line-anchored pattern could match, even though the model had followed
+    the output contract exactly. Parsing that as "the model ignored the
+    format" would have blamed the model for a harness defect and scored a
+    perfectly good run as unanswered.
+
+    `ast.literal_eval` is used rather than `eval`: it evaluates literals
+    only and cannot execute code from a model's output.
+
+    Only `type == "text"` blocks are kept. Thinking blocks are deliberately
+    excluded -- scoring an agent on its reasoning rather than its answer
+    would measure something else entirely.
+    """
+    stripped = (text or "").strip()
+    if not stripped.startswith(("[", "{")):
+        return text or ""
+    try:
+        parsed = ast.literal_eval(stripped)
+    except (ValueError, SyntaxError, MemoryError, RecursionError):
+        return text or ""
+
+    blocks = parsed if isinstance(parsed, list) else [parsed]
+    texts = [
+        b["text"] for b in blocks
+        if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str)
+    ]
+    return "\n".join(texts) if texts else (text or "")
+
+
 def parse_answer(text: str) -> Answer:
     """Read the structured tail of a reply.
 
@@ -56,8 +95,9 @@ def parse_answer(text: str) -> Answer:
     output format" into "answered correctly" often enough to matter, and the
     failure would be invisible.
     """
-    total_match = _TOTAL.search(text or "")
-    anomaly_match = _ANOMALY.search(text or "")
+    flat = normalize_reply(text)
+    total_match = _TOTAL.search(flat)
+    anomaly_match = _ANOMALY.search(flat)
     total: Optional[int] = None
     if total_match:
         try:
