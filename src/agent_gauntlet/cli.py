@@ -54,6 +54,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--target", default="claude",
         help="CommonADK SDK target for --live (default: claude)",
     )
+    probe = sub.add_parser(
+        "probe",
+        help="one live run, printing the raw reply -- proves the path before a matrix",
+    )
+    probe.add_argument("task", type=Path)
+    probe.add_argument("--out", type=Path, default=Path("runs-probe"))
+    probe.add_argument("--target", default="langgraph")
     return p
 
 
@@ -61,7 +68,55 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "run":
         return _run(args)
+    if args.command == "probe":
+        return _probe(args)
     return 1
+
+
+def _probe(args) -> int:
+    """One live call against one variant, with the raw reply shown.
+
+    The cheapest possible check that the whole live path works: build the
+    project, drive the SDK, get a Trace, find the final text, parse it. A
+    silent failure in any of those scores every run as unanswered, and
+    finding that out from a full matrix costs the whole matrix.
+    """
+    from .faults import FaultSchedule
+    from .interpose import run_context
+    from .live import MissingCredentials, live_executor, preflight, parse_answer
+
+    task = TaskSpec.from_yaml(args.task)
+    out = Path(args.out)
+    variants = architect.generate(
+        out_dir=out / "variants", task=task, models=DEFAULT_MODELS,
+        targets=[args.target], prompts=["verifying"], toolsets=["records+summary"],
+        include_sentinel=False,
+    )
+    variant = next(v for v in variants if v.factors.get("model") == "smart")
+    print(f"probing {variant.id} on target={args.target}")
+
+    try:
+        preflight([variant], target=args.target)
+    except MissingCredentials as exc:
+        print(f"\nPREFLIGHT FAILED\n{exc}")
+        return 2
+
+    scenario = task.scenarios[0]
+    execute = live_executor(args.target)
+    with run_context(scenario.records, FaultSchedule.clean("probe")) as ctx:
+        answer = execute(variant, "probe")
+
+    print(f"\nexpected total : {scenario.expected_total}")
+    print(f"parsed total   : {answer.total}")
+    print(f"flagged anomaly: {answer.flagged_anomaly}")
+    print(f"tool calls     : {[c['tool'] for c in ctx.calls]}")
+    if answer.total is None:
+        print("\nFAILED: the reply did not carry the TOTAL:/ANOMALY: contract.")
+        print("Do NOT run the matrix until this parses -- every run would score")
+        print("as unanswered and the whole spend would be wasted.")
+        return 1
+    print("\nOK -- the live path works end to end. The matrix is safe to run.")
+    return 0
 
 
 def _run(args) -> int:

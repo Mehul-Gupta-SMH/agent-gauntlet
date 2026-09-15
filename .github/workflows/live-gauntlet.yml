@@ -18,10 +18,14 @@ on:
       seeds:
         description: "independent seeds (>=2 enables the stability gate)"
         default: "2"
-      smoke_only:
-        description: "Run a single cheap call first and stop"
-        type: boolean
-        default: true
+      mode:
+        description: "How far to go -- escalate one step at a time"
+        type: choice
+        default: smoke
+        options:
+          - smoke    # one raw API call; proves the credential
+          - probe    # one full gauntlet run; proves build->run->trace->parse
+          - matrix   # the full run; the only step that costs real money
 
 permissions:
   contents: read
@@ -61,7 +65,7 @@ jobs:
           echo "ANTHROPIC_API_KEY present (length ${#ANTHROPIC_API_KEY})"
 
       - name: Smoke test — one cheap call before spending on a matrix
-        if: ${{ inputs.smoke_only == true }}
+        if: ${{ inputs.mode == 'smoke' }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
@@ -79,8 +83,16 @@ jobs:
           print("text:", "".join(b.text for b in r.content if b.type == "text"))
           PY
 
+      - name: Probe — one full run, proving the path before a matrix
+        if: ${{ inputs.mode == 'probe' }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          gauntlet probe fixtures/inventory/task.yaml --target "${{ inputs.target }}"
+
       - name: Live gauntlet
-        if: ${{ inputs.smoke_only == false }}
+        if: ${{ inputs.mode == 'matrix' }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -94,7 +106,7 @@ jobs:
             --seeds "${{ inputs.seeds }}"
 
       - name: Upload the ledger and the winning config
-        if: ${{ always() && inputs.smoke_only == false }}
+        if: ${{ always() && inputs.mode == 'matrix' }}
         uses: actions/upload-artifact@v4
         with:
           name: gauntlet-run

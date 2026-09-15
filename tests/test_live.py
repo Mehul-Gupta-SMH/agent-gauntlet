@@ -114,3 +114,66 @@ def test_generated_variants_declare_their_credential(task, tmp_path):
     env = cfg["requires"]["env"]
     assert [e["name"] for e in env] == ["ANTHROPIC_API_KEY"]
     assert all("value" not in e for e in env), "a spec must never carry a secret"
+
+
+# --- reading a real Trace -------------------------------------------------
+
+
+def _trace_with(*events):
+    from commonadk.runners import Trace
+
+    trace = Trace()
+    for e in events:
+        trace.append(e)
+    return trace
+
+
+def test_final_text_reads_run_finished():
+    """Against the documented carrier, not a guessed attribute name.
+
+    An earlier version probed for `output`/`text`/`content`, none of which
+    exist on these events -- every run would have parsed as unanswered and
+    a whole paid matrix would have scored zero. This test exists so that
+    cannot regress silently.
+    """
+    from commonadk.runners import RunFinished
+    from agent_gauntlet.live import _final_text
+
+    trace = _trace_with(RunFinished(run_id="r", seq=0, final_text="TOTAL: 107\nANOMALY: no"))
+    assert "TOTAL: 107" in _final_text(trace)
+    assert parse_answer(_final_text(trace)).total == 107
+
+
+def test_final_text_falls_back_to_agent_finished():
+    from commonadk.runners import AgentFinished
+    from agent_gauntlet.live import _final_text
+
+    trace = _trace_with(
+        AgentFinished(run_id="r", seq=0, agent_name="auditor",
+                      output_summary="TOTAL: 42\nANOMALY: yes")
+    )
+    answer = parse_answer(_final_text(trace))
+    assert answer.total == 42 and answer.flagged_anomaly
+
+
+def test_final_text_prefers_run_finished_over_agent_summary():
+    from commonadk.runners import AgentFinished, RunFinished
+    from agent_gauntlet.live import _final_text
+
+    trace = _trace_with(
+        AgentFinished(run_id="r", seq=0, agent_name="auditor", output_summary="TOTAL: 1\nANOMALY: no"),
+        RunFinished(run_id="r", seq=1, final_text="TOTAL: 2\nANOMALY: no"),
+    )
+    assert parse_answer(_final_text(trace)).total == 2
+
+
+def test_final_text_is_empty_when_nothing_carries_it():
+    from commonadk.runners import RunStarted
+    from agent_gauntlet.live import _final_text
+
+    trace = _trace_with(
+        RunStarted(run_id="r", seq=0, target="langgraph", agent_name="auditor",
+                   prompt="go")
+    )
+    assert _final_text(trace) == ""
+    assert parse_answer(_final_text(trace)).total is None

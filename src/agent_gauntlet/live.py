@@ -136,16 +136,26 @@ def _prompt_for(project, variant: VariantSpec) -> str:
 def _final_text(trace) -> str:
     """Pull the assistant's last text out of a Trace.
 
-    Kept tolerant across SDKs: the runner layer normalises events, but what
-    each adapter puts in the final event's payload still varies, so this
-    looks for the usual carriers rather than assuming one shape.
+    Reads the documented carriers rather than guessing: `RunFinished` is the
+    terminal successful event and carries `final_text`; `AgentFinished`
+    carries `output_summary` per agent. An earlier version of this function
+    probed for plausible-sounding attributes (`output`, `text`, `content`,
+    ...) -- none of which exist on these events, so every run would have
+    parsed as unanswered and an entire paid matrix would have scored zero.
+
+    Returns "" when the run produced no text, which `parse_answer` turns
+    into an unanswered result rather than a guess.
     """
-    final = trace.final_event() if hasattr(trace, "final_event") else None
-    for candidate in (final, *reversed(list(getattr(trace, "events", [])))):
-        if candidate is None:
-            continue
-        for attr in ("output", "text", "content", "result", "message", "summary"):
-            value = getattr(candidate, attr, None)
-            if isinstance(value, str) and value.strip():
-                return value
+    from commonadk.runners import AgentFinished, RunFinished
+
+    events = list(getattr(trace, "events", []) or [])
+
+    for event in reversed(events):
+        if isinstance(event, RunFinished) and event.final_text:
+            return event.final_text
+
+    for event in reversed(events):
+        if isinstance(event, AgentFinished) and event.output_summary:
+            return event.output_summary
+
     return ""
