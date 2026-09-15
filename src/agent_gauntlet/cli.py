@@ -103,17 +103,66 @@ def _probe(args) -> int:
 
     scenario = task.scenarios[0]
     execute = live_executor(args.target)
-    with run_context(scenario.records, FaultSchedule.clean("probe")) as ctx:
-        answer = execute(variant, "probe")
+
+    # Capture the Trace itself, not just the parsed answer. Without this the
+    # probe cannot distinguish "the model ignored the output contract" from
+    # "we cannot find the reply in the trace at all" -- two failures with
+    # completely different fixes, which cost a live call each to tell apart.
+    captured: dict = {}
+    from . import live as _live
+
+    original = _live._final_text
+
+    def _capture(trace):
+        captured["trace"] = trace
+        text = original(trace)
+        captured["text"] = text
+        return text
+
+    _live._final_text = _capture
+    try:
+        with run_context(scenario.records, FaultSchedule.clean("probe")) as ctx:
+            answer = execute(variant, "probe")
+    finally:
+        _live._final_text = original
+
+    trace = captured.get("trace")
+    raw = captured.get("text", "")
 
     print(f"\nexpected total : {scenario.expected_total}")
     print(f"parsed total   : {answer.total}")
     print(f"flagged anomaly: {answer.flagged_anomaly}")
     print(f"tool calls     : {[c['tool'] for c in ctx.calls]}")
+
+    if trace is not None:
+        kinds: dict[str, int] = {}
+        for event in getattr(trace, "events", []) or []:
+            name = type(event).__name__
+            kinds[name] = kinds.get(name, 0) + 1
+        print(f"trace events   : {kinds}")
+        try:
+            rollup = trace.rollup()
+            print(f"tokens/cost    : {rollup.get('llm_calls')}")
+        except Exception as exc:  # pragma: no cover - diagnostics only
+            print(f"rollup failed  : {type(exc).__name__}: {exc}")
+
+    print(f"\nfinal text ({len(raw)} chars):")
+    print("-" * 60)
+    print(raw[:2000] if raw else "(EMPTY -- no RunFinished.final_text and no "
+          "AgentFinished.output_summary in the trace)")
+    print("-" * 60)
+
     if answer.total is None:
-        print("\nFAILED: the reply did not carry the TOTAL:/ANOMALY: contract.")
-        print("Do NOT run the matrix until this parses -- every run would score")
-        print("as unanswered and the whole spend would be wasted.")
+        print("\nFAILED: no TOTAL:/ANOMALY: contract in the reply.")
+        if not raw:
+            print("Cause: the trace carried NO final text. This is a harness")
+            print("problem, not a model problem -- the reply exists but is not")
+            print("reachable through the events this runner emits.")
+        else:
+            print("Cause: the model produced text but not in the required")
+            print("format. That is a real instruction-following result.")
+        print("Do NOT run the matrix until this parses -- every run would")
+        print("score as unanswered and the whole spend would be wasted.")
         return 1
     print("\nOK -- the live path works end to end. The matrix is safe to run.")
     return 0
