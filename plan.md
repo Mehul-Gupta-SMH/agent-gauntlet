@@ -322,6 +322,29 @@ only. This splits one gate into a two-stage diagnostic:
 statistic, and what value counts as stable. Choosing the threshold after
 seeing the number is the same error pre-registration exists to prevent.
 
+#### As built
+
+A walking skeleton runs end to end offline (`gauntlet run`), with 58 tests.
+C0.1, C0.3, C0.4, C0.5 and C0.6 are done; C0.2 turned out to be mostly
+upstream (`commonadk 0.0.2` ships `get_runner`, `Trace`, token/cost/latency
+metering); C0.7's machinery works but cannot answer #1 until real models
+run, and C0.8 has not started. Tracking: #29.
+
+Three corrections to this milestone were made in flight, each a correctness
+problem rather than a tuning choice:
+
+| Found | Correction |
+|---|---|
+| The `toolset` factor was declared but never enforced | Tool grants enforced in the interposer. A declared factor nothing checks is a label, and the censoring logic built on it was fiction |
+| Binary correctness ties, and a tied ranking cannot be correlated | Graded accuracy added alongside it; binary for the gate, graded for the ranking (#17) |
+| Propagation matched the credulous figure exactly, and under-reported when corruption fell below the noise band | Band rule, plus undecidable runs excluded from the denominator rather than read as a clean 0% |
+
+Enforcing the toolset grant immediately produced a genuine factor
+interaction -- a verifying prompt is worth a great deal with a cross-check
+and nothing at all without one -- which is a live demonstration that the
+one-at-a-time marginal effects this slice reports are wrong on its own grid
+(#22).
+
 #### Sequence and parallelism
 
 Bar lengths below are **relative weights, not estimates** — they say C0.2 is
