@@ -1,0 +1,50 @@
+task        inventory_total  (oracle=full)
+fingerprint 5c9848747223eaa4
+models      cheap=anthropic/claude-haiku-4-5, smart=anthropic/claude-sonnet-5
+variants    9 generated (1 sentinel)
+mode        offline (scripted policies, no spend)
+runs        324 across 3 seed(s)
+
+--- board --------------------------------------------------------------
+variant                                         qual   acc  clean  fault  prop   det   FA
+model-cheap__prompt-verifying__toolset-records+summary  100%  1.00   100%   100%    0% 100%  33%
+model-smart__prompt-verifying__toolset-records+summary  100%  1.00   100%   100%    0% 100%   6%
+model-smart__prompt-naive__toolset-records       50%  0.95   100%     0%  100%  n/a   0%  [GATED: propagated]
+model-cheap__prompt-naive__toolset-records+summary   42%  0.92    83%     0%  100%   0%   0%  [GATED: propagated]
+model-smart__prompt-verifying__toolset-records   47%  0.92    94%     0%  100%  n/a   0%  [GATED: propagated]
+model-cheap__prompt-verifying__toolset-records   44%  0.91    89%     0%  100%  n/a   0%  [GATED: propagated]
+model-smart__prompt-naive__toolset-records+summary   50%  0.91   100%     0%  100%   0%   0%  [GATED: propagated]
+model-cheap__prompt-naive__toolset-records       33%  0.90    67%     0%   88%  n/a   0%  [GATED: propagated]
+model-cheap__prompt-sentinel__toolset-records     0%  0.48     0%     0%    0%  n/a   0%  [sentinel]
+
+--- per-factor effects -------------------------------------------------
+prompt       spread=  29%   naive=44%  verifying=73%
+toolset      spread=  29%   records=44%  records+summary=73%
+model        spread=   7%   cheap=55%  smart=62%
+
+  One-at-a-time marginal effect. Wrong under factor interaction; Shapley attribution is issue #22.
+
+--- stability gate -----------------------------------------------------
+  variants=9  seeds=3  pairs=3  undefined tau=0
+  median tau      = 0.7550119889434047
+  top-1 stability = 0%
+
+  pre-registered bar (fingerprint 5c9848747223eaa4):
+    median tau      >= 0.7
+    top-1 stability >= 0.6
+    seeds           >= 3
+    set by Mehul-Gupta-SMH on 2026-09-15
+
+  GATE: FAIL
+    - top-1 stability 0.00 < 0.6
+
+  Per plan.md: stop and fix measurement before building more.
+
+--- winner -------------------------------------------------------------
+  model-smart__prompt-verifying__toolset-records+summary
+  accuracy=1.00  quality=100%  false alarms=6%  propagation=0%
+  exported to /tmp/exp1/winner
+  run it:  commonadk validate /tmp/exp1/winner
+
+wrote       /tmp/exp1/runs.jsonl, /tmp/exp1/summary.json
+exit=3

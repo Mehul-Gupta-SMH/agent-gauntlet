@@ -1,0 +1,16 @@
+{
+  "n_runs": 324,
+  "offline": true,
+  "outcomes_clean": {
+    "clean": 162
+  },
+  "outcomes_under_fault": {
+    "detected_and_surfaced": 36,
+    "undetected_harmless": 88,
+    "undetected_propagated": 38
+  },
+  "task_fingerprints": [
+    "5c9848747223eaa4"
+  ],
+  "total_cost_usd": 0.0
+}

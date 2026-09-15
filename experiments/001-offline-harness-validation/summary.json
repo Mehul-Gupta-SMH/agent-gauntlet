@@ -1,0 +1,216 @@
+{
+  "effects": [
+    {
+      "caveat": "One-at-a-time marginal effect. Wrong under factor interaction; Shapley attribution is issue #22.",
+      "factor": "prompt",
+      "levels": {
+        "naive": 0.4375,
+        "verifying": 0.7291666666666666
+      },
+      "spread": 0.29166666666666663
+    },
+    {
+      "caveat": "One-at-a-time marginal effect. Wrong under factor interaction; Shapley attribution is issue #22.",
+      "factor": "toolset",
+      "levels": {
+        "records": 0.4375,
+        "records+summary": 0.7291666666666666
+      },
+      "spread": 0.29166666666666663
+    },
+    {
+      "caveat": "One-at-a-time marginal effect. Wrong under factor interaction; Shapley attribution is issue #22.",
+      "factor": "model",
+      "levels": {
+        "cheap": 0.5486111111111112,
+        "smart": 0.6180555555555556
+      },
+      "spread": 0.06944444444444442
+    }
+  ],
+  "n_runs": 324,
+  "results": [
+    {
+      "accuracy": 0.9020125871787174,
+      "clean_quality": 0.6666666666666666,
+      "cost_usd": 0.0,
+      "detection_rate": null,
+      "factors": {
+        "model": "cheap",
+        "prompt": "naive",
+        "toolset": "records"
+      },
+      "false_alarm_rate": 0.0,
+      "faulted_quality": 0.0,
+      "is_sentinel": false,
+      "mean_steps": 5.666666666666667,
+      "n_propagation_undecidable": 10,
+      "n_runs": 36,
+      "propagation_rate": 0.875,
+      "quality": 0.3333333333333333,
+      "variant_id": "model-cheap__prompt-naive__toolset-records"
+    },
+    {
+      "accuracy": 0.9222607071527156,
+      "clean_quality": 0.8333333333333334,
+      "cost_usd": 0.0,
+      "detection_rate": 0.0,
+      "factors": {
+        "model": "cheap",
+        "prompt": "naive",
+        "toolset": "records+summary"
+      },
+      "false_alarm_rate": 0.0,
+      "faulted_quality": 0.0,
+      "is_sentinel": false,
+      "mean_steps": 5.666666666666667,
+      "n_propagation_undecidable": 11,
+      "n_runs": 36,
+      "propagation_rate": 1.0,
+      "quality": 0.4166666666666667,
+      "variant_id": "model-cheap__prompt-naive__toolset-records+summary"
+    },
+    {
+      "accuracy": 0.48096218572124416,
+      "clean_quality": 0.0,
+      "cost_usd": 0.0,
+      "detection_rate": null,
+      "factors": {
+        "model": "cheap",
+        "prompt": "sentinel",
+        "toolset": "records"
+      },
+      "false_alarm_rate": 0.0,
+      "faulted_quality": 0.0,
+      "is_sentinel": true,
+      "mean_steps": 3.0,
+      "n_propagation_undecidable": 12,
+      "n_runs": 36,
+      "propagation_rate": 0.0,
+      "quality": 0.0,
+      "variant_id": "model-cheap__prompt-sentinel__toolset-records"
+    },
+    {
+      "accuracy": 0.9079774099232406,
+      "clean_quality": 0.8888888888888888,
+      "cost_usd": 0.0,
+      "detection_rate": null,
+      "factors": {
+        "model": "cheap",
+        "prompt": "verifying",
+        "toolset": "records"
+      },
+      "false_alarm_rate": 0.0,
+      "faulted_quality": 0.0,
+      "is_sentinel": false,
+      "mean_steps": 5.666666666666667,
+      "n_propagation_undecidable": 12,
+      "n_runs": 36,
+      "propagation_rate": 1.0,
+      "quality": 0.4444444444444444,
+      "variant_id": "model-cheap__prompt-verifying__toolset-records"
+    },
+    {
+      "accuracy": 1.0,
+      "clean_quality": 1.0,
+      "cost_usd": 0.0,
+      "detection_rate": 1.0,
+      "factors": {
+        "model": "cheap",
+        "prompt": "verifying",
+        "toolset": "records+summary"
+      },
+      "false_alarm_rate": 0.3333333333333333,
+      "faulted_quality": 1.0,
+      "is_sentinel": false,
+      "mean_steps": 6.666666666666667,
+      "n_propagation_undecidable": 10,
+      "n_runs": 36,
+      "propagation_rate": 0.0,
+      "quality": 1.0,
+      "variant_id": "model-cheap__prompt-verifying__toolset-records+summary"
+    },
+    {
+      "accuracy": 0.9535590705231607,
+      "clean_quality": 1.0,
+      "cost_usd": 0.0,
+      "detection_rate": null,
+      "factors": {
+        "model": "smart",
+        "prompt": "naive",
+        "toolset": "records"
+      },
+      "false_alarm_rate": 0.0,
+      "faulted_quality": 0.0,
+      "is_sentinel": false,
+      "mean_steps": 5.666666666666667,
+      "n_propagation_undecidable": 15,
+      "n_runs": 36,
+      "propagation_rate": 1.0,
+      "quality": 0.5,
+      "variant_id": "model-smart__prompt-naive__toolset-records"
+    },
+    {
+      "accuracy": 0.9069788052907712,
+      "clean_quality": 1.0,
+      "cost_usd": 0.0,
+      "detection_rate": 0.0,
+      "factors": {
+        "model": "smart",
+        "prompt": "naive",
+        "toolset": "records+summary"
+      },
+      "false_alarm_rate": 0.0,
+      "faulted_quality": 0.0,
+      "is_sentinel": false,
+      "mean_steps": 5.666666666666667,
+      "n_propagation_undecidable": 9,
+      "n_runs": 36,
+      "propagation_rate": 1.0,
+      "quality": 0.5,
+      "variant_id": "model-smart__prompt-naive__toolset-records+summary"
+    },
+    {
+      "accuracy": 0.9204214369257774,
+      "clean_quality": 0.9444444444444444,
+      "cost_usd": 0.0,
+      "detection_rate": null,
+      "factors": {
+        "model": "smart",
+        "prompt": "verifying",
+        "toolset": "records"
+      },
+      "false_alarm_rate": 0.0,
+      "faulted_quality": 0.0,
+      "is_sentinel": false,
+      "mean_steps": 5.666666666666667,
+      "n_propagation_undecidable": 12,
+      "n_runs": 36,
+      "propagation_rate": 1.0,
+      "quality": 0.4722222222222222,
+      "variant_id": "model-smart__prompt-verifying__toolset-records"
+    },
+    {
+      "accuracy": 1.0,
+      "clean_quality": 1.0,
+      "cost_usd": 0.0,
+      "detection_rate": 1.0,
+      "factors": {
+        "model": "smart",
+        "prompt": "verifying",
+        "toolset": "records+summary"
+      },
+      "false_alarm_rate": 0.05555555555555555,
+      "faulted_quality": 1.0,
+      "is_sentinel": false,
+      "mean_steps": 6.666666666666667,
+      "n_propagation_undecidable": 5,
+      "n_runs": 36,
+      "propagation_rate": 0.0,
+      "quality": 1.0,
+      "variant_id": "model-smart__prompt-verifying__toolset-records+summary"
+    }
+  ],
+  "task_fingerprint": "5c9848747223eaa4",
+  "task_id": "inventory_total"
+}
