@@ -71,8 +71,16 @@ def run_matrix(
                     scenario=scenario.id,
                     repeat=repeat,
                 )
+                # A variant whose tool set excludes the cross-check has no
+                # reachable evidence, so an injected falsehood is
+                # undetectable *in principle* for it. Those runs are the
+                # genuine censoring case and must leave the detection
+                # denominator rather than score as misses (#16).
                 faulted = FaultSchedule.build(
-                    seed=seed, records=scenario.records, kind=fault_kind
+                    seed=seed,
+                    records=scenario.records,
+                    kind=fault_kind,
+                    evidence_tool="get_summary" if _has_evidence(variant) else None,
                 )
                 for condition, schedule in (
                     ("clean", FaultSchedule.clean(seed)),
@@ -106,3 +114,18 @@ def run_matrix(
                     produced.append(record)
 
     return produced
+
+
+def _has_evidence(variant: VariantSpec) -> bool:
+    """Can this variant reach the cross-check at all?
+
+    Derived from the declared tool set where one exists. Variants exercised
+    only through scripted policies (no `toolset` factor) are assumed to have
+    it, since every offline policy can call `summary_total()`.
+    """
+    toolset = variant.factors.get("toolset")
+    if toolset is None:
+        return True
+    from .architect import TOOLSETS
+
+    return "get_summary" in TOOLSETS.get(toolset, [])

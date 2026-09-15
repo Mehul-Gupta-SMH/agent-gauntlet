@@ -7,10 +7,14 @@ different models, prompts, tools, frameworks — runs them against that task whi
 **deliberately lying to them through their own tools**, and returns a ranked,
 cost-aware answer plus the winning configuration as something you can run.
 
-> **Status: design stage.** No implementation yet. The architecture, the open
-> questions, and the experiment that decides whether this is worth building at
-> all live in [`plan.md`](plan.md). Feedback on the design is the most useful
-> contribution right now.
+> **Status: early build.** A walking skeleton runs end to end, offline, with
+> no API key: `gauntlet run fixtures/inventory/task.yaml` generates variant
+> `common/` projects, runs them under seeded fault injection, scores
+> mechanically, and exports the winner as a runnable project. Live execution
+> against real models is not wired up yet, and the measurement gate that
+> decides whether any of this is worth building
+> ([M0](plan.md#m0--the-measurement-gate)) has not been run. The architecture
+> and the open questions live in [`plan.md`](plan.md).
 
 ## The idea in one loop
 
