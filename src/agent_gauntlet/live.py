@@ -125,12 +125,20 @@ def preflight(variants, *, target: str) -> None:
 
     if missing:
         names = sorted({n for gaps in missing.values() for n in gaps})
+        affected = sorted(missing)[:4]
+        more = len(missing) - len(affected)
         raise MissingCredentials(
             "cannot run live: "
             + ", ".join(names)
             + f" not set (needed by {len(missing)} of {len(variants)} variants).\n"
-            "commonadk declares credential NAMES only and checks presence, never "
-            "values -- set the variable(s) above in your environment and re-run.\n"
+            f"  affected: {', '.join(affected)}" + (f" (+{more} more)" if more else "")
+            + "\n\ncommonadk declares credential NAMES only and checks presence, "
+            "never values.\nEither set the variable(s) above, or choose a model "
+            "grid that needs only\nthe credentials you have -- e.g.\n"
+            "  --models cheap=anthropic/claude-haiku-4-5 "
+            "smart=anthropic/claude-sonnet-5\n\n"
+            "The whole matrix is refused rather than run partially: an uneven "
+            "grid would\nchange what is being compared.\n"
             f"target={target}"
         )
 

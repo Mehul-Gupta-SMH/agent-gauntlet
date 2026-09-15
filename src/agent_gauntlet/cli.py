@@ -25,9 +25,31 @@ from .matrix import run_matrix
 from .spec import TaskSpec
 
 DEFAULT_MODELS = {
-    "cheap": "openai/gpt-4o-mini",
+    "cheap": "anthropic/claude-haiku-4-5",
     "smart": "anthropic/claude-sonnet-5",
 }
+"""Both levels on one provider, deliberately.
+
+A cross-provider grid makes the model axis unrunnable on a single
+credential: half the variants demand a key the operator may not have, and
+the preflight correctly refuses the whole matrix rather than compare an
+uneven grid. Haiku-vs-Sonnet is a real capability difference and needs one
+key, which is what makes the axis usable at all.
+
+Override with --models to compare across providers, once the credentials
+for every provider in the grid are present.
+"""
+
+
+def parse_models(pairs) -> dict:
+    """`--models cheap=anthropic/claude-haiku-4-5` -> {alias: model}."""
+    models: dict[str, str] = {}
+    for pair in pairs or []:
+        if "=" not in pair:
+            raise ValueError(f"--models expects alias=model, got {pair!r}")
+        alias, model = pair.split("=", 1)
+        models[alias.strip()] = model.strip()
+    return models or dict(DEFAULT_MODELS)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +71,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--live", action="store_true",
         help="run against real models (COSTS MONEY); otherwise scripted policies",
+    )
+    run.add_argument(
+        "--models", nargs="*", metavar="ALIAS=MODEL",
+        help="model grid, e.g. cheap=anthropic/claude-haiku-4-5 "
+             "smart=anthropic/claude-sonnet-5",
     )
     run.add_argument(
         "--target", default="claude",
@@ -180,8 +207,10 @@ def _run(args) -> int:
     print(f"task        {task.id}  (oracle={task.oracle.value})")
     print(f"fingerprint {task.fingerprint()}")
 
+    models = parse_models(getattr(args, "models", None))
+    print(f"models      {', '.join(f'{k}={v}' for k, v in sorted(models.items()))}")
     variants = architect.generate(
-        out_dir=out / "variants", task=task, models=DEFAULT_MODELS,
+        out_dir=out / "variants", task=task, models=models,
         targets=[args.target],
     )
     print(f"variants    {len(variants)} generated "
