@@ -20,6 +20,16 @@ statement: |
 oracle: full
 tolerance: 0
 
+# PRE-REGISTERED before the first live matrix run. Covered by
+# TaskSpec.fingerprint(), so changing any threshold changes the hash and
+# every run record shows which bar it was judged against.
+gate:
+  min_median_tau: 0.7
+  min_top1_stability: 0.6
+  min_seeds: 3
+  set_by: Mehul-Gupta-SMH
+  set_at: "2026-09-15"
+
 acceptable_degradation:
   propagation_rate: 0        # non-negotiable
   completion_rate: -0.10     # relative to the clean baseline

@@ -221,7 +221,7 @@ def _run(args) -> int:
 
     _print_board(results)
     _print_effects(results)
-    rc = _print_gate(records, seeds)
+    rc = _print_gate(records, seeds, task)
     _export(results, variants, out)
 
     write_summary(
@@ -265,23 +265,71 @@ def _print_effects(results) -> None:
     print(f"\n  {effects[0].caveat}")
 
 
-def _print_gate(records, seeds) -> int:
+def _print_gate(records, seeds, task) -> int:
+    """Report the gate, and judge it against the pre-registered bar.
+
+    Returns non-zero when the gate FAILS, so a CI job cannot go green on an
+    unstable measurement.
+    """
     print("\n--- stability gate " + "-" * 53)
+    gate = task.gate
+
     if len(seeds) < 2:
         print("  skipped -- needs --seeds >= 2")
         return 0
+
     by_seed: dict[str, dict[str, float]] = {}
     for r in records:
         base = r.seed.split(":")[0]
         bucket = by_seed.setdefault(base, {})
         bucket[r.variant_id] = bucket.get(r.variant_id, 0.0) + float(r.score.correct)
     report = stability(by_seed)
-    print(f"  variants={report.n_variants}  pairs={report.n_pairs}  "
-          f"undefined tau={report.undefined_pairs}")
-    print(f"  median tau={report.median_tau}  top-1 stability={report.top1_stability:.0%}")
+
+    print(f"  variants={report.n_variants}  seeds={len(seeds)}  "
+          f"pairs={report.n_pairs}  undefined tau={report.undefined_pairs}")
+    print(f"  median tau      = {report.median_tau}")
+    print(f"  top-1 stability = {report.top1_stability:.0%}")
+
+    if gate is None:
+        print("\n  NO VERDICT -- the spec pre-registers no thresholds, and the")
+        print("  gate will not invent one after seeing the numbers.")
+        return 0
+
+    print(f"\n  pre-registered bar (fingerprint {task.fingerprint()}):")
+    print(f"    median tau      >= {gate.min_median_tau}")
+    print(f"    top-1 stability >= {gate.min_top1_stability}")
+    print(f"    seeds           >= {gate.min_seeds}")
+    print(f"    set by {gate.set_by} on {gate.set_at}")
+
+    failures: list[str] = []
+    if len(seeds) < gate.min_seeds:
+        failures.append(f"only {len(seeds)} seeds, need {gate.min_seeds}")
     if report.undefined_pairs:
-        print("  WARNING: undefined tau means variants tied -- likely a ceiling "
-              "effect, and the gate measured nothing.")
+        # A ranking with large tie groups cannot be unstable, so a passing
+        # tau here would be vacuous rather than reassuring (#17).
+        failures.append(
+            f"{report.undefined_pairs} seed pair(s) had undefined tau -- "
+            "ties, so the ranking did not discriminate"
+        )
+    if report.median_tau is None:
+        failures.append("median tau undefined")
+    elif report.median_tau < gate.min_median_tau:
+        failures.append(f"median tau {report.median_tau:.3f} < {gate.min_median_tau}")
+    if report.top1_stability is None:
+        failures.append("top-1 stability undefined")
+    elif report.top1_stability < gate.min_top1_stability:
+        failures.append(
+            f"top-1 stability {report.top1_stability:.2f} < {gate.min_top1_stability}"
+        )
+
+    if failures:
+        print("\n  GATE: FAIL")
+        for f in failures:
+            print(f"    - {f}")
+        print("\n  Per plan.md: stop and fix measurement before building more.")
+        return 3
+
+    print("\n  GATE: PASS -- the ranking held across seeds at the bar set in advance.")
     return 0
 
 

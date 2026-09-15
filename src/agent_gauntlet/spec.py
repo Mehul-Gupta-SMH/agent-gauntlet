@@ -45,6 +45,32 @@ class Scenario(BaseModel, frozen=True):
         return sum(self.records.values())
 
 
+class GateCriteria(BaseModel, frozen=True):
+    """Pre-registered stability thresholds for the M0 gate (#1, #29).
+
+    Lives inside `TaskSpec` deliberately, so it is covered by
+    `fingerprint()`. Moving a threshold changes the hash, and every run
+    record carries the hash it was judged against -- which makes a moved
+    goalpost detectable rather than deniable. That is the whole mechanism:
+    a bar chosen after seeing the number is not a bar.
+    """
+
+    min_median_tau: float
+    """Median Kendall's tau across seed pairs, at or above which the
+    ranking counts as stable."""
+
+    min_top1_stability: float
+    """Fraction of seed pairs that must agree on the same winner."""
+
+    min_seeds: int = 3
+    """Fewer seeds than this yields too few pairs for a distribution."""
+
+    set_by: str = "unrecorded"
+    set_at: str = "unrecorded"
+    """Who fixed the bar and when. Recorded so the ordering -- bar first,
+    numbers second -- is auditable after the fact."""
+
+
 class TaskSpec(BaseModel):
     """A task, its scenarios, and the bar it is measured against."""
 
@@ -62,6 +88,10 @@ class TaskSpec(BaseModel):
 
     tolerance: int = 0
     """Absolute tolerance on the reported total. 0 = exact match required."""
+
+    gate: Optional[GateCriteria] = None
+    """Pre-registered gate thresholds. Absent means the gate reports
+    numbers without a verdict -- it never invents a bar."""
 
     @model_validator(mode="after")
     def _check_scenarios(self) -> TaskSpec:

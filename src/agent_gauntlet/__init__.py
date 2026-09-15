@@ -10,10 +10,10 @@ from .interpose import RunContext, ToolTimeout, run_context
 from .ledger import Ledger, RunRecord
 from .matrix import run_matrix, seed_for
 from .score import Answer, Outcome, Score, score_run
-from .spec import Oracle, Scenario, TaskSpec, VariantSpec
+from .spec import GateCriteria, Oracle, Scenario, TaskSpec, VariantSpec
 
 __all__ = [
-    "Answer", "DetectionReport", "FaultKind", "FaultSchedule", "InjectedFault",
+    "Answer", "DetectionReport", "GateCriteria", "FaultKind", "FaultSchedule", "InjectedFault",
     "Ledger", "Oracle", "Outcome", "RunContext", "RunRecord", "Scenario",
     "Score", "StabilityReport", "TaskSpec", "ToolTimeout", "VariantSpec",
     "kendall_tau", "run_context", "run_matrix", "score_run", "seed_for",

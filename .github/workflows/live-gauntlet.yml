@@ -16,8 +16,8 @@ on:
         description: "k per (variant, scenario)"
         default: "2"
       seeds:
-        description: "independent seeds (>=2 enables the stability gate)"
-        default: "2"
+        description: "independent seeds (pre-registered minimum is 3)"
+        default: "3"
       mode:
         description: "How far to go -- escalate one step at a time"
         type: choice

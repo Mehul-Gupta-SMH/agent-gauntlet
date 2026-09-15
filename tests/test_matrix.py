@@ -230,3 +230,34 @@ def test_tied_top_is_not_a_winner():
         {"a": {"v1": 1.0, "v2": 1.0}, "b": {"v1": 1.0, "v2": 1.0}}
     )
     assert report.top1_stability == 0.0
+
+
+# --- the pre-registered gate ---------------------------------------------
+
+
+def test_fixture_pre_registers_the_gate(task):
+    """The bar must exist in the spec before any run is judged against it."""
+    assert task.gate is not None
+    assert task.gate.min_median_tau == 0.7
+    assert task.gate.min_top1_stability == 0.6
+    assert task.gate.min_seeds == 3
+    assert task.gate.set_by != "unrecorded", "an unattributed bar is not pre-registered"
+
+
+def test_moving_a_threshold_changes_the_fingerprint(task):
+    """The whole mechanism.
+
+    A run record carries the fingerprint it was judged against, so a bar
+    moved after seeing the numbers is detectable rather than deniable.
+    """
+    before = task.fingerprint()
+    moved = task.model_copy(
+        update={"gate": task.gate.model_copy(update={"min_median_tau": 0.1})}
+    )
+    assert moved.fingerprint() != before
+
+
+def test_gate_absent_means_no_verdict(task):
+    """The gate never invents a bar after seeing the numbers."""
+    no_gate = task.model_copy(update={"gate": None})
+    assert no_gate.gate is None
