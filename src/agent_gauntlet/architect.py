@@ -212,8 +212,10 @@ def _write_variant(
     )
 
     # The statement every variant receives verbatim -- a fairness invariant.
+    from .live import ANSWER_FORMAT
+
     (agent / "skill.md").write_text(
-        PROMPTS[factors["prompt"]] + "\n## Task\n\n" + task.statement,
+        PROMPTS[factors["prompt"]] + "\n## Task\n\n" + task.statement + ANSWER_FORMAT,
         encoding="utf-8",
     )
     (agent / "tools.py").write_text(_TOOLS_PY, encoding="utf-8")
@@ -224,6 +226,10 @@ def _write_variant(
             "description": "Totals inventory records.",
             "model": model_alias,
             "tools": tools,
+            # Names only, never values -- commonadk's contract. The preflight
+            # checks presence, so a live run fails before spending anything
+            # and names the variable it needs.
+            "requires": {"env": _env_requirements(models[model_alias])},
         },
     )
 
@@ -248,3 +254,23 @@ def has_evidence_tool(variant: VariantSpec) -> bool:
     detection denominator instead of counting as misses.
     """
     return "get_summary" in TOOLSETS.get(variant.factors.get("toolset", ""), [])
+
+
+PROVIDER_ENV = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "gemini": "GOOGLE_API_KEY",
+}
+
+
+def _env_requirements(model_string: str) -> list[dict]:
+    """The credential a resolved LiteLLM model string implies."""
+    provider = model_string.split("/", 1)[0] if "/" in model_string else ""
+    name = PROVIDER_ENV.get(provider)
+    if not name:
+        return []
+    return [{
+        "name": name,
+        "description": f"Credential for {provider} models used by this variant.",
+        "required": True,
+    }]

@@ -47,8 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=FaultKind.WRONG_VALUE.value,
     )
     run.add_argument(
-        "--offline", action="store_true", default=True,
-        help="use scripted policies (default; spends nothing)",
+        "--live", action="store_true",
+        help="run against real models (COSTS MONEY); otherwise scripted policies",
+    )
+    run.add_argument(
+        "--target", default="claude",
+        help="CommonADK SDK target for --live (default: claude)",
     )
     return p
 
@@ -74,13 +78,28 @@ def _run(args) -> int:
     print(f"variants    {len(variants)} generated "
           f"({sum(v.is_sentinel for v in variants)} sentinel)")
 
+    executor = None
+    offline = not args.live
+    if args.live:
+        from .live import MissingCredentials, live_executor, preflight
+
+        try:
+            preflight(variants, target=args.target)
+        except MissingCredentials as exc:
+            print(f"\nPREFLIGHT FAILED\n{exc}")
+            return 2
+        executor = live_executor(args.target)
+        print(f"mode        LIVE via target={args.target} -- this spends money")
+    else:
+        print("mode        offline (scripted policies, no spend)")
+
     ledger = Ledger(out / "runs.jsonl")
     seeds = [f"seed{i}" for i in range(max(1, args.seeds))]
     for seed in seeds:
         run_matrix(
             task=task, variants=variants, ledger=ledger, base_seed=seed,
             repeats=args.repeats, fault_kind=FaultKind(args.fault),
-            offline=bool(args.offline),
+            executor=executor, offline=offline,
         )
     records = ledger.records()
     print(f"runs        {len(records)} across {len(seeds)} seed(s)")
