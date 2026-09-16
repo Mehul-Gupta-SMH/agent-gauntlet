@@ -22,6 +22,7 @@ from agent_gauntlet import (
 )
 from agent_gauntlet.interpose import fetch_quantity, list_record_ids, summary_total
 from agent_gauntlet.ledger import rescore
+from agent_gauntlet.offline import naive
 
 RECORDS = {"a": 37, "b": 12, "c": 58}
 SCENARIO = Scenario(id="s", records=RECORDS)
@@ -197,3 +198,66 @@ def test_rescoring_a_record_without_an_answer_refuses(tmp_path):
     record.answer = None
     with pytest.raises(ValueError, match="predates the stored answer"):
         rescore(record, task)
+
+
+# --- metering reaches the ledger (#14) ------------------------------------
+
+
+def test_an_executor_that_meters_has_its_rollup_recorded():
+    """The $5 that experiment 007 spent was never written down.
+
+    `live_executor` held the Trace -- token counts, cost_usd, durations, all
+    verified complete in experiment 002 -- read the text off it and dropped
+    the rest. `run_matrix` never set `rollup`, so a full paid matrix
+    recorded no spend and the board's cost column read n/a.
+    """
+    from agent_gauntlet.matrix import _unpack
+
+    priced = {"llm_calls": {"cost_usd": 0.02, "total_tokens": 100,
+                            "cost_complete": True}}
+    answer, rollup = _unpack((Answer(total=7), priced))
+    assert answer.total == 7 and rollup == priced
+
+
+def test_an_executor_that_meters_nothing_still_works():
+    """Offline policies spend nothing and return a bare Answer."""
+    from agent_gauntlet.matrix import _unpack
+
+    answer, rollup = _unpack(Answer(total=7))
+    assert answer.total == 7 and rollup == {}
+
+
+def test_the_ledger_carries_what_a_metered_run_cost(tmp_path):
+    from agent_gauntlet.matrix import run_matrix as _rm
+
+    task = TaskSpec.from_yaml(AUDITED)
+    variants = architect.generate(out_dir=tmp_path / "v", task=task, models=MODELS)
+    ledger = Ledger(tmp_path / "runs.jsonl")
+    priced = {"llm_calls": {"cost_usd": 0.01, "total_tokens": 50,
+                            "cost_complete": True}}
+
+    def metered(variant, seed):
+        return naive(), priced  # noqa
+
+    _rm(task=task, variants=variants[:1], ledger=ledger, base_seed="s",
+        repeats=1, executor=metered, offline=False)
+
+    records = ledger.records()
+    assert records and all(r.rollup == priced for r in records)
+
+    row = board.summarize(records)[0]
+    assert row.cost_complete is True
+    assert row.cost_usd == pytest.approx(0.01 * len(records))
+    assert row.cost_per_run == pytest.approx(0.01)
+
+
+def test_the_probe_accepts_a_metering_executor():
+    """Every probe call site must unpack, or the live probe breaks the
+    moment the live executor starts metering."""
+    import inspect
+    from agent_gauntlet import cli
+
+    body = inspect.getsource(cli._probe)
+    for call in ('execute(variant, "probe")', 'execute(variant, "probe-faulted")',
+                 'execute(guard, "probe-sentinel")'):
+        assert f"_unpack({call})" in body, f"{call} does not unpack"

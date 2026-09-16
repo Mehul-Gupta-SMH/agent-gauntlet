@@ -226,6 +226,7 @@ def _probe(args) -> int:
     """
     from .faults import FaultSchedule
     from .interpose import run_context
+    from .matrix import _unpack
     from .score import score_run
     from .live import MissingCredentials, live_executor, preflight, parse_answer
 
@@ -290,7 +291,7 @@ def _probe(args) -> int:
             set(architect.TOOLSETS[variant.factors["toolset"]]),
             scenario.audited_ids,
         ) as ctx:
-            answer = execute(variant, "probe")
+            answer, probe_rollup = _unpack(execute(variant, "probe"))
     except Exception as exc:
         print(f"\n{type(exc).__name__}: {exc}")
         if "trace" in captured:
@@ -324,7 +325,7 @@ def _probe(args) -> int:
             kinds[name] = kinds.get(name, 0) + 1
         print(f"trace events   : {kinds}")
         try:
-            rollup = trace.rollup()
+            rollup = probe_rollup or trace.rollup()
             print(f"tokens/cost    : {rollup.get('llm_calls')}")
         except Exception as exc:  # pragma: no cover - diagnostics only
             print(f"rollup failed  : {type(exc).__name__}: {exc}")
@@ -378,7 +379,7 @@ def _probe(args) -> int:
             set(architect.TOOLSETS[variant.factors["toolset"]]),
             scenario.audited_ids,
         ) as fctx:
-            fanswer = execute(variant, "probe-faulted")
+            fanswer, _ = _unpack(execute(variant, "probe-faulted"))
     except Exception as exc:
         print(f"\n{type(exc).__name__}: {exc}")
         if _provider_unreachable(exc):
@@ -443,7 +444,7 @@ def _probe(args) -> int:
             scenario.records, FaultSchedule.clean("probe-sentinel"),
             set(granted), scenario.audited_ids,
         ) as sctx:
-            sanswer = execute(guard, "probe-sentinel")
+            sanswer, _ = _unpack(execute(guard, "probe-sentinel"))
     except Exception as exc:
         print(f"\n{type(exc).__name__}: {exc}")
         if _provider_unreachable(exc):

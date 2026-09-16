@@ -166,9 +166,26 @@ def live_executor(target: str) -> "Executor":
             projects[variant.id] = project
 
         trace = runner.run_sync(project, variant.entry_agent, _prompt_for(project, variant))
-        return parse_answer(_final_text(trace))
+        # The rollup travels WITH the answer. It used to be dropped here --
+        # `run_sync` returns token counts, cost_usd and durations, and this
+        # function threw all of it away, so a $5 live matrix recorded no
+        # spend at all and the board's cost column read n/a (#14).
+        return parse_answer(_final_text(trace)), _rollup(trace)
 
     return execute
+
+
+def _rollup(trace) -> dict:
+    """`Trace.rollup()`, or an empty dict if it cannot be read.
+
+    Metering must never be able to fail a run that otherwise succeeded: a
+    missing cost number is a gap in the record, and `cost_complete` already
+    renders that honestly. Losing the answer over it would be worse.
+    """
+    try:
+        return dict(trace.rollup())
+    except Exception:  # pragma: no cover - defensive; shape is upstream's
+        return {}
 
 
 def _prompt_for(project, variant: VariantSpec) -> str:

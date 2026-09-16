@@ -1,0 +1,66 @@
+$ gauntlet run fixtures/inventory/audited.yaml --out runs --live \
+    --target langgraph --repeats 2 --seeds 3
+  (GitHub Actions, live-gauntlet.yml, run 35149486157, commit 3161c0f)
+  20:56:29 -> 21:32:59 UTC, 36m30s
+
+task        inventory_total_audited  (oracle=full)
+fingerprint d11a0b2a6801ee74
+models      cheap=anthropic/claude-haiku-4-5, smart=anthropic/claude-sonnet-5
+variants    9 generated (1 sentinel)
+            7a4e6b803b0e47d2  model-cheap__prompt-naive__toolset-records
+            933fa775677d4cf5  model-cheap__prompt-naive__toolset-records+summary
+            04ec0dd0f707307b  model-cheap__prompt-naive__toolset-records-partial
+            945f4fe78d3e9cee  model-cheap__prompt-verifying__toolset-records
+            efc01ed4654b36a9  model-cheap__prompt-verifying__toolset-records+summary
+            f47051376e441e42  model-smart__prompt-naive__toolset-records
+            fd8cb651e09e2080  model-smart__prompt-naive__toolset-records+summary
+            e7314149447f2c7a  model-smart__prompt-verifying__toolset-records
+            7245e8035688f081  model-smart__prompt-verifying__toolset-records+summary
+mode        LIVE via target=langgraph -- this spends money
+runs        324 across 3 seed(s)
+
+--- board --------------------------------------------------------------
+variant                             qual   acc  clean  fault  prop   det   rep   FA   ttd     $/run
+smart verifying records+summary     100%  1.00   100%   100%    0%  100%  100%   0%     1       n/a  <- frontier
+cheap verifying records+summary      61%  0.90   100%    22%   91%  100%   22%   6%     6       n/a  [GATED: propagated]
+cheap naive records+summary          50%  0.89   100%     0%  100%  100%    0%   0%     7       n/a  [GATED: propagated]
+cheap naive records                  50%  0.87   100%     0%  100%   n/a   n/a   0%   n/a       n/a  [GATED: propagated]
+smart naive records                  50%  0.87   100%     0%  100%   n/a   n/a  33%   n/a       n/a  [GATED: propagated]
+cheap verifying records              50%  0.87   100%     0%  100%   n/a   n/a   0%   n/a       n/a  [GATED: propagated]
+smart naive records+summary          50%  0.87   100%     0%  100%  100%    0%   6%     6       n/a  [GATED: propagated]
+smart verifying records              50%  0.86   100%     0%  100%   n/a   n/a   0%   n/a       n/a  [GATED: propagated]
+cheap naive records-partial           0%  0.51     0%     0%    0%   n/a   n/a   0%   n/a       n/a  [sentinel]
+
+  no run reported a price (offline, or the roll-up carried none)
+
+--- per-factor effects -------------------------------------------------
+prompt       spread=  15%   naive=50%  verifying=65%
+toolset      spread=  15%   records=50%  records+summary=65%
+model        spread=  10%   cheap=53%  smart=62%
+
+  One-at-a-time marginal effect. Wrong under factor interaction; Shapley attribution is issue #22.
+
+--- stability gate -----------------------------------------------------
+  variants=9  seeds=3  pairs=3  undefined tau=0
+  median tau      = 0.8451542547285166
+  top-1 stability = 100%
+
+  pre-registered bar (fingerprint d11a0b2a6801ee74):
+    median tau      >= 0.7
+    top-1 stability >= 0.6
+    seeds           >= 3
+    set by Mehul-Gupta-SMH on 2026-09-15
+
+  GATE: PASS -- the ranking held across seeds at the bar set in advance.
+
+--- winner -------------------------------------------------------------
+  model-smart__prompt-verifying__toolset-records+summary
+  selected on seed0, seed1 -> accuracy=1.000   (not the number to quote)
+  HELD-OUT    seed2 -> accuracy=1.000   <- report this one
+  optimism    +0.000   held-out rank 1 of 1
+
+  quality=100%  false alarms=0%  propagation=0%
+  exported to runs/winner
+  run it:  commonadk validate runs/winner
+
+wrote       runs/runs.jsonl, runs/summary.json

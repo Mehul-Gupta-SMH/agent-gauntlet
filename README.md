@@ -7,16 +7,17 @@ different models, prompts, tools, frameworks — runs them against that task whi
 **deliberately lying to them through their own tools**, and returns a ranked,
 cost-aware answer plus the winning configuration as something you can run.
 
-> **Status: early build, gate not passed.** The loop runs end to end —
+> **Status: the measurement gate passes.** The loop runs end to end —
 > `gauntlet run` generates variant `common/` projects, runs them under seeded
 > fault injection, scores mechanically, and exports the winner as a runnable
-> project. The measurement gate that decides whether any of this is worth
-> building ([M0](plan.md#m0--the-measurement-gate)) has now been **run live
-> against real agents, and it FAILED** — and the instrument check inside it
-> failed too: the deliberately-degraded sentinel variant ranked 6th of 9.
-> Measurement is being fixed before anything else gets built. Architecture and
-> open questions in [`plan.md`](plan.md); every result so far, including that
-> one, in [`experiments/`](experiments/).
+> project. The go/no-go experiment that decides whether any of this is worth
+> building ([M0](plan.md#m0--the-measurement-gate)) has been **run live against
+> real agents and passed**: median Kendall's tau 0.845 with top-1 stability
+> 100% across three seeds, against a bar fixed in advance, on a board whose
+> deliberately-degraded sentinel ranked last. It failed once first, for reasons
+> worth reading ([003](experiments/003-live-m0-gate/)). Scope and caveats in
+> [007](experiments/007-m0-gate-passed/); architecture and open questions in
+> [`plan.md`](plan.md).
 
 ## The idea in one loop
 
@@ -191,10 +192,18 @@ answer. **The pre-registered thresholds are byte-identical in the new fixture** 
 the task changed, the bar did not, and the fingerprint moved with the task,
 which is exactly what it is for.
 
-The gate has not been re-run live. Until it is, those are mostly claims — with
-one tested for $0.02: on a real model the partial audit
-[does produce reconciliation](experiments/004-hardened-fixture-probe/), and the
-answer came back as the grand total rather than the audited figure.
+All three were then verified live, one cheap check at a time, and the gate was
+re-run: **it passes** ([007](experiments/007-m0-gate-passed/)). tau 0.845,
+top-1 stability 100%, sentinel last by 35 accuracy points.
+
+The pair of numbers is the whole point. The failed run also produced a tau the
+gate would have liked — 1.0 — and it was vacuous: every variant tied, and a
+metric that cannot separate variants cannot be unstable. Here the ranking
+genuinely moves between seeds *and* every seed pair still agrees on the winner.
+
+On this task, at k=2 and three seeds, agent-gauntlet is not an expensive random
+number generator. One task, one framework, and one surviving candidate after
+gating — the limits are spelled out in the writeup.
 
 ## Related
 

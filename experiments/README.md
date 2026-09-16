@@ -21,13 +21,23 @@ Two rules this directory follows:
 | [004](004-hardened-fixture-probe/) | Does the hardened fixture work live? | $0.02 | **PASS** — the reconciliation lands on a real model; found a probe that went green having called nothing |
 | [005](005-fifth-outcome-live/) | The fifth outcome, caught in the wild | $0.02 | `SURFACED_BUT_PROPAGATED` fired on its first live faulted run — the taxonomy gap was real |
 | [006](006-live-instrument-check/) | The instrument check, against a real model | $0.03 | **PASS** — the structural sentinel undercounts by 47% live; the check printed a false number about itself |
+| [007](007-m0-gate-passed/) | **The M0 gate** | ~$5 | **PASS** — tau 0.845, top-1 100%, sentinel last. #1 answered. Found that the run recorded no cost |
 
 ## Where that leaves the question
 
 *Does a ranking of agent configurations survive a change of random seed?* (#1)
-is **still unanswered.** Experiment 003 ran the matrix against real agents, but
-the fixture could not separate its top two variants and the sentinel did not
-rank last, so the board it produced cannot be used to answer anything.
+is **answered, for this task.** [Experiment 007](007-m0-gate-passed/): median
+tau 0.845 with top-1 stability 100% across three seeds, on a board whose
+sentinel ranked last by 35 accuracy points.
+
+The pair of numbers is the point. Experiment 003 also produced a tau the gate
+would have liked — 1.0 — and it was vacuous, because every variant tied and a
+metric that cannot separate variants cannot be unstable. Here the ranking
+genuinely moves between seeds (tau < 1) and every seed pair still agrees on
+the winner. Discrimination and stability together.
+
+What it does not cover: one task, one framework, k=2, and a field of one
+candidate after gating. Scope is spelled out in the writeup.
 
 The bar was pre-registered first, in
 [`fixtures/inventory/task.yaml`](../fixtures/inventory/task.yaml) and commit

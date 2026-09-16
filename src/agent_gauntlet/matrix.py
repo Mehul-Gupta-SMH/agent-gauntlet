@@ -9,7 +9,7 @@ robustness is measured against a variant's own baseline.
 from __future__ import annotations
 
 import uuid
-from typing import Callable, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 from .faults import FaultKind, FaultSchedule
 from .interpose import run_context
@@ -18,10 +18,28 @@ from .offline import run_policy
 from .score import Answer, score_run
 from .spec import TaskSpec, VariantSpec
 
-Executor = Callable[[VariantSpec, str], Answer]
-"""Given a variant, produce its answer. The offline executor runs a scripted
-policy; a live one would drive `commonadk.runners.get_runner(target).run_sync`
-and parse the final message."""
+Executor = Callable[[VariantSpec, str], Any]
+"""Given a variant, produce its answer -- and, if it metered one, its roll-up.
+
+Returns either an `Answer` or an `(Answer, rollup)` pair. The offline
+executor runs a scripted policy and meters nothing; the live one drives
+`commonadk.runners.get_runner(target).run_sync` and returns what that run
+cost alongside what it said.
+
+The pair exists because the first version returned the answer alone. The
+live path had the `Trace` in hand -- token counts, `cost_usd`, durations,
+all verified as complete back in experiment 002 -- and dropped it on the
+floor, so a full paid matrix recorded no spend and the board's cost column
+read `n/a` (#14).
+"""
+
+
+def _unpack(result: Any) -> tuple[Answer, dict]:
+    """Accept an executor that meters and one that does not."""
+    if isinstance(result, tuple):
+        answer, rollup = result
+        return answer, dict(rollup or {})
+    return result, {}
 
 
 def offline_executor(variant: VariantSpec, seed: str) -> Answer:
@@ -103,7 +121,9 @@ def run_matrix(
                         _allowed_tools(variant),
                         scenario.audited_ids,
                     ) as ctx:
-                        answer = execute(variant, f"{seed}:{condition}")
+                        answer, rollup = _unpack(
+                            execute(variant, f"{seed}:{condition}")
+                        )
                         score = score_run(
                             task=task,
                             scenario=scenario,
@@ -125,6 +145,7 @@ def run_matrix(
                         schedule=schedule,
                         score=score,
                         answer=answer,
+                        rollup=rollup,
                         tool_calls=list(ctx.calls),
                         offline=offline,
                     )
