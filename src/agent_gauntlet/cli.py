@@ -104,6 +104,70 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     return 1
 
 
+_NEVER_THE_PROVIDER = (
+    ImportError, AttributeError, TypeError, ValueError,
+    KeyError, IndexError, OSError, NotImplementedError,
+)
+"""Failures a remote service cannot cause.
+
+A missing package, a bad attribute, a wrong signature -- these are always
+this repo or its environment. `ModuleNotFoundError` is an `ImportError`,
+which is the specific case that shipped a green probe having called nothing.
+`OSError` covers `FileNotFoundError`; the connection errors that subclass it
+are caught by the markers below, which are checked first.
+"""
+
+_PROVIDER_SHAPED = (
+    "timeout", "timed out", "connection", "unreachable", "overloaded",
+    "rate limit", "rate_limit", "too many requests", "quota",
+    "429", "500", "502", "503", "529",
+    "service unavailable", "temporarily unavailable", "try again",
+    "apiconnection", "apistatus", "apitimeout", "apierror",
+    "remotedisconnected", "ssl", "econnreset", "authentication",
+    "unauthorized", "invalid api key", "credit balance",
+)
+"""Substrings that positively mark a failure as the provider's or the
+network's, matched against the exception type name and its message.
+
+Deliberately a positive test. The alternative -- treat anything we do not
+recognise as an outage -- is how a probe reports "provider outage" for a
+missing import.
+"""
+
+
+def _provider_unreachable(exc: BaseException) -> bool:
+    """Did the model genuinely fail to answer, for reasons not ours?
+
+    Unknown failures are OURS. A false red is annoying and actionable; a
+    false green is invisible, and the point of the probe is to be believed.
+
+    The whole chain is inspected, not just the outermost exception: SDKs
+    wrap, and a lazily-imported dependency surfaces as a `RuntimeError`
+    whose `__cause__` is the `ModuleNotFoundError` that actually explains it.
+    """
+    chain: list[BaseException] = []
+    seen: set[int] = set()
+    cur: Optional[BaseException] = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        chain.append(cur)
+        cur = cur.__cause__ or cur.__context__
+
+    # Checked before the never-the-provider types because these subclass
+    # OSError, which is in that tuple for FileNotFoundError's sake.
+    if any(isinstance(e, (ConnectionError, TimeoutError)) for e in chain):
+        return True
+
+    # Any import/type/attribute failure anywhere in the chain settles it.
+    # This also stops a message from matching by accident -- an
+    # `ImportError: cannot import name 'Timeout'` contains "timeout".
+    if any(isinstance(e, _NEVER_THE_PROVIDER) for e in chain):
+        return False
+
+    haystack = " ".join(f"{type(e).__name__} {e}" for e in chain).lower()
+    return any(marker in haystack for marker in _PROVIDER_SHAPED)
+
+
 def _probe(args) -> int:
     """One live call against one variant, with the raw reply shown.
 
@@ -126,6 +190,16 @@ def _probe(args) -> int:
     can act on is indistinguishable from the background, and it hides the
     red signals that matter. A probe that fails the build when Anthropic has
     a bad afternoon would reintroduce exactly that.
+
+    **4 must be earned, never assumed.** The first version of this decided
+    it by absence -- nothing reached `_final_text`, so "the call never came
+    back, so it must be the network". A missing `langchain_core` satisfies
+    that too, and the first automatic probe reported a provider outage,
+    exited 0, and went green having called no model at all. A false green is
+    worse than the false red it was avoiding: nobody investigates a pass.
+
+    So the default is now *ours*. Only a positively provider-shaped failure
+    earns 4; anything unrecognised is this repo's problem and goes red.
     """
     from .faults import FaultSchedule
     from .interpose import run_context
@@ -181,19 +255,19 @@ def _probe(args) -> int:
         ) as ctx:
             answer = execute(variant, "probe")
     except Exception as exc:
-        # Classified by evidence, not by exception type: matching provider
-        # exception names would be guesswork that differs across six SDKs.
-        # If nothing ever reached `_final_text`, the call did not come back
-        # at all -- that is the network or the provider, not this repo.
-        reached_us = "trace" in captured
         print(f"\n{type(exc).__name__}: {exc}")
-        if not reached_us:
-            print("\nUNREACHABLE: the model call never returned a trace.")
+        if "trace" in captured:
+            print("\nFAILED: the run produced a trace and then raised. That is")
+            print("ours -- the defect is between the trace and the parsed answer.")
+            return 1
+        if _provider_unreachable(exc):
+            print("\nUNREACHABLE: the model could not be reached.")
             print("Provider outage, rate limit, or a revoked key. This says")
             print("nothing about the commit -- not a build failure.")
             return 4
-        print("\nFAILED: the run produced a trace and then raised. That is")
-        print("ours -- the defect is between the trace and the parsed answer.")
+        print("\nFAILED: the run raised before any model reply arrived, and")
+        print("the failure is not provider-shaped -- a missing dependency, a")
+        print("bad import, a broken build. Ours, and the build should be red.")
         return 1
     finally:
         _live._final_text = original

@@ -330,3 +330,63 @@ def test_probe_runs_against_the_hardened_fixture(tmp_path, monkeypatch, capsys):
     assert code == 0, "a wrong answer is a result, not a broken path"
     assert "ANSWER: the AUDITED figure" in out
     assert str(audited.expected_total) in out
+
+
+def test_missing_dependency_is_never_reported_as_a_provider_outage(tmp_path, monkeypatch):
+    """The regression that shipped a green probe having called no model.
+
+    `live-probe.yml` installed the package but not the langgraph extra, so
+    the run died on `ModuleNotFoundError: No module named 'langchain_core'`.
+    The classifier decided that by absence -- nothing had reached
+    `_final_text`, so "the call never came back, so it must be the network"
+    -- reported a provider outage, exited 0 and went green.
+
+    A false green is worse than the false red it was avoiding: nobody
+    investigates a pass.
+    """
+    def missing_dep(variant, seed):
+        raise ModuleNotFoundError("No module named 'langchain_core'")
+
+    assert _run_probe(monkeypatch, tmp_path, missing_dep, FIXTURE) == 1
+
+
+def test_a_wrapped_missing_dependency_is_also_ours(tmp_path, monkeypatch):
+    """SDKs wrap. The cause chain has to be inspected, not just the top."""
+    def wrapped(variant, seed):
+        try:
+            raise ModuleNotFoundError("No module named 'langchain_core'")
+        except ModuleNotFoundError as inner:
+            raise RuntimeError("runner failed to start") from inner
+
+    assert _run_probe(monkeypatch, tmp_path, wrapped, FIXTURE) == 1
+
+
+def test_an_unrecognised_failure_defaults_to_ours(tmp_path, monkeypatch):
+    """Unknown is OURS. A false red is actionable; a false green is not."""
+    def mystery(variant, seed):
+        raise RuntimeError("something nobody predicted")
+
+    assert _run_probe(monkeypatch, tmp_path, mystery, FIXTURE) == 1
+
+
+def test_an_import_error_mentioning_timeout_is_still_ours(tmp_path, monkeypatch):
+    """The message matches a provider marker; the type settles it anyway."""
+    def confusing(variant, seed):
+        raise ImportError("cannot import name 'Timeout' from 'httpx'")
+
+    assert _run_probe(monkeypatch, tmp_path, confusing, FIXTURE) == 1
+
+
+@pytest.mark.parametrize("exc", [
+    RuntimeError("overloaded_error: the model is overloaded"),
+    RuntimeError("HTTP 529 from api.anthropic.com"),
+    RuntimeError("rate limit exceeded, please try again"),
+    ConnectionError("connection reset by peer"),
+    TimeoutError("read timed out"),
+])
+def test_genuine_provider_failures_still_earn_code_4(tmp_path, monkeypatch, exc):
+    """The build must not go red because a provider had a bad afternoon."""
+    def unreachable(variant, seed):
+        raise exc
+
+    assert _run_probe(monkeypatch, tmp_path, unreachable, FIXTURE) == 4

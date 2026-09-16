@@ -54,9 +54,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: |
+      # The target decides which CommonADK extra is needed. Installing only
+      # the package was how the first automatic probe died on a missing
+      # `langchain_core` -- and, worse, reported it as a provider outage.
+      - name: Install, including the target's SDK
+        env:
+          TARGET: ${{ inputs.target || 'langgraph' }}
+        run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+          extra="$TARGET"
+          [ "$extra" = "google-adk" ] && extra="google"
+          pip install "commonadk[$extra]"
+          # Fail loudly here rather than letting the probe misread it later.
+          python -c "import commonadk.runners as r; r.get_runner('$TARGET')"
 
       - name: Probe the live path
         env:
