@@ -1,209 +1,145 @@
 # agent-gauntlet
 
-**Which agent configuration should you actually ship?**
+**Search the space of agent configurations under deliberate tool failure, and
+ship the one that survives.**
 
-agent-gauntlet takes a task, generates many candidate agent configurations —
-different models, prompts, tools, frameworks — runs them against that task while
-**deliberately lying to them through their own tools**, and returns a ranked,
-cost-aware answer plus the winning configuration as something you can run.
+You have a task and a dozen plausible ways to build an agent for it — which
+model, which prompt strategy, which tools, which framework. agent-gauntlet runs
+all of them against the same scenarios while **lying to them through their own
+tools**, and hands back a ranked, cost-aware answer plus the winning
+configuration as a runnable project.
 
-> **Status: the measurement gate passes.** The loop runs end to end —
-> `gauntlet run` generates variant `common/` projects, runs them under seeded
-> fault injection, scores mechanically, and exports the winner as a runnable
-> project. The go/no-go experiment that decides whether any of this is worth
-> building ([M0](plan.md#m0--the-measurement-gate)) has been **run live against
-> real agents and passed**: median Kendall's tau 0.845 with top-1 stability
-> 100% across three seeds, against a bar fixed in advance, on a board whose
-> deliberately-degraded sentinel ranked last. It failed once first, for reasons
-> worth reading ([003](experiments/003-live-m0-gate/)). Scope and caveats in
-> [007](experiments/007-m0-gate-passed/); architecture and open questions in
-> [`plan.md`](plan.md).
+[![ci](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/workflows/ci.yml/badge.svg)](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/workflows/ci.yml)
+[![live-probe](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/workflows/live-probe.yml/badge.svg)](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/workflows/live-probe.yml)
 
-## The idea in one loop
+---
+
+## Quickstart
+
+```bash
+pip install -e .
+
+# Offline: scripted policies, no credentials, no spend.
+# Exercises the whole pipeline in about a second.
+gauntlet run fixtures/inventory/audited.yaml --out runs --repeats 2 --seeds 3
+
+# Live: needs ANTHROPIC_API_KEY. Prove the path first (~$0.03),
+# then run the matrix (~$5).
+gauntlet probe fixtures/inventory/audited.yaml --target langgraph
+gauntlet run fixtures/inventory/audited.yaml --out runs --live \
+  --target langgraph --repeats 2 --seeds 3
+```
+
+## What you get
 
 ```
-task + access
-     |
-     v
-generate variants        many configurations, each a runnable agent project
-     |
-     v
-compete under chaos      same task, same scenarios, seeded tool faults
-     |
-     v
-critique + judge         executable checks first, LLM judging only where needed
-     |
-     v
-leaderboard              quality / cost / tokens / latency / robustness
-     |
-     v
-export the winner        a config you can deploy, not a PDF
+variant                             qual   acc  clean  fault  prop   det   rep   FA   ttd
+smart verifying records+summary     100%  1.00   100%   100%    0%  100%  100%   0%     1   <- frontier
+cheap verifying records+summary      61%  0.90   100%    22%   91%  100%   22%   6%     6   [GATED]
+cheap naive    records+summary       50%  0.89   100%     0%  100%  100%    0%   0%     7   [GATED]
+cheap naive    records-partial        0%  0.51     0%     0%    0%   n/a   n/a   0%   n/a   [sentinel]
+
+prompt   spread = 15%   naive 50%  -> verifying 65%
+toolset  spread = 15%   records 50% -> records+summary 65%
+model    spread = 10%   cheap 53%  -> smart 62%
+
+median tau = 0.845   top-1 stability = 100%
+GATE: PASS -- the ranking held across seeds at the bar set in advance.
+
+winner: model-smart__prompt-verifying__toolset-records+summary
+  HELD-OUT seed2 -> accuracy=1.000   <- report this one
+  exported to runs/winner
 ```
+
+Three columns worth reading twice:
+
+- **`prop`** — did an injected falsehood reach the final answer? Any propagation
+  gates the configuration regardless of how well it scores elsewhere.
+- **`det` vs `rep`** — noticing a fault and *fixing* it are different
+  capabilities. Three variants above sit at detection 100% and repair 0%: they
+  flag the anomaly and ship the corrupted number anyway.
+- **`ttd`** — steps from evidence becoming reachable to the agent acting on it.
+
+## How it works
+
+```mermaid
+flowchart LR
+    T["task spec<br/>+ pre-registered bar"] --> G["generate variants<br/><i>model × prompt × tools</i>"]
+    G --> R["run every cell<br/><i>clean + faulted twin</i>"]
+    C["seeded faults<br/><i>plausible lies</i>"] --> R
+    R --> L[("append-only ledger")]
+    L --> S["score against the oracle"]
+    S --> B["rank · attribute · gate"]
+    B --> W["verdict + runnable winner"]
+
+    style C fill:#7f1d1d,stroke:#991b1b,color:#fff
+    style W fill:#14532d,stroke:#166534,color:#fff
+```
+
+A tool interposer sits between every agent and every tool call, injecting seeded
+faults — above all *wrong-but-plausible results*, where the agent believes the
+call succeeded and receives a falsehood.
+
+**Because the harness injected the fault, it knows the truth.** So "did the agent
+propagate the falsehood into its answer?" is decided by comparison rather than by
+a judge — no rubric, no similarity threshold, no LLM grading an LLM. That single
+property is what the rest of the design is arranged around.
+
+Full detail: [**architecture docs**](docs/architecture/) — [HLD](docs/architecture/hld.md) · [LLD](docs/architecture/lld.md).
 
 ## Three things that make it different
 
-**1. Chaos is scored, not smoke-tested.** A tool interposer sits between every
-agent and every tool call, injecting seeded faults — timeouts, schema
-violations, prompt-injection payloads, and above all *wrong-but-plausible
-results*, where the agent believes the call succeeded and receives a falsehood.
-
-Because the harness *injected* the fault, it knows the truth. So
-"did the agent silently propagate the falsehood into its final answer?" is
-objectively decidable — no rubric, no judge, no bias. That is a rare thing in
-agent evaluation, and it is the core of the project.
+**1. Chaos is scored, not smoke-tested.** Fault injection is the measurement, not
+a robustness check bolted on afterwards. It is what creates the oracle.
 
 **2. The framework is a searchable variable.** Built on
-[CommonADK](https://github.com/Mehul-Gupta-SMH/CommonADK), which materializes
-one framework-neutral project definition onto six agent SDKs (Google ADK, OpenAI
-Agents, Claude Agent SDK, CrewAI, AutoGen, LangGraph). So "the same agent on
-CrewAI vs LangGraph vs Google ADK, measured" is just another axis of the search.
+[CommonADK](https://github.com/Mehul-Gupta-SMH/CommonADK), which materializes one
+framework-neutral project definition onto six agent SDKs (Google ADK, OpenAI
+Agents, Claude Agent SDK, CrewAI, AutoGen, LangGraph). "The same agent on CrewAI
+vs LangGraph, measured" is just another axis.
 
 **3. It answers with knowledge, not a champion.** A tournament tells you variant
 #7 won and nothing else — the variables were confounded. agent-gauntlet treats
-model, prompt strategy, tool set, and topology as named factors and reports
-**per-factor marginal effects**:
+model, prompt strategy and tool set as named factors and reports per-factor
+effects, with the interaction caveat attached to the numbers rather than
+sitting in a footnote.
 
-> Prompt strategy is worth 12 points. The model upgrade is worth 4 points at 3×
-> the cost. The extra tools did nothing.
+## Status
 
-## Results so far
+The go/no-go experiment this project was built to run — *does a ranking of agent
+configurations survive a change of random seed?* — has been **run live and
+passed**: median Kendall's tau 0.845 with top-1 stability 100% across three
+seeds, against a bar fixed in advance, on a board whose deliberately-degraded
+sentinel ranked last.
 
-Raw output for everything below is committed in [`experiments/`](experiments/).
-Numbers quoted here are traceable to a file there.
+It failed once first, for reasons worth reading
+([experiment 003](experiments/003-live-m0-gate/)).
 
-### The harness measures what it claims
+Scope: one task, one framework, k=2 repeats, and one configuration surviving the
+propagation gate. Spelled out in [experiment 007](experiments/007-m0-gate-passed/).
 
-[Experiment 001](experiments/001-offline-harness-validation/) — 324 offline
-runs, $0.00. Scoring classifies all four terminal outcomes, propagation is
-confined to credulous variants and gates them, the sentinel ranks last, and the
-pre-registered gate renders a verdict.
+Every result, with raw output committed alongside it, is in
+[`experiments/`](experiments/). Design discussion and open questions are in
+[`plan.md`](plan.md) and the issue tracker.
 
-It also **fails its own gate**, correctly:
+## Honest caveats
 
-```
-median tau      = 1.0
-top-1 stability = 0%
-GATE: FAIL -- top-1 stability 0.00 < 0.6
-```
-
-Perfect rank stability *and* no unique winner. Read alone, tau 1.0 looks like a
-resounding pass; it is vacuous, because a metric that cannot separate variants
-cannot be unstable. The gate refusing to certify that is the point.
-
-### The live path works
-
-[Experiment 002](experiments/002-live-path-validation/) — ~$0.05 across four CI
-dispatches. A generated project loaded under CommonADK, the langgraph runner
-drove `claude-sonnet-5`, tools were called through the interposer, and the
-answer parsed and scored. Token counts and `cost_usd` arrive complete.
-
-Getting there cost two defects, each of which would have produced a full matrix
-of confident, believable zeros:
-
-1. The trace reader probed for attribute names that do not exist on CommonADK's
-   events.
-2. `RunFinished.final_text` carried `repr()` of the model's content-block list,
-   so no line-anchored pattern could match it.
-
-**The second one matters most.** The harness's own diagnostics concluded *"the
-model produced text but not in the required format."* That was false — the
-model had followed the contract exactly and computed the right answer. A false
-finding about instruction-following is precisely the error this project exists
-to avoid making about other people's agents, and the harness made it about its
-own. It is now a regression test built from the captured reply.
-
-### The gate ran live, and failed — along with its own instrument check
-
-[Experiment 003](experiments/003-live-m0-gate/) — 324 live runs, 33 minutes,
-~$5. The bar was [pre-registered first](fixtures/inventory/task.yaml) (median
-Kendall's tau ≥ 0.7, top-1 stability ≥ 0.6, seeds ≥ 3), covered by the task
-fingerprint, so it could not be moved afterwards without changing the hash every
-run record carries.
-
-```
-median tau      = 1.0
-top-1 stability = 0%
-GATE: FAIL -- top-1 stability 0.00 < 0.6
-NO WINNER
-```
-
-Four results worth more than the verdict:
-
-**The sentinel ranked 6th of 9.** The board is supposed to place a deliberately
-degraded variant last; that is the instrument check. It did not, so *this board
-should be read with suspicion, gate verdict included.* The cause is a general
-one: the sentinel was degraded by **instruction** ("speed matters far more than
-completeness; do not bother reading everything"). A scripted policy obeys that
-and ranks last. A capable model reads everything anyway and scores 100% clean.
-**You cannot degrade a capable model by asking it to be careless** — a sentinel
-has to be degraded structurally.
-
-**There is a fifth outcome the taxonomy has no bucket for.** Two variants scored
-detection 100% *and* propagation 100% — they flagged the anomaly and shipped the
-corrupted total anyway. That may be the most dangerous pattern on the board, and
-the four-outcome taxonomy files it under the best-looking bucket there is.
-
-**The gate failed on a ceiling, not on instability.** tau was 1.0; the top two
-variants tied at exactly 1.00, so no seed pair had a unique winner to agree on.
-The question the project exists to answer is still **unanswered** — this run
-showed the fixture is too easy, not that rankings are unstable.
-
-**The model axis did nothing.** Prompt moved 25 points, toolset moved 25 points,
-Haiku vs Sonnet moved zero.
-
-## Honest caveats, up front
-
-- **Scoring is the whole ballgame.** Everything downstream is only as good as
-  the judge. The design pushes as much scoring as possible onto executable
-  checks and treats LLM-as-judge bias as a certainty to be engineered against.
+- **Scoring is the whole ballgame.** Everything downstream is only as good as the
+  grading. The design pushes as much as possible onto executable checks precisely
+  because a judge would import its own bias into the answer.
 - **One run is not a measurement.** Agent runs are high-variance. Every variant
-  runs k times per scenario, and no winner is declared when intervals overlap.
-- **This is expensive.** Variants × scenarios × repeats × (clean + faulted) is
-  easily 100–1000× the cost of a single agent run. Budget ceilings and
-  successive halving are load-bearing parts of the design, not optimizations.
+  runs k times per scenario, and no winner is declared when the top is tied.
+- **This is expensive.** Variants × scenarios × repeats × (clean + faulted) ×
+  seeds is multiplicative. Budget ceilings and cheap-check escalation are
+  load-bearing parts of the design, not optimizations.
 - **Generated code runs sandboxed. Always.** LLM-written tools executing against
   real credentials is the obvious way for a project like this to hurt someone.
-- **The harness is a suspect too, and it fails green.** Every defect this
-  project has found in itself presented as a *pass*, never as an error: the
-  harness blaming the model for its own bug, a sentinel a capable model simply
-  ignored, and a CI probe that went green having called no model at all. A
-  crash gets investigated; a green tick does not. Cheap checks that
-  escalate — `smoke`, then `probe`, then the matrix — exist for that reason,
-  and each one has to be able to tell "this passed" from "this did nothing."
-
-## Before any of it gets built
-
-There is a single go/no-go experiment: run the whole gauntlet twice, changing
-only the random seed, and measure whether the two leaderboards agree.
-
-If they do not, this is an expensive random number generator and no amount of
-feature work fixes that. See [`plan.md`](plan.md#m0--the-measurement-gate).
-
-It has been run once (experiment 003) and did not pass. It also did not return a
-verdict on the underlying question, because the fixture could not separate the
-top two variants and the sentinel did not rank last.
-
-All three fixes that result called for have since landed: the sentinel is
-degraded structurally rather than by instruction, `SURFACED_BUT_PROPAGATED`
-names the fifth outcome, and
-[`fixtures/inventory/audited.yaml`](fixtures/inventory/audited.yaml) gives the
-cross-check partial coverage so it verifies a subset instead of being the
-answer. **The pre-registered thresholds are byte-identical in the new fixture** —
-the task changed, the bar did not, and the fingerprint moved with the task,
-which is exactly what it is for.
-
-All three were then verified live, one cheap check at a time, and the gate was
-re-run: **it passes** ([007](experiments/007-m0-gate-passed/)). tau 0.845,
-top-1 stability 100%, sentinel last by 35 accuracy points.
-
-The pair of numbers is the whole point. The failed run also produced a tau the
-gate would have liked — 1.0 — and it was vacuous: every variant tied, and a
-metric that cannot separate variants cannot be unstable. Here the ranking
-genuinely moves between seeds *and* every seed pair still agrees on the winner.
-
-On this task, at k=2 and three seeds, agent-gauntlet is not an expensive random
-number generator. One task, one framework, and one surviving candidate after
-gating — the limits are spelled out in the writeup.
+- **The harness is a suspect too, and it fails green.** Every defect this project
+  has found in itself presented as a *pass*, never an error — a diagnostic that
+  blamed the model for a harness bug, a sentinel a capable model ignored, a CI
+  probe that went green having called no model at all. A crash gets investigated;
+  a green tick does not. The escalating checks exist for that reason, and each
+  one has to distinguish "this passed" from "this did nothing."
 
 ## Related
 

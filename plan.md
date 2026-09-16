@@ -63,6 +63,14 @@ That is the deliverable. The champion is a by-product.
 
 ## Architecture
 
+> Implemented architecture is documented in
+> [`docs/architecture/`](docs/architecture/) — [HLD](docs/architecture/hld.md)
+> for the shape, [LLD](docs/architecture/lld.md) for the modules, data model and
+> invariants. This section is the *design intent* the build was aimed at; where
+> the two disagree, the docs describe what exists and this describes what was
+> meant.
+
+
 Seven subsystems, each independently testable.
 
 ```
