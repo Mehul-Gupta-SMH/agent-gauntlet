@@ -83,7 +83,13 @@ def test_propagation_counted_over_all_faulted_runs(run):
     observable whether or not a cross-check existed.
     """
     _, _, results, _ = run
-    naive = [r for r in results if r.factors.get("prompt") == "naive"]
+    # The sentinel also carries prompt=naive -- its degradation is in the tool
+    # set now -- but it undercounts far past the credulous figure, so it is
+    # genuinely not propagating and must not be asserted about here.
+    naive = [
+        r for r in results
+        if r.factors.get("prompt") == "naive" and not r.is_sentinel
+    ]
     assert naive, "no naive variants generated"
     for r in naive:
         assert r.propagation_rate == 1.0, (  # over decidable runs only
@@ -215,10 +221,49 @@ def test_factor_effects_carry_their_caveat(run):
 
 
 def test_sentinel_excluded_from_attribution(run):
-    """A deliberately broken config would drag down every level it sits in."""
+    """A deliberately broken config would drag down every level it sits in.
+
+    Sharper now than when the sentinel had a prompt level of its own: it
+    shares `prompt=naive` with real variants, so exclusion has to happen on
+    the *variant*, not by the level name never colliding.
+    """
     _, _, results, _ = run
     effects = {e.factor: e for e in board.factor_effects(results)}
-    assert "sentinel" not in effects["prompt"].levels
+    assert architect.SENTINEL_TOOLSET not in effects["toolset"].levels
+
+    sentinel = next(r for r in results if r.is_sentinel)
+    assert effects["prompt"].levels["naive"] > sentinel.quality, (
+        "the sentinel's quality leaked into the prompt level it shares"
+    )
+
+
+def test_sentinel_is_degraded_structurally_not_by_prompt(run):
+    """The defect from experiment 003, pinned at the variant level.
+
+    A prompt asking a capable model to be careless is not a degradation --
+    the model ignores it. The sentinel must differ from a real variant by a
+    capability it does not have.
+    """
+    _, variants, _, _ = run
+    sentinel = next(v for v in variants if v.is_sentinel)
+
+    assert sentinel.factors["prompt"] != "sentinel", "no attitudinal sentinel"
+    assert sentinel.factors["toolset"] == architect.SENTINEL_TOOLSET
+
+    granted = architect.TOOLSETS[sentinel.factors["toolset"]]
+    assert "list_records" not in granted, "it must not be able to enumerate fully"
+    assert "get_summary" not in granted, "nor to reach the cross-check"
+
+    prompt = (Path(sentinel.common_dir) / "auditor" / "skill.md").read_text()
+    peers = [
+        v for v in variants
+        if not v.is_sentinel and v.factors["prompt"] == sentinel.factors["prompt"]
+    ]
+    assert peers, "no real variant shares the sentinel's prompt"
+    for real in peers:
+        assert prompt == (Path(real.common_dir) / "auditor" / "skill.md").read_text(), (
+            "the sentinel must be told exactly what a real variant is told"
+        )
 
 
 def test_pareto_front_is_non_dominated(run):

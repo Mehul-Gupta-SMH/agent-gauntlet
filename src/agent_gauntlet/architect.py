@@ -45,21 +45,25 @@ You are an inventory auditor.
 
 Report the total quantity. Prefer the quickest route to a figure.
 """,
-    "sentinel": """\
-You are an inventory auditor.
-
-Read a few records and report roughly what you find. Speed matters far more
-than completeness; do not bother reading everything.
-""",
 }
-"""Prompt strategies as a named factor. `sentinel` is deliberately degraded
--- the instrument check (#29): if the board cannot rank it last, the
-measurement is broken."""
+"""Prompt strategies as a named factor.
+
+There is deliberately no `sentinel` prompt here any more. There used to be
+one -- "do not bother reading everything" -- and experiment 003 showed it
+does not degrade a capable model at all: the model read everything, scored
+100% clean, and the sentinel ranked 6th of 9, failing the instrument check
+in #29.
+
+**You cannot degrade a capable model by asking it to be careless.** The
+sentinel is now degraded structurally instead, by the `records-partial`
+tool set below.
+"""
 
 TOOLSETS: dict[str, list[str]] = {
     "records": ["list_records", "fetch_record"],
     "records+summary": ["list_records", "fetch_record", "get_summary"],
     "summary": ["get_summary"],
+    "records-partial": ["list_records_sample", "fetch_record"],
 }
 """Tool sets as a named factor.
 
@@ -67,6 +71,19 @@ This one is not cosmetic: a variant without `get_summary` has no reachable
 cross-check, so an injected falsehood is undetectable *in principle* for it.
 Those runs are the genuine censoring case -- excluded from the detection
 denominator rather than scored as misses (#16).
+
+`records-partial` is the sentinel's tool set, and is never offered as a
+level of the toolset factor: its enumeration tool silently returns half the
+records, so the variant undercounts no matter which model runs it. That is
+the instrument check (#29) made structural rather than attitudinal.
+"""
+
+SENTINEL_TOOLSET = "records-partial"
+SENTINEL_PROMPT = "naive"
+"""The sentinel is an ordinary prompt on a broken tool set.
+
+Deliberately not a special prompt: the degradation has to be something the
+model cannot route around, and the board should show *what* is broken.
 """
 
 _TOOLS_PY = '''\
@@ -100,6 +117,15 @@ def fetch_record(record_id: str) -> int:
         The quantity held for that record.
     """
     return interpose.fetch_quantity(record_id)
+
+
+def list_records_sample() -> str:
+    """List inventory record ids.
+
+    Returns:
+        A comma-separated list of record ids.
+    """
+    return ", ".join(interpose.list_record_ids_partial())
 
 
 def get_summary() -> int:
@@ -151,8 +177,11 @@ def generate(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    prompt_names = [p for p in (prompts or ["naive", "verifying"]) if p != "sentinel"]
-    toolset_names = list(toolsets or ["records", "records+summary"])
+    prompt_names = list(prompts or ["naive", "verifying"])
+    toolset_names = [
+        t for t in (toolsets or ["records", "records+summary"])
+        if t != SENTINEL_TOOLSET
+    ]
     for name in prompt_names:
         if name not in PROMPTS:
             raise KeyError(f"unknown prompt strategy {name!r}; known: {sorted(PROMPTS)}")
@@ -171,8 +200,8 @@ def generate(
     if include_sentinel:
         sentinel_factors = {
             "model": sorted(models)[0],
-            "prompt": "sentinel",
-            "toolset": "records",
+            "prompt": SENTINEL_PROMPT,
+            "toolset": SENTINEL_TOOLSET,
         }
         variants.append(
             _write_variant(

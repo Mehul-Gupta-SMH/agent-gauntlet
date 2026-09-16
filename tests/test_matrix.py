@@ -20,8 +20,11 @@ VARIANTS = [
     VariantSpec(id="v_naive", factors={"prompt": "naive", "model": "cheap"}),
     VariantSpec(id="v_verify", factors={"prompt": "verifying", "model": "cheap"}),
     VariantSpec(id="v_summary", factors={"prompt": "summary_only", "model": "cheap"}),
+    # The sentinel is an ordinary policy on a broken tool set, not a special
+    # policy -- the same mechanism a live model gets (#29, experiment 003).
     VariantSpec(
-        id="v_sentinel", factors={"prompt": "sentinel", "model": "cheap"},
+        id="v_sentinel",
+        factors={"prompt": "naive", "model": "cheap", "toolset": "records-partial"},
         is_sentinel=True,
     ),
 ]

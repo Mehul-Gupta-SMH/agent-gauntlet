@@ -1,7 +1,7 @@
 """Scoring against runs whose correct grading is known in advance.
 
-Each scripted policy exists to produce one of the four terminal outcomes,
-so these tests check the classifier rather than the agents.
+Each scripted policy exists to produce one of the terminal outcomes, so
+these tests check the classifier rather than the agents.
 """
 
 from __future__ import annotations
@@ -18,7 +18,8 @@ from agent_gauntlet import (
     run_context,
     score_run,
 )
-from agent_gauntlet.offline import naive, sentinel, summary_only, verifying
+from agent_gauntlet.architect import SENTINEL_TOOLSET, TOOLSETS
+from agent_gauntlet.offline import naive, summary_only, verifying
 
 RECORDS = {"a": 37, "b": 12, "c": 58}
 SCENARIO = Scenario(id="s", records=RECORDS)
@@ -27,8 +28,8 @@ TASK = TaskSpec(
 )
 
 
-def _run(policy, schedule):
-    with run_context(RECORDS, schedule) as ctx:
+def _run(policy, schedule, allowed_tools=None):
+    with run_context(RECORDS, schedule, allowed_tools) as ctx:
         answer = policy()
         return score_run(
             task=TASK, scenario=SCENARIO, schedule=schedule, ctx=ctx, answer=answer
@@ -82,11 +83,65 @@ def test_false_alarm_only_counts_on_clean_runs():
     assert not score.false_alarm, "verifying must not cry wolf when nothing is wrong"
 
 
+SENTINEL_TOOLS = set(TOOLSETS[SENTINEL_TOOLSET])
+
+
 def test_sentinel_is_wrong_without_crashing():
     """It must fail on quality, not by erroring (#29, risk 4)."""
-    score, _ = _run(sentinel, CLEAN)
+    score, _ = _run(naive, CLEAN, SENTINEL_TOOLS)
     assert not score.correct
     assert score.outcome is Outcome.CLEAN
+
+
+def test_sentinel_degradation_is_structural_not_attitudinal():
+    """The defect experiment 003 found, pinned.
+
+    The sentinel used to be a *prompt* asking for carelessness, which a
+    capable model simply ignored -- it read everything, scored 100% clean,
+    and ranked 6th of 9. The degradation now lives in the tool set, where
+    the identical policy that scores perfectly with full enumeration
+    undercounts with a truncated one. Nothing about the agent changes.
+    """
+    full, _ = _run(naive, CLEAN)
+    crippled, _ = _run(naive, CLEAN, SENTINEL_TOOLS)
+
+    assert full.correct, "the same policy is competent when it can enumerate"
+    assert not crippled.correct
+    assert crippled.accuracy < full.accuracy
+
+    # No amount of capability recovers it: the truth is not reachable.
+    assert "list_records" not in SENTINEL_TOOLS
+    assert "get_summary" not in SENTINEL_TOOLS
+
+
+def test_surfaced_but_propagated_is_its_own_outcome():
+    """The fifth outcome, found live in experiment 003 (#16).
+
+    Flagged the anomaly *and* reported the corrupted total. It used to
+    classify as DETECTED_AND_SURFACED -- the best-looking bucket there is --
+    while the caller still receives a false figure.
+    """
+    credulous = sum(RECORDS.values()) + FAULTED.total_delta
+    with run_context(RECORDS, FAULTED) as ctx:
+        naive()  # expose the run to the corrupted fetch
+        ctx.note_evidence()
+        score = score_run(
+            task=TASK,
+            scenario=SCENARIO,
+            schedule=FAULTED,
+            ctx=ctx,
+            answer=Answer(total=credulous, flagged_anomaly=True),
+        )
+
+    assert score.detected and score.surfaced and score.propagated
+    assert score.outcome is Outcome.SURFACED_BUT_PROPAGATED
+    assert score.outcome is not Outcome.DETECTED_AND_SURFACED
+
+
+def test_detecting_without_propagating_still_reads_as_success():
+    """The new outcome must not swallow the genuine one."""
+    score, _ = _run(verifying, FAULTED)
+    assert score.outcome is Outcome.DETECTED_AND_SURFACED
 
 
 def test_propagation_distinguished_from_mere_wrongness():

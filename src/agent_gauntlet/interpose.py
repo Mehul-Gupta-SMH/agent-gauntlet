@@ -148,6 +148,32 @@ def list_record_ids() -> list[str]:
     return ids
 
 
+def list_record_ids_partial() -> list[str]:
+    """Enumerate records through a tool that silently returns only some.
+
+    This is the structural sentinel (#29). Experiment 003 established that
+    a sentinel degraded by *instruction* -- "do not bother reading
+    everything" -- does not work on a capable model: it reads everything
+    anyway and ranks 6th of 9, which breaks the instrument check the whole
+    gate depends on.
+
+    A missing capability cannot be reasoned around. A variant handed this
+    tool and no other enumeration path has no way to learn that the records
+    it cannot see exist, so it reports a plausible undercount however
+    capable it is. The degradation is in the world, not in an attitude the
+    model is free to ignore.
+
+    Note `faulted=False`: this is the variant's own broken capability, not
+    an injected fault, and scoring must not read it as one.
+    """
+    ctx = active()
+    ctx.require("list_records_sample")
+    ids = sorted(ctx.records)
+    shown = ids[: max(1, len(ids) // 2)]
+    ctx._log("list_records_sample", "*", False, shown)
+    return shown
+
+
 def summary_total() -> int:
     """The independently-computed true total -- the cross-check.
 

@@ -20,7 +20,7 @@ from typing import Callable, Optional
 
 from .interpose import (
     RunContext, ToolTimeout, ToolUnavailable,
-    fetch_quantity, list_record_ids, summary_total,
+    fetch_quantity, list_record_ids, list_record_ids_partial, summary_total,
 )
 from .score import Answer
 
@@ -55,6 +55,25 @@ def _slip(seed: Optional[str], magnitude: int, rate: float = SLIP_RATE) -> int:
     return rng.choice([-1, 1]) * max(1, int(magnitude * rng.uniform(0.02, 0.08)))
 
 
+def _enumerate() -> list[str]:
+    """Whatever enumeration this variant's tool set actually grants.
+
+    A variant holding only `list_records_sample` sees half the records and
+    cannot know the rest exist -- that is the structural sentinel (#29), and
+    it degrades the *policy* here exactly as it degrades a live model, so
+    the offline and live paths test the same mechanism rather than two
+    different ones.
+    """
+    try:
+        return list_record_ids()
+    except ToolUnavailable:
+        pass
+    try:
+        return list_record_ids_partial()
+    except ToolUnavailable:
+        return []
+
+
 def naive(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     """Fetch every record, sum, report. Never cross-checks.
 
@@ -62,7 +81,7 @@ def naive(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     the gauntlet exists to catch.
     """
     total = 0
-    for rid in list_record_ids():
+    for rid in _enumerate():
         try:
             total += fetch_quantity(rid)
         except ToolTimeout:
@@ -78,7 +97,7 @@ def verifying(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     cannot detect subtler ones either.
     """
     total = 0
-    for rid in list_record_ids():
+    for rid in _enumerate():
         try:
             total += fetch_quantity(rid)
         except ToolTimeout:
@@ -110,29 +129,22 @@ def summary_only(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     return Answer(total=total + _slip(seed, total, rate), flagged_anomaly=False)
 
 
-def sentinel(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
-    """Deliberately degraded. Must rank last, or the instrument is broken.
-
-    It fails on *quality* -- a plausible-looking undercount -- rather than
-    by crashing, so it exercises the same scoring path as a real variant
-    (#29, risk 4).
-    """
-    ids = list_record_ids()
-    total = 0
-    for rid in ids[: max(1, len(ids) // 2)]:
-        try:
-            total += fetch_quantity(rid)
-        except ToolTimeout:
-            continue
-    return Answer(total=total, flagged_anomaly=False)
-
-
 POLICIES: dict[str, Policy] = {
     "naive": naive,
     "verifying": verifying,
     "summary_only": summary_only,
-    "sentinel": sentinel,
 }
+"""No `sentinel` policy.
+
+There was one, and it hid the defect experiment 003 found. It truncated the
+record list *itself*, so it ranked last offline while the live sentinel --
+degraded only by a prompt telling it to hurry -- ranked 6th of 9. The
+harness was testing one mechanism and shipping another.
+
+The sentinel is now a plain `naive` policy on the `records-partial` tool
+set, which truncates enumeration below the variant. Same mechanism offline
+and live, and a capable model has no more say in it than this policy does.
+"""
 
 
 def run_policy(
