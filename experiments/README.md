@@ -85,7 +85,7 @@ top-1 stability is undefined by construction.
 | Step | Cost | Proves | When |
 |---|---|---|---|
 | offline suite (`ci.yml`) | $0 | the machinery, on every Python we support | every push and PR |
-| `probe` (`live-probe.yml`) | ~$0.02 | the whole live path, end to end | **automatically**, on every push to `main` that touches code, plus daily |
+| `probe` (`live-probe.yml`) | ~$0.02 | the whole live path, clean **and** faulted | **automatically**, on every push to `main` that touches code, plus daily |
 | `matrix` (`live-gauntlet.yml`) | ~$5 | the gate | manual dispatch only |
 
 Only the last one is manual, because only the last one is expensive. Dispatch
@@ -95,6 +95,15 @@ The daily probe is not redundant with the per-push one: it catches drift no
 commit of ours causes — a model update, a CommonADK release, an SDK moving
 where the final text lives. Both defects experiment 002 found were of exactly
 that shape, and both were silent.
+
+The probe runs two live calls on the *hardest* scenario, not the first one:
+a clean run and a faulted one. The faulted half exists for a failure that is
+otherwise invisible until the matrix has spent — if an injected falsehood
+never reaches the agent, every propagation and detection number on the board
+is a confident zero and the board looks immaculate. Whether a tool call
+returned a faulted result is decidable without the model's cooperation, so
+that half is a hard failure rather than a judgement call. `--no-faulted`
+halves the cost and the coverage.
 
 The probe never fails the build for something a contributor cannot fix. It
 exits 4 when the model is unreachable (outage, rate limit, revoked key) and CI

@@ -251,11 +251,16 @@ def test_multiple_text_blocks_are_joined():
 # signal nobody can act on, hiding the ones that matter.
 
 
-def _probe_argv(fixture: Path, tmp_path: Path):
+def _probe_argv(fixture: Path, tmp_path: Path, *extra: str):
     from agent_gauntlet.cli import build_parser
 
+    # --no-faulted by default here: these exercise the clean path and the
+    # exit-code classifier with stubs that never touch the interposer, so
+    # the faulted half would (correctly) fail them for lack of tool calls.
+    # test_probe_faulted.py covers that half with a stub that does.
     return build_parser().parse_args(
-        ["probe", str(fixture), "--out", str(tmp_path / "p"), "--target", "langgraph"]
+        ["probe", str(fixture), "--out", str(tmp_path / "p"),
+         "--target", "langgraph", "--no-faulted", *extra]
     )
 
 
@@ -318,7 +323,9 @@ def test_probe_runs_against_the_hardened_fixture(tmp_path, monkeypatch, capsys):
     from agent_gauntlet import live as live_mod
     from agent_gauntlet.score import Answer
 
-    audited = TaskSpec.from_yaml(AUDITED).scenarios[0]
+    from agent_gauntlet.cli import hardest_scenario
+
+    audited = hardest_scenario(TaskSpec.from_yaml(AUDITED))
 
     def reports_the_audit(variant, seed):
         live_mod._final_text(object())
@@ -420,13 +427,28 @@ def test_probe_actually_runs_the_model_level_it_was_given(tmp_path, monkeypatch,
     def record(variant, seed):
         seen["variant"] = variant
         live_mod._final_text(object())
-        return Answer(total=TaskSpec.from_yaml(FIXTURE).scenarios[0].expected_total)
+        from agent_gauntlet.cli import hardest_scenario
+
+        return Answer(
+            total=hardest_scenario(TaskSpec.from_yaml(FIXTURE)).expected_total
+        )
 
     monkeypatch.setattr(live_mod, "preflight", lambda *a, **k: None)
     monkeypatch.setattr(live_mod, "live_executor", lambda target: record)
     _probe(build_parser().parse_args(
-        ["probe", str(FIXTURE), "--out", str(tmp_path / "p")]
+        ["probe", str(FIXTURE), "--out", str(tmp_path / "p"), "--no-faulted"]
     ))
 
     assert seen["variant"].factors["model"] == "cheap"
     assert "claude-haiku-4-5" in capsys.readouterr().out
+
+
+def test_probe_walks_the_hardest_scenario_not_the_first():
+    """The first scenario is the smallest. Certifying the matrix against it
+    tests the case the matrix contains least of."""
+    from agent_gauntlet.cli import hardest_scenario
+
+    task = TaskSpec.from_yaml(AUDITED)
+    chosen = hardest_scenario(task)
+    assert chosen is not task.scenarios[0]
+    assert len(chosen.records) == max(len(s.records) for s in task.scenarios)

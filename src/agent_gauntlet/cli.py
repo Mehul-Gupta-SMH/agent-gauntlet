@@ -89,6 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
     probe.add_argument("--out", type=Path, default=Path("runs-probe"))
     probe.add_argument("--target", default="langgraph")
     probe.add_argument(
+        "--no-faulted", dest="faulted", action="store_false",
+        help="skip the faulted half (halves the cost, and the coverage)",
+    )
+    probe.add_argument(
         "--model", default="cheap", choices=sorted(DEFAULT_MODELS),
         help="which grid level to probe (default: cheap, the lowest-cost model)",
     )
@@ -172,6 +176,17 @@ def _provider_unreachable(exc: BaseException) -> bool:
     return any(marker in haystack for marker in _PROVIDER_SHAPED)
 
 
+def hardest_scenario(task: TaskSpec):
+    """The scenario the probe walks by default.
+
+    The most records, not `scenarios[0]`. The first scenario is the
+    smallest, and a probe that only ever walks the easiest path certifies
+    the matrix against a case the matrix barely contains. Ties break on id
+    so the choice is reproducible.
+    """
+    return max(task.scenarios, key=lambda sc: (len(sc.records), sc.id))
+
+
 def _probe(args) -> int:
     """One live call against one variant, with the raw reply shown.
 
@@ -207,6 +222,7 @@ def _probe(args) -> int:
     """
     from .faults import FaultSchedule
     from .interpose import run_context
+    from .score import score_run
     from .live import MissingCredentials, live_executor, preflight, parse_answer
 
     task = TaskSpec.from_yaml(args.task)
@@ -234,7 +250,7 @@ def _probe(args) -> int:
 
     scenario = (
         task.scenario(args.scenario) if getattr(args, "scenario", None)
-        else task.scenarios[0]
+        else hardest_scenario(task)
     )
     print(f"scenario {scenario.id}: {len(scenario.records)} records, "
           f"audit covers {len(scenario.audited_ids)} "
@@ -325,14 +341,75 @@ def _probe(args) -> int:
         print("Do NOT run the matrix until this parses -- every run would")
         print("score as unanswered and the whole spend would be wasted.")
         return 1
-    print("\nOK -- the live path works end to end. The matrix is safe to run.")
+    print("\nOK -- the clean path works end to end.")
+
+    # The faulted half. Until now the probe only ever ran clean, so live
+    # fault injection was unverified until the matrix spent on it -- and if
+    # a corrupted result never reaches the agent, every propagation and
+    # detection number on the board is a confident zero. That is decidable
+    # without the model's cooperation: either a tool call returned a
+    # faulted result or it did not.
+    if not getattr(args, "faulted", True):
+        print("\n(skipping the faulted half: --no-faulted)")
+        return _answer_note(answer, scenario, DEFAULT_MODELS[level])
+
+    print("\n--- faulted half " + "-" * 43)
+    sched = FaultSchedule.build(
+        seed="probe", records=scenario.records, targets=scenario.audited_ids
+    )
+    injected = sched.faults[0]
+    print(f"injecting {injected.kind.value} on {injected.target_key}: "
+          f"{injected.true_value} -> {injected.corrupt_value} "
+          f"(shifts the total by {sched.total_delta:+d})")
+
+    try:
+        with run_context(
+            scenario.records, sched,
+            set(architect.TOOLSETS[variant.factors["toolset"]]),
+            scenario.audited_ids,
+        ) as fctx:
+            fanswer = execute(variant, "probe-faulted")
+    except Exception as exc:
+        print(f"\n{type(exc).__name__}: {exc}")
+        if _provider_unreachable(exc):
+            print("UNREACHABLE on the faulted half -- not a build failure.")
+            return 4
+        print("FAILED: the faulted run raised. Ours.")
+        return 1
+
+    was_exposed = any(c.get("faulted") for c in fctx.calls)
+    print(f"tool calls     : {[c['tool'] for c in fctx.calls]}")
+    print(f"faulted results reaching the agent: {sum(bool(c.get('faulted')) for c in fctx.calls)}")
+
+    if not was_exposed:
+        print("\nFAILED: the fault was scheduled and no tool call returned it.")
+        print("Injection is not reaching the agent through this target. Every")
+        print("propagation and detection number in a matrix would be a")
+        print("confident zero, and the board would look immaculate.")
+        return 1
+
+    fscore = score_run(
+        task=task, scenario=scenario, schedule=sched, ctx=fctx, answer=fanswer
+    )
+    print(f"reported total : {fanswer.total}  (truth {scenario.expected_total}, "
+          f"credulous {scenario.expected_total + sched.total_delta})")
+    print(f"outcome        : {fscore.outcome.value}")
+    print(f"propagated={fscore.propagated}  detected={fscore.detected}  "
+          f"surfaced={fscore.surfaced}  determinable={fscore.propagation_determinable}")
+
+    print("\nOK -- the live path works end to end, clean and faulted. The "
+          "matrix is safe to run.")
 
     # Correctness is the experiment's subject, not a build invariant, so
     # none of this changes the exit code. It is printed because one case is
     # worth knowing before committing $5: under a partial audit, a model
     # that reports the audited figure has not done the reconciliation, and
     # every verifying variant in the matrix will undercount identically.
-    model_name = DEFAULT_MODELS[level]
+    return _answer_note(answer, scenario, DEFAULT_MODELS[level])
+
+
+def _answer_note(answer, scenario, model_name: str) -> int:
+    """Whether the answer was right. Never changes the exit code."""
     if answer.total == scenario.expected_total:
         print(f"ANSWER: correct -- the grand total ({model_name}).")
     elif (
