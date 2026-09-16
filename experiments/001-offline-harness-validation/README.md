@@ -29,6 +29,14 @@ See [`console.txt`](console.txt), [`summary.json`](summary.json),
 
 ### Outcome distribution under fault (162 faulted runs)
 
+> **Taxonomy note (2026-09-16).** These counts use the four-outcome
+> taxonomy in force at the time. `detected_and_surfaced` no longer exists:
+> detection was inferred from "the answer does not match the credulous
+> figure", which any wrong answer satisfies. See #16 and
+> [experiment 005](../005-fifth-outcome-live/). The numbers below are left
+> exactly as measured; the ledger from this run predates the stored answer
+> and so cannot be re-scored.
+
 | Outcome | Count |
 |---|---|
 | `undetected_harmless` | 88 |

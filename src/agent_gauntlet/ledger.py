@@ -16,7 +16,7 @@ from typing import Any, Iterator, Optional, Union
 from pydantic import BaseModel, Field
 
 from .faults import FaultSchedule
-from .score import Score
+from .score import Answer, Score
 
 
 class RunRecord(BaseModel):
@@ -39,6 +39,24 @@ class RunRecord(BaseModel):
 
     schedule: FaultSchedule
     score: Score
+
+    answer: Optional[Answer] = None
+    """What the agent actually reported.
+
+    Absent from the first build, and that was a replayability hole this
+    module's own premise forbids: the ledger stored the *verdict* but not
+    the evidence, so no change to scoring could ever be applied to runs
+    already recorded. Every revision of the outcome taxonomy -- and there
+    have been three -- would have needed a fresh paid matrix to re-measure
+    something the old runs already contained.
+
+    With this plus `tool_calls` and `schedule`, a stored run can be graded
+    again by today's rules. See `rescore`.
+
+    None on records written before this field existed; `rescore` refuses
+    them rather than guessing.
+    """
+
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
 
     rollup: dict[str, Any] = Field(default_factory=dict)
@@ -122,6 +140,62 @@ class Ledger:
             seed: {v: sum(vals) / len(vals) for v, vals in variants.items()}
             for seed, variants in buckets.items()
         }
+
+
+class ReplayContext:
+    """A `RunContext` stand-in rebuilt from a stored record.
+
+    Scoring reads three things off the live context: the world, whether any
+    call came back faulted, and when a cross-check first became reachable.
+    All three survive in the ledger, so grading does not need the agent
+    back -- which is the whole point of storing the answer.
+    """
+
+    def __init__(self, record: "RunRecord", records: dict[str, int]) -> None:
+        self.records = dict(records)
+        self.schedule = record.schedule
+        self.calls = list(record.tool_calls)
+        self.allowed_tools = None
+        evidence = record.schedule.evidence_tool
+        self.evidence_available_at = next(
+            (
+                int(c.get("step", i))
+                for i, c in enumerate(self.calls)
+                if evidence and c.get("tool") == evidence
+            ),
+            None,
+        )
+
+    @property
+    def step(self) -> int:
+        return len(self.calls)
+
+
+def rescore(record: "RunRecord", task: Any) -> Score:
+    """Grade a stored run again, by today's rules.
+
+    The reason `answer` exists. A scoring change can be applied to every
+    run already on disk instead of being a one-way door that needs a fresh
+    matrix to evaluate.
+
+    Raises when the record predates `answer`: a re-score that quietly
+    invented an answer would produce numbers indistinguishable from
+    measured ones, which is the failure mode this project keeps finding in
+    itself.
+    """
+    from .score import score_run
+
+    if record.answer is None:
+        raise ValueError(
+            f"run {record.run_id} predates the stored answer and cannot be "
+            "re-scored -- the reported figure was never written down"
+        )
+    scenario = task.scenario(record.scenario_id)
+    ctx = ReplayContext(record, scenario.records)
+    return score_run(
+        task=task, scenario=scenario, schedule=record.schedule,
+        ctx=ctx, answer=record.answer,
+    )
 
 
 def write_summary(path: Union[str, Path], payload: dict[str, Any]) -> None:

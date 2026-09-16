@@ -522,10 +522,14 @@ def _print_board(results) -> None:
         objectives=("accuracy", "cost_usd"), maximize=(True, False),
     )}
     print(f"{'variant':<34}{'qual':>6}{'acc':>6}{'clean':>7}{'fault':>7}"
-          f"{'prop':>6}{'det':>6}{'FA':>5}{'ttd':>6}{'$/run':>10}")
+          f"{'prop':>6}{'det':>6}{'rep':>6}{'FA':>5}{'ttd':>6}{'$/run':>10}")
     for tier in board.rank(results):
         for r in tier:
             det = "   n/a" if r.detection_rate is None else f"{r.detection_rate:>6.0%}"
+            # Noticing and fixing are different capabilities. A variant can
+            # sit at det=100% and rep=0% -- it flagged every fault and
+            # shipped every one of them (#16, experiment 005).
+            rep = "   n/a" if r.repair_rate is None else f"{r.repair_rate:>6.0%}"
             # n/a, never 0: nothing detected means no latency to report, and
             # a 0 there would read as "noticed instantly" (#16).
             ttd = (
@@ -546,7 +550,7 @@ def _print_board(results) -> None:
             print(
                 f"{r.label:<34}{r.quality:>6.0%}{r.accuracy:>6.2f}"
                 f"{r.clean_quality:>7.0%}{r.faulted_quality:>7.0%}"
-                f"{r.propagation_rate:>6.0%}{det}{r.false_alarm_rate:>5.0%}"
+                f"{r.propagation_rate:>6.0%}{det}{rep}{r.false_alarm_rate:>5.0%}"
                 f"{ttd}{cost}{flag}"
             )
 

@@ -47,6 +47,28 @@ class VariantResult(BaseModel):
     faulted_quality: float
     propagation_rate: float
     detection_rate: Optional[float]
+
+    repair_rate: Optional[float] = None
+    """Of the runs where a lie reached the agent and a cross-check existed
+    to catch it with, how many ended with the right answer anyway.
+
+    None -- never 0.0 -- when nothing was repairable: no exposure, or no
+    reachable evidence. Corruptions are plausible by design, so without a
+    cross-check repair is impossible *in principle*, and those runs leave
+    the denominator exactly as they leave detection's (#16).
+    """
+
+    repair_quality: Optional[float] = None
+    """The graded companion: mean accuracy over the same denominator.
+
+    Mirrors `correct` / `accuracy`. A variant that halves the damage is not
+    the same as one that swallows it whole, and a binary repaired/not
+    cannot say so.
+    """
+
+    n_repair_eligible: int = 0
+    """The denominator, printed so a rate from two runs is legible as one."""
+
     false_alarm_rate: float
     accuracy: float = 0.0
     """Graded quality. Ranking uses this: binary correctness ties too
@@ -124,6 +146,12 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
         faulted = [r for r in runs if r.condition == "faulted"]
         with_evidence = [r for r in faulted if r.score.evidence_available]
         decidable = [r for r in faulted if r.score.propagation_determinable]
+        # Repair is only askable where a lie actually reached the agent AND
+        # something existed to catch it with. Anything else is censored.
+        repairable = [
+            r for r in with_evidence
+            if any(c.get("faulted") for c in r.tool_calls)
+        ]
 
         results.append(
             VariantResult(
@@ -147,6 +175,15 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
                     if decidable else 0.0
                 ),
                 n_propagation_undecidable=len(faulted) - len(decidable),
+                repair_rate=(
+                    mean(float(r.score.repaired) for r in repairable)
+                    if repairable else None
+                ),
+                repair_quality=(
+                    mean(float(r.score.accuracy) for r in repairable)
+                    if repairable else None
+                ),
+                n_repair_eligible=len(repairable),
                 # None, not 0.0: no reachable evidence means "not measured",
                 # which is a different claim from "never detected".
                 detection_rate=(

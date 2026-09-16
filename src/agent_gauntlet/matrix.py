@@ -123,6 +123,7 @@ def run_matrix(
                         condition=condition,
                         schedule=schedule,
                         score=score,
+                        answer=answer,
                         tool_calls=list(ctx.calls),
                         offline=offline,
                     )

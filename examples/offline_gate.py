@@ -58,8 +58,11 @@ def report(ledger: Ledger) -> None:
     print(f"spend         : $0.00 (offline)")
 
     print("\n--- outcomes under fault " + "-" * 45)
+    # `repaired` beside `detected` on purpose: noticing and fixing are
+    # different capabilities, and a variant can do the first without the
+    # second (#16).
     print(f"{'variant':<14}{'correct':>9}{'propagated':>12}{'detected':>10}"
-          f"{'surfaced':>10}{'false alarm':>13}")
+          f"{'repaired':>10}{'surfaced':>10}{'false alarm':>13}")
     for v in VARIANTS:
         faulted = [r for r in records if r.variant_id == v.id and r.condition == "faulted"]
         clean = [r for r in records if r.variant_id == v.id and r.condition == "clean"]
@@ -69,6 +72,7 @@ def report(ledger: Ledger) -> None:
             f"{sum(r.score.correct for r in faulted)/n:>9.0%}"
             f"{sum(r.score.propagated for r in faulted)/n:>12.0%}"
             f"{sum(r.score.detected for r in faulted)/n:>10.0%}"
+            f"{sum(r.score.repaired for r in faulted)/n:>10.0%}"
             f"{sum(r.score.surfaced for r in faulted)/n:>10.0%}"
             f"{sum(r.score.false_alarm for r in clean)/max(1,len(clean)):>13.0%}"
         )

@@ -46,10 +46,10 @@ def test_naive_propagates_the_falsehood():
     assert score.propagated and not score.detected and not score.correct
 
 
-def test_verifying_detects_and_surfaces():
+def test_verifying_surfaces_and_repairs():
     score, _ = _run(verifying, FAULTED)
-    assert score.outcome is Outcome.DETECTED_AND_SURFACED
-    assert score.detected and score.surfaced
+    assert score.outcome is Outcome.SURFACED_AND_REPAIRED
+    assert score.detected and score.surfaced and score.repaired
     assert not score.propagated
     assert score.correct, "reconciling against the cross-check should recover the truth"
 
@@ -134,14 +134,15 @@ def test_surfaced_but_propagated_is_its_own_outcome():
         )
 
     assert score.detected and score.surfaced and score.propagated
+    assert not score.repaired, "it shipped the lie; nothing was repaired"
     assert score.outcome is Outcome.SURFACED_BUT_PROPAGATED
-    assert score.outcome is not Outcome.DETECTED_AND_SURFACED
+    assert score.outcome is not Outcome.SURFACED_AND_REPAIRED
 
 
-def test_detecting_without_propagating_still_reads_as_success():
+def test_repairing_still_reads_as_success():
     """The new outcome must not swallow the genuine one."""
     score, _ = _run(verifying, FAULTED)
-    assert score.outcome is Outcome.DETECTED_AND_SURFACED
+    assert score.outcome is Outcome.SURFACED_AND_REPAIRED
 
 
 def test_propagation_distinguished_from_mere_wrongness():
