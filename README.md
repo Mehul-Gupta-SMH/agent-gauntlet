@@ -1,4 +1,6 @@
-# agent-gauntlet
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="agent-gauntlet — search agent configurations under deliberate tool failure" width="100%">
+</p>
 
 **Search the space of agent configurations under deliberate tool failure, and
 ship the one that survives.**
@@ -32,6 +34,15 @@ gauntlet run fixtures/inventory/audited.yaml --out runs --live \
 
 ## What you get
 
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="A gauntlet run: 9 variants, 324 runs, the board, the stability gate passing, and the exported winner" width="100%">
+</p>
+
+<sub>A replay of a real run — <a href="https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/runs/35149486157">Actions run 35149486157</a>, 324 live runs, captured verbatim in <a href="experiments/007-m0-gate-passed/">experiment 007</a>. Nothing in it is mocked; see <a href="docs/assets/">provenance</a>.</sub>
+
+<details>
+<summary>The same board as text</summary>
+
 ```
 variant                             qual   acc  clean  fault  prop   det   rep   FA   ttd
 smart verifying records+summary     100%  1.00   100%   100%    0%  100%  100%   0%     1   <- frontier
@@ -50,6 +61,8 @@ winner: model-smart__prompt-verifying__toolset-records+summary
   HELD-OUT seed2 -> accuracy=1.000   <- report this one
   exported to runs/winner
 ```
+
+</details>
 
 Three columns worth reading twice:
 

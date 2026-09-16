@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" width="1200" height="330" role="img" aria-label="agent-gauntlet: search agent configurations under deliberate tool failure">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#11161d"/>
+      <stop offset="60%" stop-color="#141b25"/>
+      <stop offset="100%" stop-color="#1a1320"/>
+    </linearGradient>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4ec9d9"/>
+      <stop offset="55%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#e06c68"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="330" rx="10" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1200" height="3" rx="1.5" fill="url(#rule)"/>
+
+  <!-- ============ left column: keep everything under x=740 ============ -->
+  <text x="60" y="104" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="46" font-weight="bold" fill="#e8eef6">agent<tspan fill="#4ec9d9">-</tspan>gauntlet</text>
+
+  <text x="62" y="140" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="19" fill="#9fb0c4">Search agent configurations under deliberate tool failure.</text>
+
+  <!-- the central trick -->
+  <g font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="16">
+    <text x="62" y="188" fill="#5d6b7d">fetch_record('c')</text>
+    <text x="238" y="188" fill="#5d6b7d">&#8594;</text>
+    <text x="268" y="188" fill="#5d6b7d">58</text>
+    <line x1="266" y1="183" x2="291" y2="183" stroke="#e06c68" stroke-width="1.5"/>
+    <text x="306" y="188" fill="#e06c68" font-weight="bold">99</text>
+  </g>
+  <text x="62" y="212" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#7d8b9d">The harness injected the lie, so it knows the truth.</text>
+  <text x="62" y="232" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#7d8b9d">Propagation is decided by comparison, not by a judge.</text>
+
+  <line x1="62" y1="256" x2="700" y2="256" stroke="#2a3440" stroke-width="1"/>
+
+  <g font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="14">
+    <rect x="62" y="276" width="9" height="9" rx="2" fill="#5ec27a"/>
+    <text x="80" y="285" fill="#9fb0c4">graded by an oracle</text>
+    <rect x="330" y="276" width="9" height="9" rx="2" fill="#d9a441"/>
+    <text x="348" y="285" fill="#9fb0c4">propagation gates the config</text>
+
+    <rect x="62" y="302" width="9" height="9" rx="2" fill="#a78bfa"/>
+    <text x="80" y="311" fill="#9fb0c4">six agent SDKs, one definition</text>
+    <rect x="330" y="302" width="9" height="9" rx="2" fill="#4ec9d9"/>
+    <text x="348" y="311" fill="#9fb0c4">bar pre-registered, hash-pinned</text>
+  </g>
+
+  <!-- ============ right: leaderboard motif, x=780..1140 ============ -->
+  <g transform="translate(780, 56)" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace">
+    <text x="0" y="0" font-size="12" fill="#5d6b7d">LEADERBOARD</text>
+
+    <!-- winner -->
+    <rect x="0" y="12" width="360" height="28" rx="4" fill="#16351f" stroke="#5ec27a" stroke-width="1.2"/>
+    <rect x="0" y="12" width="360" height="28" rx="4" fill="#5ec27a" fill-opacity="0.10"/>
+    <text x="12" y="31" font-size="12.5" fill="#5ec27a">smart · verifying · +summary</text>
+    <text x="348" y="31" font-size="12.5" fill="#5ec27a" text-anchor="end">1.00</text>
+
+    <rect x="0" y="48" width="360" height="26" rx="4" fill="#221b11" stroke="#6b5526" stroke-width="1"/>
+    <rect x="0" y="48" width="292" height="26" rx="4" fill="#d9a441" fill-opacity="0.07"/>
+    <text x="12" y="66" font-size="12.5" fill="#d9a441">cheap · verifying · +summary</text>
+    <text x="348" y="66" font-size="12.5" fill="#d9a441" text-anchor="end">0.90</text>
+
+    <rect x="0" y="82" width="360" height="26" rx="4" fill="#221b11" stroke="#6b5526" stroke-width="1"/>
+    <rect x="0" y="82" width="276" height="26" rx="4" fill="#d9a441" fill-opacity="0.07"/>
+    <text x="12" y="100" font-size="12.5" fill="#d9a441">cheap · naive · +summary</text>
+    <text x="348" y="100" font-size="12.5" fill="#d9a441" text-anchor="end">0.89</text>
+
+    <rect x="0" y="116" width="360" height="26" rx="4" fill="#221b11" stroke="#6b5526" stroke-width="1"/>
+    <rect x="0" y="116" width="262" height="26" rx="4" fill="#d9a441" fill-opacity="0.07"/>
+    <text x="12" y="134" font-size="12.5" fill="#d9a441">smart · naive · records</text>
+    <text x="348" y="134" font-size="12.5" fill="#d9a441" text-anchor="end">0.87</text>
+
+    <!-- sentinel: the instrument check -->
+    <rect x="0" y="150" width="360" height="26" rx="4" fill="#1e1728" stroke="#5b4483" stroke-width="1"/>
+    <rect x="0" y="150" width="120" height="26" rx="4" fill="#a78bfa" fill-opacity="0.10"/>
+    <text x="12" y="168" font-size="12.5" fill="#a78bfa">sentinel</text>
+    <text x="348" y="168" font-size="12.5" fill="#a78bfa" text-anchor="end">0.51</text>
+
+    <text x="0" y="202" font-size="11.5" fill="#6b5526">▬</text>
+    <text x="18" y="202" font-size="11.5" fill="#5d6b7d">gated — propagated a falsehood</text>
+    <text x="0" y="222" font-size="11.5" fill="#5b4483">▬</text>
+    <text x="18" y="222" font-size="11.5" fill="#5d6b7d">instrument check — must rank last</text>
+  </g>
+</svg>
