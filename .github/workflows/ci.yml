@@ -28,8 +28,29 @@ jobs:
       - name: End-to-end offline run
         # Both fixtures: the original keeps experiment 003 reproducible, the
         # audited one is what the gate runs against now.
+        #
+        # Exit 3 means the pre-registered gate returned FAIL, which is a
+        # MEASUREMENT, not a build failure. Offline the variants are scripted
+        # policies whose slip rates are arbitrary -- a gate verdict over them
+        # says nothing about agents (see experiments/001), and letting it turn
+        # the repo red permanently would make CI's signal worthless. What this
+        # step guards is that the path runs end to end: any other non-zero is
+        # a crash and fails the build.
         run: |
-          gauntlet run fixtures/inventory/task.yaml --out /tmp/ci --repeats 2 --seeds 2
-          gauntlet run fixtures/inventory/audited.yaml --out /tmp/ci-audited --repeats 2 --seeds 2
+          # +e deliberately: Actions runs this with -e, so a gate FAIL would
+          # kill the step before the exit code could be inspected at all.
+          set +e
+          set -u
+          for fixture in task audited; do
+            gauntlet run "fixtures/inventory/$fixture.yaml" \
+              --out "/tmp/ci-$fixture" --repeats 2 --seeds 2
+            status=$?
+            case "$status" in
+              0) echo "::notice::$fixture -- gate PASS" ;;
+              3) echo "::notice::$fixture -- gate FAIL (expected offline; the path ran)" ;;
+              *) echo "::error::$fixture -- gauntlet exited $status, which is a crash"
+                 exit "$status" ;;
+            esac
+          done
       - name: The example must keep running
         run: python examples/offline_gate.py
