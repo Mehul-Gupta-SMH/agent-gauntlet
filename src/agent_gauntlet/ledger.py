@@ -58,6 +58,18 @@ class RunRecord(BaseModel):
         """Identifies the counterfactual twin of this run."""
         return (self.variant_id, self.scenario_id, self.repeat)
 
+    @property
+    def base_seed(self) -> str:
+        """The independent replication this run belongs to.
+
+        `seed` is per-run (`base:variant:scenario:repeat`) so two variants
+        never draw the same corruption. The part before the first colon is
+        the replication, and it is the unit everything about independence
+        is defined over: stability compares base seeds, and the held-out
+        split partitions them (#1, #20).
+        """
+        return self.seed.split(":", 1)[0]
+
 
 class Ledger:
     """Append-only JSONL store. One line per run, never rewritten."""

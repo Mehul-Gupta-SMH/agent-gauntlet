@@ -19,7 +19,7 @@ from __future__ import annotations
 import shutil
 from collections import defaultdict
 from pathlib import Path
-from statistics import mean
+from statistics import mean, median
 from typing import Iterable, Optional, Sequence, Union
 
 from pydantic import BaseModel, Field
@@ -52,11 +52,50 @@ class VariantResult(BaseModel):
     """Graded quality. Ranking uses this: binary correctness ties too
     readily to correlate across seeds (#17 vs #29 correction 3)."""
     cost_usd: float
+    total_tokens: int = 0
+    cost_complete: bool = False
+    """Whether every LLM call in this variant's runs reported a price.
+
+    False means the number below it is a floor, not a cost, and the board
+    says so rather than printing a confident understatement. An offline
+    variant spends nothing and is also False -- "not measured" and
+    "measured as zero" must not render identically (#14).
+    """
+
+    median_detect_latency: Optional[float] = None
+    """Steps from evidence becoming reachable to detection, over the runs
+    that detected. None when nothing detected -- those runs are censored,
+    not zero-latency, and averaging them in rewards failing fast (#16)."""
+
+    n_detect_latency: int = 0
+    """How many runs the median above is computed from. A median of one is
+    not a distribution, and the reader can see that here."""
+
     mean_steps: float
     n_propagation_undecidable: int = 0
     """Faulted runs where the corruption was too small to separate a
     propagated answer from an honest miscount. Reported, never folded into
     the rate as a zero."""
+
+    @property
+    def label(self) -> str:
+        """Factor values, in a fixed order, for a board a human can scan.
+
+        `model-cheap__prompt-naive__toolset-records+summary` is precise and
+        unreadable at nine rows; the factor names are constant down the
+        column and carry no information there.
+        """
+        order = ("model", "prompt", "toolset")
+        known = [self.factors[k] for k in order if k in self.factors]
+        rest = [v for k, v in sorted(self.factors.items()) if k not in order]
+        return " ".join(known + rest) or self.variant_id
+
+    @property
+    def cost_per_run(self) -> Optional[float]:
+        """Spend per run, or None when nothing priced it."""
+        if not self.cost_complete or not self.n_runs:
+            return None
+        return self.cost_usd / self.n_runs
 
     @property
     def robustness_drop(self) -> float:
@@ -117,14 +156,43 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
                 false_alarm_rate=(
                     mean(float(r.score.false_alarm) for r in clean) if clean else 0.0
                 ),
-                cost_usd=sum(
-                    float(r.rollup.get("llm_calls", {}).get("cost_usd", 0.0) or 0.0)
-                    for r in runs
+                cost_usd=sum(_llm(r).get("cost_usd", 0.0) or 0.0 for r in runs),
+                total_tokens=sum(
+                    int(_llm(r).get("total_tokens", 0) or 0) for r in runs
                 ),
+                # Every run must have reported a price, or the total is a
+                # floor. commonadk reports this per trace; a variant whose
+                # runs never priced anything (offline) is False too.
+                cost_complete=bool(runs) and all(
+                    _llm(r).get("cost_complete") for r in runs
+                ),
+                median_detect_latency=(
+                    median(_latencies(runs)) if _latencies(runs) else None
+                ),
+                n_detect_latency=len(_latencies(runs)),
                 mean_steps=mean(float(r.score.steps) for r in runs),
             )
         )
     return results
+
+
+def _llm(record: RunRecord) -> dict:
+    """The `llm_calls` roll-up for one run, or an empty dict offline."""
+    block = record.rollup.get("llm_calls") if record.rollup else None
+    return block if isinstance(block, dict) else {}
+
+
+def _latencies(runs: Sequence[RunRecord]) -> list[int]:
+    """Time-to-detect over the runs that actually detected.
+
+    Runs that never detected are right-censored -- there is no latency to
+    average, and substituting one (0, or the run length) would reward an
+    agent that gives up immediately (#16).
+    """
+    return [
+        r.score.detect_latency for r in runs
+        if r.score.detect_latency is not None
+    ]
 
 
 def rank(
@@ -168,6 +236,121 @@ def winner(
         return None
     front = pareto(eligible, objectives=objectives, maximize=maximize)
     return front[0] if len(front) == 1 else None
+
+
+class HeldOutWinner(BaseModel):
+    """A winner, and the score it earns on data that did not choose it.
+
+    The winner's curse (#20): picking the best of N on a set of runs and
+    then quoting *that* run's score reports the maximum of N noisy
+    estimates, which is biased upward by construction. The more variants
+    the search covers, the worse it gets -- so the board's headline number
+    would look best exactly when the search was widest.
+
+    The fix is not a correction factor. It is refusing to report a number
+    the selection could see: `holdout_score` is measured on replications
+    held out of the choice entirely.
+    """
+
+    variant_id: str
+    selection_seeds: list[str]
+    holdout_seeds: list[str]
+
+    selection_score: float
+    """What it scored on the runs that chose it. NOT the number to quote."""
+
+    holdout_score: float
+    """What it scores on replications the selection never saw. This is the
+    reportable number."""
+
+    holdout_rank: int
+    """Where it lands on the held-out data, 1-based, sentinels excluded. A
+    winner that falls to 4th was noise, however good its selection score."""
+
+    n_candidates: int
+
+    @property
+    def optimism(self) -> float:
+        """Selection minus held-out: the winner's curse, in points.
+
+        Positive is the expected direction and not a defect -- it is the
+        bias being measured instead of shipped. A large gap means the
+        search fit noise; report it next to the score rather than hiding
+        it (#20).
+        """
+        return self.selection_score - self.holdout_score
+
+    @property
+    def held_up(self) -> bool:
+        """Did the selection survive contact with fresh replications?"""
+        return self.holdout_rank == 1
+
+
+def split_seeds(seeds: Sequence[str], *, holdout: int = 1) -> tuple[list[str], list[str]]:
+    """Partition replications into selection and held-out sets.
+
+    Sorted, then split from the end, so the partition is deterministic and
+    reproducible from the ledger alone -- a random split would make the
+    reported score depend on an unrecorded choice.
+    """
+    ordered = sorted(set(seeds))
+    if holdout < 1:
+        raise ValueError("holdout must be >= 1")
+    if len(ordered) <= holdout:
+        raise ValueError(
+            f"need more than {holdout} seed(s) to hold one out; got {len(ordered)}"
+        )
+    return ordered[:-holdout], ordered[-holdout:]
+
+
+def held_out_winner(
+    records: Iterable[RunRecord],
+    *,
+    sentinels: Optional[Sequence[str]] = None,
+    holdout: int = 1,
+) -> Optional[HeldOutWinner]:
+    """Select a winner on some replications; score it on the others.
+
+    Returns None when no unique winner emerges on the selection half --
+    a tied front is a real answer (#11), and there is nothing to score.
+    """
+    runs = list(records)
+    try:
+        selection, held = split_seeds([r.base_seed for r in runs], holdout=holdout)
+    except ValueError:
+        return None
+
+    sentinel_ids = set(sentinels or ())
+
+    def _summarize(keep: set[str]) -> list[VariantResult]:
+        out = summarize([r for r in runs if r.base_seed in keep])
+        for row in out:
+            row.is_sentinel = row.variant_id in sentinel_ids
+        return out
+
+    chosen = winner(_summarize(set(selection)))
+    if chosen is None:
+        return None
+
+    held_results = _summarize(set(held))
+    ranked = [r for tier in rank(held_results, exclude_sentinels=True) for r in tier]
+    match = next((r for r in held_results if r.variant_id == chosen.variant_id), None)
+    if match is None:
+        return None
+
+    return HeldOutWinner(
+        variant_id=chosen.variant_id,
+        selection_seeds=list(selection),
+        holdout_seeds=list(held),
+        selection_score=chosen.accuracy,
+        holdout_score=match.accuracy,
+        holdout_rank=1 + next(
+            i for i, r in enumerate(ranked) if r.variant_id == chosen.variant_id
+        ),
+        n_candidates=sum(
+            1 for r in held_results if not r.is_sentinel and not r.gated
+        ),
+    )
 
 
 def pareto(

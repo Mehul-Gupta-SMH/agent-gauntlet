@@ -407,7 +407,7 @@ def _run(args) -> int:
     _print_board(results)
     _print_effects(results)
     rc = _print_gate(records, seeds, task)
-    _export(results, variants, out)
+    held = _export(results, variants, out, records)
 
     write_summary(
         out / "summary.json",
@@ -417,6 +417,14 @@ def _run(args) -> int:
             "n_runs": len(records),
             "results": [r.model_dump() for r in results],
             "effects": [e.model_dump() for e in board.factor_effects(results)],
+            # The reportable winner, or null. Deliberately a separate key
+            # from `results`: a consumer that wants "the answer" should get
+            # the held-out number, not the biased one it can compute itself.
+            "held_out_winner": (
+                {**held.model_dump(), "optimism": held.optimism,
+                 "held_up": held.held_up}
+                if held else None
+            ),
         },
     )
     print(f"\nwrote       {out/'runs.jsonl'}, {out/'summary.json'}")
@@ -424,18 +432,58 @@ def _run(args) -> int:
 
 
 def _print_board(results) -> None:
+    """The leaderboard, with what it costs and how fast it notices.
+
+    cost and time-to-detect were both measured from the first run and
+    neither reached the output -- a cost-aware board that ranks on accuracy
+    alone (#11, #14), and a project founded on "how fast does it surface the
+    fault" that never printed the answer (#16).
+    """
     print("\n--- board " + "-" * 62)
-    print(f"{'variant':<46}{'qual':>6}{'acc':>6}{'clean':>7}{'fault':>7}"
-          f"{'prop':>6}{'det':>6}{'FA':>5}")
+    frontier = {r.variant_id for r in board.pareto(
+        [r for r in results if not r.is_sentinel],
+        objectives=("accuracy", "cost_usd"), maximize=(True, False),
+    )}
+    print(f"{'variant':<34}{'qual':>6}{'acc':>6}{'clean':>7}{'fault':>7}"
+          f"{'prop':>6}{'det':>6}{'FA':>5}{'ttd':>6}{'$/run':>10}")
     for tier in board.rank(results):
         for r in tier:
-            det = "  n/a" if r.detection_rate is None else f"{r.detection_rate:>5.0%}"
-            flag = "  [GATED: propagated]" if r.gated else ("  [sentinel]" if r.is_sentinel else "")
-            print(
-                f"{r.variant_id:<46}{r.quality:>6.0%}{r.accuracy:>6.2f}"
-                f"{r.clean_quality:>7.0%}{r.faulted_quality:>7.0%}"
-                f"{r.propagation_rate:>6.0%}{det}{r.false_alarm_rate:>5.0%}{flag}"
+            det = "   n/a" if r.detection_rate is None else f"{r.detection_rate:>6.0%}"
+            # n/a, never 0: nothing detected means no latency to report, and
+            # a 0 there would read as "noticed instantly" (#16).
+            ttd = (
+                "   n/a" if r.median_detect_latency is None
+                else f"{r.median_detect_latency:>6.0f}"
             )
+            # Likewise: an unpriced run is not a free one (#14).
+            per_run = r.cost_per_run
+            cost = "       n/a" if per_run is None else f"{per_run:>10.4f}"
+            if r.gated:
+                flag = "  [GATED: propagated]"
+            elif r.is_sentinel:
+                flag = "  [sentinel]"
+            elif r.variant_id in frontier:
+                flag = "  <- frontier"
+            else:
+                flag = ""
+            print(
+                f"{r.label:<34}{r.quality:>6.0%}{r.accuracy:>6.2f}"
+                f"{r.clean_quality:>7.0%}{r.faulted_quality:>7.0%}"
+                f"{r.propagation_rate:>6.0%}{det}{r.false_alarm_rate:>5.0%}"
+                f"{ttd}{cost}{flag}"
+            )
+
+    if len(frontier) > 1:
+        print(f"\n  {len(frontier)} configs are on the accuracy/cost frontier -- none")
+        print("  dominates the others, so the tradeoff is yours (#11). Ranking")
+        print("  on accuracy alone would have hidden that.")
+    priced = [r for r in results if r.cost_complete]
+    if priced:
+        print(f"\n  measured spend: ${sum(r.cost_usd for r in priced):.4f} over "
+              f"{sum(r.n_runs for r in priced)} priced runs, "
+              f"{sum(r.total_tokens for r in priced):,} tokens")
+    else:
+        print("\n  no run reported a price (offline, or the roll-up carried none)")
 
 
 def _print_effects(results) -> None:
@@ -518,20 +566,60 @@ def _print_gate(records, seeds, task) -> int:
     return 0
 
 
-def _export(results, variants, out: Path) -> None:
+def _export(results, variants, out: Path, records=None):
+    """Report the winner, and report it honestly.
+
+    The headline number is measured on replications that took no part in
+    choosing the winner. Quoting the selection score instead reports the
+    maximum of N noisy estimates, which is biased upward by construction
+    and gets worse the wider the search -- the winner's curse (#20).
+    """
     print("\n--- winner " + "-" * 61)
     champion = board.winner(results)
     if champion is None:
         print("  NO WINNER -- more than one config is non-dominated, or every")
         print("  config is gated. That is the honest answer, not a failure to")
         print("  compute one: the remaining tradeoff is yours to make.")
-        return
+        return None
+
+    held = None
+    if records is not None:
+        held = board.held_out_winner(
+            records, sentinels=[v.id for v in variants if v.is_sentinel]
+        )
+
     dest = board.export_winner(champion, variants, out / "winner")
     print(f"  {champion.variant_id}")
-    print(f"  accuracy={champion.accuracy:.2f}  quality={champion.quality:.0%}  "
-          f"false alarms={champion.false_alarm_rate:.0%}  propagation={champion.propagation_rate:.0%}")
+
+    if held is None:
+        print(f"  accuracy={champion.accuracy:.2f}  quality={champion.quality:.0%}  "
+              f"false alarms={champion.false_alarm_rate:.0%}  "
+              f"propagation={champion.propagation_rate:.0%}")
+        print("\n  NOT VALIDATED -- this score was measured on the same runs that")
+        print("  selected it, so it is optimistically biased (#20). Re-run with")
+        print("  --seeds >= 2 to hold replications out of the choice.")
+    else:
+        print(f"  selected on {', '.join(held.selection_seeds)} "
+              f"-> accuracy={held.selection_score:.3f}   (not the number to quote)")
+        print(f"  HELD-OUT    {', '.join(held.holdout_seeds)} "
+              f"-> accuracy={held.holdout_score:.3f}   <- report this one")
+        print(f"  optimism    {held.optimism:+.3f}   "
+              f"held-out rank {held.holdout_rank} of {held.n_candidates}")
+        if held.variant_id != champion.variant_id:
+            print(f"  NOTE: the all-data winner is {champion.variant_id}, which is")
+            print("  a different config -- the selection is not stable.")
+        if not held.held_up:
+            print("\n  THE WINNER DID NOT HOLD UP. It was picked on one set of")
+            print("  replications and is not top on fresh ones, which is what a")
+            print("  search fitting noise looks like. Do not ship this config on")
+            print("  the strength of this run.")
+        print(f"\n  quality={champion.quality:.0%}  "
+              f"false alarms={champion.false_alarm_rate:.0%}  "
+              f"propagation={champion.propagation_rate:.0%}")
+
     print(f"  exported to {dest}")
     print(f"  run it:  commonadk validate {dest}")
+    return held
 
 
 if __name__ == "__main__":
