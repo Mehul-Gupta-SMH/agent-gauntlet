@@ -20,6 +20,7 @@ from typing import Optional, Sequence
 from . import architect, board
 from .analyze import stability
 from .faults import FaultKind
+from .live import provider_unreachable as _provider_unreachable
 from .ledger import Ledger, write_summary
 from .matrix import run_matrix
 from .spec import TaskSpec
@@ -114,70 +115,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.command == "probe":
         return _probe(args)
     return 1
-
-
-_NEVER_THE_PROVIDER = (
-    ImportError, AttributeError, TypeError, ValueError,
-    KeyError, IndexError, OSError, NotImplementedError,
-)
-"""Failures a remote service cannot cause.
-
-A missing package, a bad attribute, a wrong signature -- these are always
-this repo or its environment. `ModuleNotFoundError` is an `ImportError`,
-which is the specific case that shipped a green probe having called nothing.
-`OSError` covers `FileNotFoundError`; the connection errors that subclass it
-are caught by the markers below, which are checked first.
-"""
-
-_PROVIDER_SHAPED = (
-    "timeout", "timed out", "connection", "unreachable", "overloaded",
-    "rate limit", "rate_limit", "too many requests", "quota",
-    "429", "500", "502", "503", "529",
-    "service unavailable", "temporarily unavailable", "try again",
-    "apiconnection", "apistatus", "apitimeout", "apierror",
-    "remotedisconnected", "ssl", "econnreset", "authentication",
-    "unauthorized", "invalid api key", "credit balance",
-)
-"""Substrings that positively mark a failure as the provider's or the
-network's, matched against the exception type name and its message.
-
-Deliberately a positive test. The alternative -- treat anything we do not
-recognise as an outage -- is how a probe reports "provider outage" for a
-missing import.
-"""
-
-
-def _provider_unreachable(exc: BaseException) -> bool:
-    """Did the model genuinely fail to answer, for reasons not ours?
-
-    Unknown failures are OURS. A false red is annoying and actionable; a
-    false green is invisible, and the point of the probe is to be believed.
-
-    The whole chain is inspected, not just the outermost exception: SDKs
-    wrap, and a lazily-imported dependency surfaces as a `RuntimeError`
-    whose `__cause__` is the `ModuleNotFoundError` that actually explains it.
-    """
-    chain: list[BaseException] = []
-    seen: set[int] = set()
-    cur: Optional[BaseException] = exc
-    while cur is not None and id(cur) not in seen:
-        seen.add(id(cur))
-        chain.append(cur)
-        cur = cur.__cause__ or cur.__context__
-
-    # Checked before the never-the-provider types because these subclass
-    # OSError, which is in that tuple for FileNotFoundError's sake.
-    if any(isinstance(e, (ConnectionError, TimeoutError)) for e in chain):
-        return True
-
-    # Any import/type/attribute failure anywhere in the chain settles it.
-    # This also stops a message from matching by accident -- an
-    # `ImportError: cannot import name 'Timeout'` contains "timeout".
-    if any(isinstance(e, _NEVER_THE_PROVIDER) for e in chain):
-        return False
-
-    haystack = " ".join(f"{type(e).__name__} {e}" for e in chain).lower()
-    return any(marker in haystack for marker in _PROVIDER_SHAPED)
 
 
 def hardest_scenario(task: TaskSpec):
@@ -562,6 +499,17 @@ def _run(args) -> int:
     # A ledger appended to across a prompt edit holds runs of two different
     # agents under one name. Averaging them reports one number for two
     # configurations, and nothing else in the output would show it (#15).
+    errored = ledger.errors()
+    if errored:
+        print(f"\nWARNING: {len(errored)} run(s) never produced an answer and are")
+        print("excluded from every rate below -- an agent that never got to")
+        print("answer is not an agent that answered badly. Reasons:")
+        seen: dict[str, int] = {}
+        for r in errored:
+            seen[r.error or "unknown"] = seen.get(r.error or "unknown", 0) + 1
+        for reason, count in sorted(seen.items(), key=lambda kv: -kv[1])[:5]:
+            print(f"  {count:>4}x  {reason[:96]}")
+
     drift = ledger.variant_drift()
     if drift:
         print(f"\nWARNING: {len(drift)} variant(s) appear under more than one")

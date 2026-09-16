@@ -210,6 +210,15 @@ class VariantSpec(BaseModel, frozen=True):
     """The named factor settings this variant represents -- model, prompt
     strategy, tool set. Attribution (#22) is computed over these."""
 
+    model: Optional[str] = None
+    """The resolved model string, e.g. `anthropic/claude-haiku-4-5`.
+
+    `factors["model"]` is an alias into a mapping supplied at generation
+    time. Keeping only the alias made "which model was this?" unanswerable
+    from a run record; the fingerprint detects a change but cannot name
+    what changed.
+    """
+
     fingerprint: Optional[str] = None
     """Hash of what this variant actually *is*: the realized `skill.md`, the
     tools it was granted, the resolved model string, the entry agent.

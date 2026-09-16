@@ -29,6 +29,16 @@ class RunRecord(BaseModel):
     checkable rather than merely asserted (#15)."""
 
     variant_id: str
+    model: Optional[str] = None
+    """The resolved model string this run used, e.g.
+    `anthropic/claude-haiku-4-5`.
+
+    `factors` carries the alias ("cheap"), which is a label into a mapping
+    that lives outside the record. The fingerprint would *detect* that the
+    mapping changed but cannot say what it changed from, so "which model
+    produced this run?" was unanswerable from the ledger alone (#15).
+    """
+
     variant_fingerprint: Optional[str] = None
     """Hash of the prompt text, tool grant, and model this run actually used.
 
@@ -47,6 +57,25 @@ class RunRecord(BaseModel):
 
     schedule: FaultSchedule
     score: Score
+
+    error: Optional[str] = None
+    """Why this run produced no result, when it produced none.
+
+    A run that raised used to leave no trace at all: the exception
+    propagated out of `run_matrix`, the matrix stopped, and the ledger
+    simply ended. One transient provider error part-way through a paid
+    matrix discarded every run that would have followed it, and nothing on
+    disk said why.
+
+    An errored run is CENSORED, not failed: it is excluded from every rate
+    rather than counted as an agent that got the answer wrong, because the
+    agent never got to answer. Same treatment as unreachable evidence
+    (#16).
+    """
+
+    attempts: int = 1
+    """How many times this run was tried. >1 means a provider-shaped error
+    was retried; useful for telling a flaky provider from a flaky agent."""
 
     answer: Optional[Answer] = None
     """What the agent actually reported.
@@ -119,6 +148,10 @@ class Ledger:
 
     def records(self) -> list[RunRecord]:
         return list(self)
+
+    def errors(self) -> list["RunRecord"]:
+        """Runs that never produced an answer. Empty is the happy case."""
+        return [r for r in self if r.error]
 
     def variant_drift(self) -> dict[str, set[str]]:
         """Variant ids that appear under more than one fingerprint.

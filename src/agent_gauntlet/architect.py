@@ -324,6 +324,7 @@ def _write_variant(
         common_dir=str(root),
         entry_agent=AGENT_NAME,
         factors=dict(factors),
+        model=models[model_alias],
         fingerprint=variant_fingerprint(
             skill_md=skill_md,
             tools=tools,

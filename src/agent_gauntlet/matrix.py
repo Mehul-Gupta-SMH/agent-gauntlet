@@ -11,8 +11,11 @@ from __future__ import annotations
 import uuid
 from typing import Any, Callable, Optional, Sequence
 
+import time
+
 from .faults import FaultKind, FaultSchedule
 from .interpose import run_context
+from .live import provider_unreachable
 from .ledger import Ledger, RunRecord
 from .offline import run_policy
 from .score import Answer, score_run
@@ -52,6 +55,43 @@ def offline_executor(variant: VariantSpec, seed: str) -> Answer:
     return run_policy(policy, seed, variant.factors.get("model"))
 
 
+def _attempt(
+    execute: Executor,
+    variant: VariantSpec,
+    seed: str,
+    *,
+    max_attempts: int,
+    backoff: float,
+) -> tuple[Optional[Answer], dict, Optional[str], int]:
+    """Run one cell, retrying only what is worth retrying.
+
+    Returns `(answer, rollup, error, attempts)`; `answer` is None exactly
+    when `error` is set.
+
+    Provider-shaped failures are retried because they are transient and a
+    matrix is hundreds of calls long -- one overloaded response part-way
+    through used to discard every run that would have followed it. A
+    missing import is not retried: it will fail identically three times and
+    the only effect is to waste the operator's patience.
+
+    Nothing here swallows the failure. When the retries are exhausted the
+    reason is returned, recorded, and censored from the rates -- an agent
+    that never got to answer is not an agent that answered wrongly.
+    """
+    last = ""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            answer, rollup = _unpack(execute(variant, seed))
+            return answer, rollup, None, attempt
+        except Exception as exc:
+            last = f"{type(exc).__name__}: {exc}"
+            if attempt >= max_attempts or not provider_unreachable(exc):
+                return None, {}, last, attempt
+            if backoff:
+                time.sleep(backoff * (2 ** (attempt - 1)))
+    return None, {}, last, max_attempts  # pragma: no cover - loop always returns
+
+
 def seed_for(*, base: str, variant: str, scenario: str, repeat: int) -> str:
     """Deterministic per-run seed.
 
@@ -73,6 +113,8 @@ def run_matrix(
     fault_kind: FaultKind = FaultKind.WRONG_VALUE,
     executor: Optional[Executor] = None,
     offline: bool = True,
+    max_attempts: int = 3,
+    backoff: float = 1.0,
 ) -> list[RunRecord]:
     """Run the full matrix and append every run to `ledger`."""
     if repeats < 1:
@@ -121,22 +163,31 @@ def run_matrix(
                         _allowed_tools(variant),
                         scenario.audited_ids,
                     ) as ctx:
-                        answer, rollup = _unpack(
-                            execute(variant, f"{seed}:{condition}")
+                        answer, rollup, error, attempts = _attempt(
+                            execute, variant, f"{seed}:{condition}",
+                            max_attempts=max_attempts, backoff=backoff,
                         )
+                        # An errored run is still scored, against an
+                        # unanswered Answer, so the record has the same
+                        # shape as every other. `error` is what marks it
+                        # censored; the score is not evidence about the
+                        # agent and nothing should read it as such.
                         score = score_run(
                             task=task,
                             scenario=scenario,
                             schedule=schedule,
                             ctx=ctx,
-                            answer=answer,
+                            answer=answer if answer is not None else Answer(),
                         )
                     record = RunRecord(
                         run_id=uuid.uuid4().hex[:12],
                         task_id=task.id,
                         task_fingerprint=fingerprint,
                         variant_id=variant.id,
+                        model=variant.model,
                         variant_fingerprint=variant.fingerprint,
+                        error=error,
+                        attempts=attempts,
                         factors=dict(variant.factors),
                         scenario_id=scenario.id,
                         repeat=repeat,

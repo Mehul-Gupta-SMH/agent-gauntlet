@@ -44,6 +44,70 @@ _TOTAL = re.compile(r"^\s*TOTAL:\s*(-?[\d,]+)\s*$", re.IGNORECASE | re.MULTILINE
 _ANOMALY = re.compile(r"^\s*ANOMALY:\s*(yes|no)\s*$", re.IGNORECASE | re.MULTILINE)
 
 
+_NEVER_THE_PROVIDER = (
+    ImportError, AttributeError, TypeError, ValueError,
+    KeyError, IndexError, OSError, NotImplementedError,
+)
+"""Failures a remote service cannot cause.
+
+A missing package, a bad attribute, a wrong signature -- these are always
+this repo or its environment. `ModuleNotFoundError` is an `ImportError`,
+which is the specific case that shipped a green probe having called nothing.
+`OSError` covers `FileNotFoundError`; the connection errors that subclass it
+are caught by the markers below, which are checked first.
+"""
+
+_PROVIDER_SHAPED = (
+    "timeout", "timed out", "connection", "unreachable", "overloaded",
+    "rate limit", "rate_limit", "too many requests", "quota",
+    "429", "500", "502", "503", "529",
+    "service unavailable", "temporarily unavailable", "try again",
+    "apiconnection", "apistatus", "apitimeout", "apierror",
+    "remotedisconnected", "ssl", "econnreset", "authentication",
+    "unauthorized", "invalid api key", "credit balance",
+)
+"""Substrings that positively mark a failure as the provider's or the
+network's, matched against the exception type name and its message.
+
+Deliberately a positive test. The alternative -- treat anything we do not
+recognise as an outage -- is how a probe reports "provider outage" for a
+missing import.
+"""
+
+
+def provider_unreachable(exc: BaseException) -> bool:
+    """Did the model genuinely fail to answer, for reasons not ours?
+
+    Unknown failures are OURS. A false red is annoying and actionable; a
+    false green is invisible, and the point of the probe is to be believed.
+
+    The whole chain is inspected, not just the outermost exception: SDKs
+    wrap, and a lazily-imported dependency surfaces as a `RuntimeError`
+    whose `__cause__` is the `ModuleNotFoundError` that actually explains it.
+    """
+    chain: list[BaseException] = []
+    seen: set[int] = set()
+    cur: Optional[BaseException] = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        chain.append(cur)
+        cur = cur.__cause__ or cur.__context__
+
+    # Checked before the never-the-provider types because these subclass
+    # OSError, which is in that tuple for FileNotFoundError's sake.
+    if any(isinstance(e, (ConnectionError, TimeoutError)) for e in chain):
+        return True
+
+    # Any import/type/attribute failure anywhere in the chain settles it.
+    # This also stops a message from matching by accident -- an
+    # `ImportError: cannot import name 'Timeout'` contains "timeout".
+    if any(isinstance(e, _NEVER_THE_PROVIDER) for e in chain):
+        return False
+
+    haystack = " ".join(f"{type(e).__name__} {e}" for e in chain).lower()
+    return any(marker in haystack for marker in _PROVIDER_SHAPED)
+
+
 class MissingCredentials(RuntimeError):
     """Raised by the preflight, before anything is spent."""
 

@@ -94,6 +94,16 @@ class VariantResult(BaseModel):
     not a distribution, and the reader can see that here."""
 
     mean_steps: float
+    n_errored: int = 0
+    """Runs that never produced an answer -- a provider error, a crash.
+
+    Excluded from every rate above rather than scored as wrong. An agent
+    that never got to answer is not an agent that answered badly, and
+    counting infrastructure failures against a configuration would make the
+    board a measure of the weather. Reported so the exclusion is visible
+    rather than silent.
+    """
+
     n_propagation_undecidable: int = 0
     """Faulted runs where the corruption was too small to separate a
     propagated answer from an honest miscount. Reported, never folded into
@@ -141,7 +151,13 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
         by_variant[r.variant_id].append(r)
 
     results: list[VariantResult] = []
-    for vid, runs in sorted(by_variant.items()):
+    for vid, all_runs in sorted(by_variant.items()):
+        errored = [r for r in all_runs if r.error]
+        # Censored, exactly like unreachable evidence: the question was
+        # never put to the agent, so there is no answer to grade.
+        runs = [r for r in all_runs if not r.error]
+        if not runs:
+            continue
         clean = [r for r in runs if r.condition == "clean"]
         faulted = [r for r in runs if r.condition == "faulted"]
         with_evidence = [r for r in faulted if r.score.evidence_available]
@@ -174,6 +190,7 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
                     mean(float(r.score.propagated) for r in decidable)
                     if decidable else 0.0
                 ),
+                n_errored=len(errored),
                 n_propagation_undecidable=len(faulted) - len(decidable),
                 repair_rate=(
                     mean(float(r.score.repaired) for r in repairable)
