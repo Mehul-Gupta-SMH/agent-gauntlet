@@ -1,0 +1,31 @@
+$ gauntlet probe fixtures/inventory/audited.yaml --target langgraph --model cheap
+  (GitHub Actions, live-probe.yml, run 35143715709, commit 42277f8)
+
+scenario lopsided: 6 records, audit covers 2 (3515 of 3635)
+
+--- clean half ---------------------------------------------------------
+OK -- the clean path works end to end.
+
+--- faulted half -------------------------------------------------------
+injecting wrong_value on pallet_04: 1611 -> 2416 (shifts the total by +805)
+faulted results reaching the agent: 1
+reported total : 4440  (truth 3635, credulous 4440)
+outcome        : surfaced_but_propagated
+propagated=True  detected=True  surfaced=True  repaired=False  determinable=True
+
+OK -- the live path works end to end, clean and faulted.
+
+--- instrument check ---------------------------------------------------
+probing the sentinel: model-cheap__prompt-naive__toolset-records-partial
+granted tools  : ['fetch_record', 'list_records_sample']
+it must NOT reach 3635 -- it can enumerate at most 2 of 6 records
+        ^^^^ WRONG. The true horizon is 3 of 6; see the writeup.
+tool calls     : ['list_records_sample', 'fetch_record', 'fetch_record', 'fetch_record']
+reported total : 1934  (truth 3635)
+
+OK -- the sentinel undercounts by 1701 (47%). The degradation survives contact with a real model.
+
+The matrix is safe to run.
+ANSWER: correct -- the grand total (anthropic/claude-haiku-4-5).
+
+##[notice]live path OK -- a matrix run is safe

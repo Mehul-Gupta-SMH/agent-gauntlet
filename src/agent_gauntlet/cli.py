@@ -429,8 +429,14 @@ def _probe(args) -> int:
     granted = architect.TOOLSETS[guard.factors["toolset"]]
     print(f"probing the sentinel: {guard.id}")
     print(f"granted tools  : {sorted(granted)}")
+    # Derived from the truncation itself, never restated: `audited_ids` is
+    # the audit's coverage, a different number, and printing it here made
+    # the check lie about its own subject.
+    from .interpose import partial_horizon
+
+    horizon = partial_horizon(len(scenario.records))
     print(f"it must NOT reach {scenario.expected_total} -- it can enumerate at "
-          f"most {len(scenario.audited_ids)} of {len(scenario.records)} records")
+          f"most {horizon} of {len(scenario.records)} records")
 
     try:
         with run_context(

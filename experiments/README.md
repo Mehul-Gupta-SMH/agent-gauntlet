@@ -20,6 +20,7 @@ Two rules this directory follows:
 | [003](003-live-m0-gate/) | The M0 gate, live | ~$5 | **Gate FAILs**, and so does the instrument check — the sentinel ranked 6th of 9 |
 | [004](004-hardened-fixture-probe/) | Does the hardened fixture work live? | $0.02 | **PASS** — the reconciliation lands on a real model; found a probe that went green having called nothing |
 | [005](005-fifth-outcome-live/) | The fifth outcome, caught in the wild | $0.02 | `SURFACED_BUT_PROPAGATED` fired on its first live faulted run — the taxonomy gap was real |
+| [006](006-live-instrument-check/) | The instrument check, against a real model | $0.03 | **PASS** — the structural sentinel undercounts by 47% live; the check printed a false number about itself |
 
 ## Where that leaves the question
 

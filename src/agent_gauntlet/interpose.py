@@ -173,9 +173,21 @@ def list_record_ids_partial() -> list[str]:
     ctx = active()
     ctx.require("list_records_sample")
     ids = sorted(ctx.records)
-    shown = ids[: max(1, len(ids) // 2)]
+    shown = ids[: partial_horizon(len(ids))]
     ctx._log("list_records_sample", "*", False, shown)
     return shown
+
+
+def partial_horizon(n: int) -> int:
+    """How many of `n` records the truncated enumerator reveals.
+
+    Exists so nothing has to restate the truncation rule. The probe's
+    instrument check first described the sentinel's horizon as the audit
+    coverage instead -- it printed "at most 2 of 6" for a sentinel that
+    could see 3 -- which is a false diagnostic about the very check meant
+    to catch false results.
+    """
+    return max(1, n // 2)
 
 
 def summary_total() -> int:

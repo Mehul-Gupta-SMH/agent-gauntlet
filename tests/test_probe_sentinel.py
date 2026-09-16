@@ -152,3 +152,34 @@ def test_a_missing_dependency_on_the_sentinel_is_ours(tmp_path, monkeypatch):
         return verifying()
 
     assert _run(monkeypatch, tmp_path, breaks_on_sentinel) == 1
+
+
+def test_the_horizon_the_probe_prints_matches_what_the_sentinel_sees(tmp_path, monkeypatch, capsys):
+    """A false diagnostic about the check that exists to catch false results.
+
+    The first version printed the AUDIT's coverage as the sentinel's
+    enumeration horizon -- "at most 2 of 6" for a sentinel that could see 3
+    -- so the reassuring number in the log was simply wrong.
+    """
+    from agent_gauntlet.interpose import partial_horizon
+
+    _run(monkeypatch, tmp_path, _agent(verifying))
+    out = capsys.readouterr().out
+
+    horizon = partial_horizon(len(SCENARIO.records))
+    assert horizon != len(SCENARIO.audited_ids), (
+        "this fixture no longer distinguishes the two numbers, so the test "
+        "cannot catch the confusion it was written for"
+    )
+    assert f"at most {horizon} of {len(SCENARIO.records)} records" in out
+
+
+def test_the_horizon_is_not_restated_anywhere():
+    """One source of truth, so the message cannot drift from the behaviour."""
+    from agent_gauntlet.interpose import list_record_ids_partial, partial_horizon
+    import inspect
+
+    body = inspect.getsource(list_record_ids_partial)
+    assert "partial_horizon(" in body
+    assert "// 2" not in body, "the truncation rule is stated in one place only"
+    assert partial_horizon(6) == 3 and partial_horizon(1) == 1
