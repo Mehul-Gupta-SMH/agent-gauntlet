@@ -324,11 +324,42 @@ seeing the number is the same error pre-registration exists to prevent.
 
 #### As built
 
-A walking skeleton runs end to end offline (`gauntlet run`), with 58 tests.
-C0.1, C0.3, C0.4, C0.5 and C0.6 are done; C0.2 turned out to be mostly
-upstream (`commonadk 0.0.2` ships `get_runner`, `Trace`, token/cost/latency
-metering); C0.7's machinery works but cannot answer #1 until real models
-run, and C0.8 has not started. Tracking: #29.
+A walking skeleton runs end to end offline and live (`gauntlet run`), with
+96 tests. C0.1, C0.3, C0.4, C0.5 and C0.6 are done; C0.2 turned out to be
+mostly upstream (`commonadk 0.0.2` ships `get_runner`, `Trace`,
+token/cost/latency metering). C0.7 has now been **run live and failed**, and
+C0.8 has not started. Tracking: #29.
+
+**The gate has been attempted once.** 324 live runs, ~$5, exit code 3
+([experiment 003](experiments/003-live-m0-gate/)). Two results, in the order
+that matters:
+
+1. **The instrument check failed.** The sentinel ranked 6th of 9. Issue #29
+   pre-registered that a board which cannot rank a deliberately degraded
+   variant last is broken, so the gate verdict itself is not evidence of
+   anything. Cause: the sentinel was degraded by *instruction*, and a
+   capable model read everything anyway. **You cannot degrade a capable
+   model by asking it to be careless.**
+2. **The gate failed on a ceiling, not on instability.** tau was 1.0 with
+   the top two tied at exactly 1.00, so no seed pair had a unique winner to
+   agree on. #1 is not answered; the fixture was too easy to produce a
+   ranking worth testing.
+
+Live data also turned up a fifth terminal outcome the taxonomy had no bucket
+for — detection 100% *and* propagation 100%, i.e. flagged the anomaly and
+shipped the corrupted total, classified as the best-looking outcome there is.
+
+All three fixes have landed and none has been re-run live:
+
+| Fix | What changed |
+|---|---|
+| Sentinel degraded structurally | A `records-partial` tool set whose enumeration tool silently returns half the record ids. A model cannot reason its way to records it cannot see. The offline `sentinel` policy is deleted — it truncated the list *itself*, which is precisely how the harness came to be testing one mechanism and shipping another |
+| `SURFACED_BUT_PROPAGATED` | Named, and ranked with the propagating failures rather than the detecting successes (#16) |
+| The ceiling | `fixtures/inventory/audited.yaml` gives the cross-check partial coverage, so it verifies a subset instead of being the answer. Offline: top tier no longer tied, top-1 stability 0% → 33%, model axis spread 0% → 12% |
+
+The pre-registered thresholds are byte-identical in the new fixture. A
+failed gate is a reason to change the task; it is never a reason to lower
+the bar. The fingerprint moved with the task, which is what it is for.
 
 Three corrections to this milestone were made in flight, each a correctness
 problem rather than a tuning choice:
@@ -338,6 +369,8 @@ problem rather than a tuning choice:
 | The `toolset` factor was declared but never enforced | Tool grants enforced in the interposer. A declared factor nothing checks is a label, and the censoring logic built on it was fiction |
 | Binary correctness ties, and a tied ranking cannot be correlated | Graded accuracy added alongside it; binary for the gate, graded for the ranking (#17) |
 | Propagation matched the credulous figure exactly, and under-reported when corruption fell below the noise band | Band rule, plus undecidable runs excluded from the denominator rather than read as a clean 0% |
+| The sentinel was degraded by a prompt, which a capable model ignores | Degraded by a missing capability instead, and by the *same* mechanism offline and live. Found by running the gate, not by reading the code (#29) |
+| `fingerprint()` hashed the whole model, so adding an unused field rehashed every existing spec | Built field by field; optional fields join the payload only when set. A schema-sensitive fingerprint detaches historical run records silently, and nothing fails when it does (#15) |
 
 Enforcing the toolset grant immediately produced a genuine factor
 interaction -- a verifying prompt is worth a great deal with a cross-check
@@ -382,6 +415,8 @@ A Gantt cannot express "and if this fails, none of the rest happens." This can:
 ```mermaid
 flowchart TD
     M0["M0 — thin slice through every layer"]
+    INST{"Instrument check — does the<br/>sentinel rank last?"}
+    FIXM["FIX THE INSTRUMENT — the gate<br/>verdict is not evidence.<br/>Do not read the board."]
     GATE{"C0.7 — does the ranking<br/>survive a seed change?"}
     STOP["STOP — the problem is task or<br/>variant design. No downstream<br/>work fixes it."]
     M1["M1 — Honest reporting<br/>#20 #1 #14"]
@@ -394,7 +429,10 @@ flowchart TD
     M8["M8 — Scope: workflows<br/>#23 #24 #18 #8 #26"]
     UP(["Upstream: CommonADK<br/>richer edge semantics"])
 
-    M0 --> GATE
+    M0 --> INST
+    INST -- "no" --> FIXM
+    FIXM -- "re-run" --> INST
+    INST -- "yes" --> GATE
     GATE -- "unstable" --> STOP
     GATE -- "stable" --> M1
     M1 --> M2
@@ -409,6 +447,8 @@ flowchart TD
     M3 -.-> M8
     M2 -.-> M8
 
+    style INST fill:#5b21b6,stroke:#4c1d95,color:#fff
+    style FIXM fill:#78350f,stroke:#92400e,color:#fff
     style GATE fill:#5b21b6,stroke:#4c1d95,color:#fff
     style STOP fill:#7f1d1d,stroke:#991b1b,color:#fff
     style M0 fill:#1e3a5f,stroke:#1e40af,color:#fff
@@ -424,6 +464,12 @@ Three things this makes visible that the milestone table does not:
   no matter how the rest progresses.
 - **The STOP branch is a real outcome**, not a formality. It is the branch the
   project is most likely to take, and the one the plan exists to catch early.
+- **The instrument check comes first, and it is a loop, not a formality.**
+  Added after experiment 003 took that branch on the first live run. A gate
+  verdict from a board that cannot rank a deliberately degraded variant last
+  is not a result in either direction — neither "unstable" nor "stable" means
+  anything — so there is no edge from the failed check to STOP. The only
+  outgoing edge is back to the instrument.
 
 ### After the gate — deepening passes
 
