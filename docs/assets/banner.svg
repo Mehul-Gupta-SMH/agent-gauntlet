@@ -36,13 +36,13 @@
   <g font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="14">
     <rect x="62" y="276" width="9" height="9" rx="2" fill="#5ec27a"/>
     <text x="80" y="285" fill="#9fb0c4">graded by an oracle</text>
-    <rect x="330" y="276" width="9" height="9" rx="2" fill="#d9a441"/>
-    <text x="348" y="285" fill="#9fb0c4">propagation gates the config</text>
+    <rect x="368" y="276" width="9" height="9" rx="2" fill="#d9a441"/>
+    <text x="386" y="285" fill="#9fb0c4">propagation gates the config</text>
 
     <rect x="62" y="302" width="9" height="9" rx="2" fill="#a78bfa"/>
     <text x="80" y="311" fill="#9fb0c4">six agent SDKs, one definition</text>
-    <rect x="330" y="302" width="9" height="9" rx="2" fill="#4ec9d9"/>
-    <text x="348" y="311" fill="#9fb0c4">bar pre-registered, hash-pinned</text>
+    <rect x="368" y="302" width="9" height="9" rx="2" fill="#4ec9d9"/>
+    <text x="386" y="311" fill="#9fb0c4">bar pre-registered, hash-pinned</text>
   </g>
 
   <!-- ============ right: leaderboard motif, x=780..1140 ============ -->

@@ -45,3 +45,24 @@ python -c "import cairosvg; cairosvg.svg2png(url='docs/assets/banner.svg', \
 
 Worth doing — the first draft of the banner had three overlapping-text bugs that
 were invisible in the source and obvious the moment it was rendered.
+
+## How these were verified on GitHub
+
+Not by looking at the source and reasoning about it:
+
+- **GitHub keeps the markup.** Fetching the rendered repo page shows both
+  `<img>` tags surviving sanitisation, rewritten to `/raw/main/...`, alt text
+  intact, and the `<details>` block preserved.
+- **The served files are the committed files.** `banner.svg` fetched from
+  `raw/main` is byte-identical to the one in the repo, served as
+  `image/svg+xml`; `demo.gif` matches its committed length as `image/gif`.
+- **Rendered in Blink**, the engine GitHub's viewers use, at the real 880px
+  README content width, on both the light and dark canvas.
+- **Bound-tested against font substitution.** The banner's layout depends on
+  text advance widths, and a viewer's browser may pick a different monospace
+  or UI font. Substituting a proportional serif for each stack — a far larger
+  change than any real platform difference — the left column still clears the
+  leaderboard panel by 171px and the tightest bullet gap stays at 78px.
+
+The bullet columns were widened after that measurement: the original gap was
+40px, which a 15%-wider system font could have eaten.
