@@ -86,7 +86,7 @@ top-1 stability is undefined by construction.
 | Step | Cost | Proves | When |
 |---|---|---|---|
 | offline suite (`ci.yml`) | $0 | the machinery, on every Python we support | every push and PR |
-| `probe` (`live-probe.yml`) | ~$0.02 | the whole live path, clean **and** faulted | **automatically**, on every push to `main` that touches code, plus daily |
+| `probe` (`live-probe.yml`) | ~$0.03 | the live path clean **and** faulted, plus the instrument check | **automatically**, on every push to `main` that touches code, plus daily |
 | `matrix` (`live-gauntlet.yml`) | ~$5 | the gate | manual dispatch only |
 
 Only the last one is manual, because only the last one is expensive. Dispatch
@@ -105,6 +105,20 @@ is a confident zero and the board looks immaculate. Whether a tool call
 returned a faulted result is decidable without the model's cooperation, so
 that half is a hard failure rather than a judgement call. `--no-faulted`
 halves the cost and the coverage.
+
+Its third call is the **instrument check** (#29), and it is there because of
+how experiment 003 failed. That sentinel was degraded by a prompt: offline a
+scripted policy had no choice but to comply, so it ranked last and the
+instrument looked sound; live, a capable model ignored the instruction and
+ranked it 6th of 9, voiding the whole board including its gate verdict. The
+structural sentinel that replaced it had, until now, only ever been validated
+offline — in the one environment that cannot falsify it.
+
+So the probe runs the sentinel against a real model and asserts it does **not**
+get the right answer. If a model recovers the truth from a truncated record
+list, the degradation was never structural and a matrix is void before it
+starts. That is a hard failure, for the price of one call rather than a whole
+matrix.
 
 The probe never fails the build for something a contributor cannot fix. It
 exits 4 when the model is unreachable (outage, rate limit, revoked key) and CI

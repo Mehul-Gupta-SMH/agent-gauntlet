@@ -93,6 +93,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip the faulted half (halves the cost, and the coverage)",
     )
     probe.add_argument(
+        "--no-sentinel", dest="sentinel", action="store_false",
+        help="skip the live instrument check (#29)",
+    )
+    probe.add_argument(
         "--model", default="cheap", choices=sorted(DEFAULT_MODELS),
         help="which grid level to probe (default: cheap, the lowest-cost model)",
     )
@@ -230,7 +234,7 @@ def _probe(args) -> int:
     variants = architect.generate(
         out_dir=out / "variants", task=task, models=DEFAULT_MODELS,
         targets=[args.target], prompts=["verifying"], toolsets=["records+summary"],
-        include_sentinel=False,
+        include_sentinel=True,
     )
     # The cheapest level by default. The probe proves the *path* -- build,
     # run, trace, parse -- and the path does not care which model walked it.
@@ -238,7 +242,13 @@ def _probe(args) -> int:
     # every push, and Haiku is the stricter canary anyway: if the weakest
     # model in the grid reconciles, the rest do.
     level = getattr(args, "model", "cheap")
-    variant = next(v for v in variants if v.factors.get("model") == level)
+    # `not v.is_sentinel` matters: the sentinel also sits on the cheap level,
+    # and probing it by accident would test the instrument and call it the
+    # path.
+    variant = next(
+        v for v in variants
+        if not v.is_sentinel and v.factors.get("model") == level
+    )
     print(f"probing {variant.id} on target={args.target} "
           f"({level}={DEFAULT_MODELS[level]})")
 
@@ -401,8 +411,67 @@ def _probe(args) -> int:
           f"surfaced={fscore.surfaced}  repaired={fscore.repaired}  "
           f"determinable={fscore.propagation_determinable}")
 
-    print("\nOK -- the live path works end to end, clean and faulted. The "
-          "matrix is safe to run.")
+    print("\nOK -- the live path works end to end, clean and faulted.")
+
+    # The instrument check, live (#29). The sentinel has only ever been
+    # validated offline against scripted policies -- which is EXACTLY the
+    # mistake that produced experiment 003. The old sentinel was degraded by
+    # a prompt; a scripted policy had no choice but to comply, so it ranked
+    # last offline, and a capable model ignored the instruction and ranked
+    # it 6th of 9. Validating a sentinel only where it cannot be disobeyed
+    # proves nothing about the environment it has to work in.
+    if not getattr(args, "sentinel", True):
+        print("\n(skipping the instrument check: --no-sentinel)")
+        return _answer_note(answer, scenario, DEFAULT_MODELS[level])
+
+    print("\n--- instrument check " + "-" * 39)
+    guard = next(v for v in variants if v.is_sentinel)
+    granted = architect.TOOLSETS[guard.factors["toolset"]]
+    print(f"probing the sentinel: {guard.id}")
+    print(f"granted tools  : {sorted(granted)}")
+    print(f"it must NOT reach {scenario.expected_total} -- it can enumerate at "
+          f"most {len(scenario.audited_ids)} of {len(scenario.records)} records")
+
+    try:
+        with run_context(
+            scenario.records, FaultSchedule.clean("probe-sentinel"),
+            set(granted), scenario.audited_ids,
+        ) as sctx:
+            sanswer = execute(guard, "probe-sentinel")
+    except Exception as exc:
+        print(f"\n{type(exc).__name__}: {exc}")
+        if _provider_unreachable(exc):
+            print("UNREACHABLE on the sentinel -- not a build failure.")
+            return 4
+        print("FAILED: the sentinel run raised. Ours.")
+        return 1
+
+    print(f"tool calls     : {[c['tool'] for c in sctx.calls]}")
+    print(f"reported total : {sanswer.total}  (truth {scenario.expected_total})")
+
+    if sanswer.total is None:
+        print("\nFAILED: the sentinel answered nothing.")
+        print("It is supposed to fail on QUALITY -- a plausible undercount --")
+        print("not by producing no answer at all (#29, risk 4). An unanswered")
+        print("sentinel exercises a different scoring path than a real variant")
+        print("and tells us nothing about whether the board can rank it last.")
+        return 1
+
+    if sanswer.total == scenario.expected_total:
+        print("\nFAILED: THE SENTINEL GOT THE RIGHT ANSWER.")
+        print("The degradation is not structural after all -- a real model")
+        print("recovered the truth from a truncated record list. Per #29, a")
+        print("board that cannot rank a deliberately degraded variant last")
+        print("measures nothing, so a matrix now would be void before it")
+        print("starts. This is the failure that cost experiment 003, caught")
+        print("for one cheap call instead of a whole matrix.")
+        return 1
+
+    gap = scenario.expected_total - sanswer.total
+    print(f"\nOK -- the sentinel undercounts by {gap} "
+          f"({gap / scenario.expected_total:.0%}). The degradation survives "
+          "contact with a real model.")
+    print("\nThe matrix is safe to run.")
 
     # Correctness is the experiment's subject, not a build invariant, so
     # none of this changes the exit code. It is printed because one case is

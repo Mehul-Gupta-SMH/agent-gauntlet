@@ -68,7 +68,7 @@ def test_a_credulous_agent_is_exposed_and_scored(tmp_path, monkeypatch, capsys):
     assert code == 0
     assert "faulted results reaching the agent: 1" in out
     assert "propagated=True" in out
-    assert "clean and faulted. The matrix is safe to run" in out
+    assert "The matrix is safe to run" in out
 
 
 def test_a_verifying_agent_detects_and_the_probe_says_so(tmp_path, monkeypatch, capsys):
