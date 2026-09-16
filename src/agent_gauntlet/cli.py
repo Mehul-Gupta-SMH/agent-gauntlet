@@ -394,8 +394,12 @@ def _probe(args) -> int:
     print(f"reported total : {fanswer.total}  (truth {scenario.expected_total}, "
           f"credulous {scenario.expected_total + sched.total_delta})")
     print(f"outcome        : {fscore.outcome.value}")
+    # `repaired` beside the rest: it is the observable detection is now
+    # derived from, and a probe that omits it hides the difference between
+    # noticing and fixing -- the whole point of the outcome above (#16).
     print(f"propagated={fscore.propagated}  detected={fscore.detected}  "
-          f"surfaced={fscore.surfaced}  determinable={fscore.propagation_determinable}")
+          f"surfaced={fscore.surfaced}  repaired={fscore.repaired}  "
+          f"determinable={fscore.propagation_determinable}")
 
     print("\nOK -- the live path works end to end, clean and faulted. The "
           "matrix is safe to run.")

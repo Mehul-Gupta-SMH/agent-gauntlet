@@ -77,7 +77,23 @@ def test_a_verifying_agent_detects_and_the_probe_says_so(tmp_path, monkeypatch, 
 
     assert code == 0
     assert "detected=True" in out
+    assert "repaired=True" in out
     assert "propagated=False" in out
+
+
+def test_the_probe_distinguishes_noticing_from_fixing(tmp_path, monkeypatch, capsys):
+    """A credulous agent shows repaired=False, and the probe prints it.
+
+    Without that field the output cannot tell an agent that fixed the fault
+    from one that merely avoided the credulous figure -- which is the
+    conflation repair rate exists to remove (#16).
+    """
+    code = _run(monkeypatch, tmp_path, _through_the_interposer(naive))
+    out = capsys.readouterr().out
+
+    assert code == 0
+    assert "repaired=False" in out
+    assert "propagated=True" in out
 
 
 def test_the_injected_fault_is_reported_before_the_run(tmp_path, monkeypatch, capsys):
