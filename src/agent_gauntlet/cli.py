@@ -89,6 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
     probe.add_argument("--out", type=Path, default=Path("runs-probe"))
     probe.add_argument("--target", default="langgraph")
     probe.add_argument(
+        "--model", default="cheap", choices=sorted(DEFAULT_MODELS),
+        help="which grid level to probe (default: cheap, the lowest-cost model)",
+    )
+    probe.add_argument(
         "--scenario", default=None,
         help="which scenario to probe (default: the first)",
     )
@@ -212,8 +216,15 @@ def _probe(args) -> int:
         targets=[args.target], prompts=["verifying"], toolsets=["records+summary"],
         include_sentinel=False,
     )
-    variant = next(v for v in variants if v.factors.get("model") == "smart")
-    print(f"probing {variant.id} on target={args.target}")
+    # The cheapest level by default. The probe proves the *path* -- build,
+    # run, trace, parse -- and the path does not care which model walked it.
+    # Paying Sonnet rates to learn that `get_runner` still works is waste on
+    # every push, and Haiku is the stricter canary anyway: if the weakest
+    # model in the grid reconciles, the rest do.
+    level = getattr(args, "model", "cheap")
+    variant = next(v for v in variants if v.factors.get("model") == level)
+    print(f"probing {variant.id} on target={args.target} "
+          f"({level}={DEFAULT_MODELS[level]})")
 
     try:
         preflight([variant], target=args.target)
@@ -321,24 +332,25 @@ def _probe(args) -> int:
     # worth knowing before committing $5: under a partial audit, a model
     # that reports the audited figure has not done the reconciliation, and
     # every verifying variant in the matrix will undercount identically.
+    model_name = DEFAULT_MODELS[level]
     if answer.total == scenario.expected_total:
-        print("ANSWER: correct -- the grand total.")
+        print(f"ANSWER: correct -- the grand total ({model_name}).")
     elif (
         scenario.audited_total != scenario.expected_total
         and answer.total == scenario.audited_total
     ):
         print(
             f"ANSWER: the AUDITED figure ({scenario.audited_total}), not the "
-            f"grand total ({scenario.expected_total}).\n"
-            "  The reconciliation instruction is not landing. The matrix will\n"
-            "  run and score, but every verifying variant will undercount by\n"
-            f"  the same {scenario.expected_total - scenario.audited_total} "
-            "and the prompt factor will measure nothing."
+            f"grand total ({scenario.expected_total}) -- on {model_name}.\n"
+            "  The reconciliation instruction did not land for THIS model. On\n"
+            "  the cheap level that is one grid cell, not a verdict on the\n"
+            "  fixture: re-probe with --model smart before concluding the\n"
+            "  prompt factor cannot be measured."
         )
     else:
         print(
-            f"ANSWER: wrong ({answer.total} vs {scenario.expected_total}). "
-            "A result about the model, not the path."
+            f"ANSWER: wrong ({answer.total} vs {scenario.expected_total}) on "
+            f"{model_name}. A result about the model, not the path."
         )
     return 0
 

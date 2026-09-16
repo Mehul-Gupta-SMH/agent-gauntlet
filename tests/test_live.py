@@ -390,3 +390,43 @@ def test_genuine_provider_failures_still_earn_code_4(tmp_path, monkeypatch, exc)
         raise exc
 
     assert _run_probe(monkeypatch, tmp_path, unreachable, FIXTURE) == 4
+
+
+def test_probe_defaults_to_the_cheapest_model():
+    """It runs on every push; the default must be the cheap grid level.
+
+    Haiku 4.5 is $1/$5 per MTok against Sonnet 5's $2/$10. The probe proves
+    the path, and the path does not care which model walked it.
+    """
+    from agent_gauntlet.cli import DEFAULT_MODELS, build_parser
+
+    args = build_parser().parse_args(["probe", "x.yaml"])
+    assert args.model == "cheap"
+    assert DEFAULT_MODELS["cheap"] == "anthropic/claude-haiku-4-5"
+
+
+def test_probe_actually_runs_the_model_level_it_was_given(tmp_path, monkeypatch, capsys):
+    """Asserted on the variant, not on the flag.
+
+    The flag existing proves nothing -- the previous version hardcoded
+    `smart` and would have kept doing so with a --model option bolted on.
+    """
+    from agent_gauntlet import live as live_mod
+    from agent_gauntlet.cli import _probe, build_parser
+    from agent_gauntlet.score import Answer
+
+    seen: dict = {}
+
+    def record(variant, seed):
+        seen["variant"] = variant
+        live_mod._final_text(object())
+        return Answer(total=TaskSpec.from_yaml(FIXTURE).scenarios[0].expected_total)
+
+    monkeypatch.setattr(live_mod, "preflight", lambda *a, **k: None)
+    monkeypatch.setattr(live_mod, "live_executor", lambda target: record)
+    _probe(build_parser().parse_args(
+        ["probe", str(FIXTURE), "--out", str(tmp_path / "p")]
+    ))
+
+    assert seen["variant"].factors["model"] == "cheap"
+    assert "claude-haiku-4-5" in capsys.readouterr().out

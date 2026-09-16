@@ -36,6 +36,11 @@ on:
         type: choice
         default: langgraph
         options: [langgraph, claude, openai, crewai, autogen, google-adk]
+      model:
+        description: "Grid level. cheap is the lowest-cost Claude model"
+        type: choice
+        default: cheap
+        options: [cheap, smart]
 
 # Supersede in-flight probes rather than stacking spend on a run of pushes.
 concurrency:
@@ -75,6 +80,10 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FIXTURE: ${{ inputs.fixture || 'fixtures/inventory/audited.yaml' }}
           TARGET: ${{ inputs.target || 'langgraph' }}
+          # claude-haiku-4-5, $1/$5 per MTok -- half Sonnet 5's rate. The
+          # probe proves the path, and the path does not care which model
+          # walked it.
+          MODEL: ${{ inputs.model || 'cheap' }}
         run: |
           # +e deliberately: Actions runs this under bash -e, and the whole
           # point of this step is to read the exit code rather than die on it.
@@ -89,7 +98,7 @@ jobs:
             exit 0
           fi
 
-          gauntlet probe "$FIXTURE" --target "$TARGET" | tee probe.txt
+          gauntlet probe "$FIXTURE" --target "$TARGET" --model "$MODEL" | tee probe.txt
           status=${PIPESTATUS[0]}
 
           case "$status" in
@@ -99,7 +108,7 @@ jobs:
               # build invariant. But it is the one result worth seeing before
               # committing $5, so it gets an annotation.
               if grep -q "ANSWER: the AUDITED figure" probe.txt; then
-                echo "::warning::the model reported the audited figure, not the grand total -- the reconciliation instruction is not landing, and a matrix would measure nothing on the prompt factor"
+                echo "::warning::$MODEL reported the audited figure, not the grand total -- the reconciliation instruction did not land for this model. Re-probe with model=smart before concluding the fixture is at fault."
               elif grep -q "ANSWER: wrong" probe.txt; then
                 echo "::warning::$(grep 'ANSWER: wrong' probe.txt)"
               fi
