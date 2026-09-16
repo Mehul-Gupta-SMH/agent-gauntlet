@@ -116,6 +116,7 @@ def run_matrix(
                         task_id=task.id,
                         task_fingerprint=fingerprint,
                         variant_id=variant.id,
+                        variant_fingerprint=variant.fingerprint,
                         factors=dict(variant.factors),
                         scenario_id=scenario.id,
                         repeat=repeat,

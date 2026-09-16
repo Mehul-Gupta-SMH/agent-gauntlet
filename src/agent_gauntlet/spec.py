@@ -210,6 +210,21 @@ class VariantSpec(BaseModel, frozen=True):
     """The named factor settings this variant represents -- model, prompt
     strategy, tool set. Attribution (#22) is computed over these."""
 
+    fingerprint: Optional[str] = None
+    """Hash of what this variant actually *is*: the realized `skill.md`, the
+    tools it was granted, the resolved model string, the entry agent.
+
+    A run record naming `prompt-verifying` pins a *label*, and labels drift.
+    Edit `PROMPTS["verifying"]` -- as this project did, to teach the
+    verifying strategy about partial audits -- and every earlier record
+    citing that name now refers to text that no longer exists, with nothing
+    to show it changed. The task fingerprint does not cover prompts; it
+    covers the task.
+
+    Same defect as the schema-sensitive task hash and the unstored answer:
+    a record that names a thing instead of pinning it (#15).
+    """
+
     is_sentinel: bool = False
     """A deliberately degraded variant. If the board does not rank it last,
     the instrument is broken -- see issue #29. Excluded from the ranking

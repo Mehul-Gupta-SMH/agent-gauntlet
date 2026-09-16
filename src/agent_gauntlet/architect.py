@@ -13,7 +13,9 @@ is being tested by inspecting its own tool code for a fault hook.
 
 from __future__ import annotations
 
+import hashlib
 import itertools
+import json
 from pathlib import Path
 from typing import Iterable, Mapping, Optional, Union
 
@@ -173,6 +175,38 @@ def factor_grid(
     ]
 
 
+def variant_fingerprint(
+    *, skill_md: str, tools: Iterable[str], model: str, entry_agent: str
+) -> str:
+    """Hash everything that decides how a variant behaves.
+
+    The realized `skill.md` rather than the prompt *name*, because the name
+    is the part that drifts. This is literally what the agent was told,
+    plus what it was allowed to call and which model read it.
+
+    Serialized as JSON rather than joined with a separator. The first
+    version joined on NUL between fields and commas within the tool list,
+    which collided: a single tool named `a,b` hashed identically to the
+    pair `a`, `b`. Its own test caught it. Any separator scheme has that
+    hazard unless the separator cannot appear in the data, and JSON quoting
+    removes the question instead of betting on it.
+
+    As with `TaskSpec.fingerprint`, a field added here later must join the
+    payload only when set, or every existing hash moves.
+    """
+    payload = json.dumps(
+        {
+            "skill_md": skill_md,
+            "tools": sorted(tools),
+            "model": model,
+            "entry_agent": entry_agent,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
 def variant_id(factors: Mapping[str, str]) -> str:
     return "__".join(f"{k}-{factors[k]}" for k in sorted(factors))
 
@@ -266,10 +300,10 @@ def _write_variant(
     # The statement every variant receives verbatim -- a fairness invariant.
     from .live import ANSWER_FORMAT
 
-    (agent / "skill.md").write_text(
-        PROMPTS[factors["prompt"]] + "\n## Task\n\n" + task.statement + ANSWER_FORMAT,
-        encoding="utf-8",
+    skill_md = (
+        PROMPTS[factors["prompt"]] + "\n## Task\n\n" + task.statement + ANSWER_FORMAT
     )
+    (agent / "skill.md").write_text(skill_md, encoding="utf-8")
     (agent / "tools.py").write_text(_TOOLS_PY, encoding="utf-8")
     _dump(
         agent / "agent-config.yaml",
@@ -290,6 +324,12 @@ def _write_variant(
         common_dir=str(root),
         entry_agent=AGENT_NAME,
         factors=dict(factors),
+        fingerprint=variant_fingerprint(
+            skill_md=skill_md,
+            tools=tools,
+            model=models[model_alias],
+            entry_agent=AGENT_NAME,
+        ),
         is_sentinel=sentinel,
     )
 

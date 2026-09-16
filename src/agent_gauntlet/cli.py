@@ -452,6 +452,10 @@ def _run(args) -> int:
     )
     print(f"variants    {len(variants)} generated "
           f"({sum(v.is_sentinel for v in variants)} sentinel)")
+    # Printed so a run is reproducible from its console output alone: the
+    # task hash pins what was asked, these pin what was asked OF.
+    for v in sorted(variants, key=lambda v: v.id):
+        print(f"            {v.fingerprint}  {v.id}")
 
     executor = None
     offline = not args.live
@@ -478,6 +482,18 @@ def _run(args) -> int:
         )
     records = ledger.records()
     print(f"runs        {len(records)} across {len(seeds)} seed(s)")
+
+    # A ledger appended to across a prompt edit holds runs of two different
+    # agents under one name. Averaging them reports one number for two
+    # configurations, and nothing else in the output would show it (#15).
+    drift = ledger.variant_drift()
+    if drift:
+        print(f"\nWARNING: {len(drift)} variant(s) appear under more than one")
+        print("fingerprint -- this ledger mixes configurations that share a name")
+        print("and differ in substance. Aggregates below average them together.")
+        for vid, fps in sorted(drift.items()):
+            print(f"  {vid}: {', '.join(sorted(fps))}")
+        print("Start a fresh --out directory to separate them.")
 
     results = board.summarize(records)
     for r in results:

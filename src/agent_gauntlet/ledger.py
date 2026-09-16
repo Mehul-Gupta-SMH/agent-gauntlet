@@ -29,6 +29,14 @@ class RunRecord(BaseModel):
     checkable rather than merely asserted (#15)."""
 
     variant_id: str
+    variant_fingerprint: Optional[str] = None
+    """Hash of the prompt text, tool grant, and model this run actually used.
+
+    `factors` names the levels; this pins them. Without it a ledger cannot
+    tell "these two runs used the same verifying prompt" from "these two
+    runs used prompts that happened to share a name" (#15).
+    """
+
     factors: dict[str, str] = Field(default_factory=dict)
     scenario_id: str
     repeat: int
@@ -111,6 +119,21 @@ class Ledger:
 
     def records(self) -> list[RunRecord]:
         return list(self)
+
+    def variant_drift(self) -> dict[str, set[str]]:
+        """Variant ids that appear under more than one fingerprint.
+
+        A non-empty result means the ledger mixes runs of configurations
+        that share a name and differ in substance -- aggregating across
+        them would average two different agents together and report it as
+        one. Records predating the field are ignored rather than counted as
+        a distinct version.
+        """
+        seen: dict[str, set[str]] = {}
+        for r in self:
+            if r.variant_fingerprint:
+                seen.setdefault(r.variant_id, set()).add(r.variant_fingerprint)
+        return {vid: fps for vid, fps in seen.items() if len(fps) > 1}
 
     def fingerprints(self) -> set[str]:
         """Every task fingerprint present.
