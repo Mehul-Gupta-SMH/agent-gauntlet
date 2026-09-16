@@ -17,19 +17,21 @@ Two rules this directory follows:
 |---|---|---|---|
 | [001](001-offline-harness-validation/) | Offline harness validation | $0.00 | Machinery correct; **gate FAILs** on a tied ranking, which is the right verdict |
 | [002](002-live-path-validation/) | Live path validation | ~$0.05 | Path works end to end; found two defects that would each have voided a matrix |
+| [003](003-live-m0-gate/) | The M0 gate, live | ~$5 | **Gate FAILs**, and so does the instrument check — the sentinel ranked 6th of 9 |
 
-## Not yet run
+## Where that leaves the question
 
-**The M0 gate against real agents.** Everything so far validates the
-instrument. The question the project exists to answer — *does a ranking of
-agent configurations survive a change of random seed?* (#1) — needs a live
-matrix run, and has not been answered.
+*Does a ranking of agent configurations survive a change of random seed?* (#1)
+is **still unanswered.** Experiment 003 ran the matrix against real agents, but
+the fixture could not separate its top two variants and the sentinel did not
+rank last, so the board it produced cannot be used to answer anything.
 
 The bar was pre-registered first, in
 [`fixtures/inventory/task.yaml`](../fixtures/inventory/task.yaml) and commit
 `358b6fe`: median Kendall's tau ≥ 0.7, top-1 stability ≥ 0.6, seeds ≥ 3. It is
-covered by the task fingerprint (`5c9848747223eaa4`), so moving it later would
-change the hash that every run record carries.
+covered by the task fingerprint (`5c9848747223eaa4`), so moving it after the
+fact would change the hash that every run record carries. It has not been
+moved.
 
 ## Running one
 

@@ -7,14 +7,16 @@ different models, prompts, tools, frameworks — runs them against that task whi
 **deliberately lying to them through their own tools**, and returns a ranked,
 cost-aware answer plus the winning configuration as something you can run.
 
-> **Status: early build.** The loop runs end to end — `gauntlet run` generates
-> variant `common/` projects, runs them under seeded fault injection, scores
-> mechanically, and exports the winner as a runnable project. The live path is
-> verified against a real model. The measurement gate that decides whether any
-> of this is worth building ([M0](plan.md#m0--the-measurement-gate)) has **not**
-> been answered — its bar is pre-registered and the matrix has not yet run.
-> Architecture and open questions in [`plan.md`](plan.md); every result so far
-> in [`experiments/`](experiments/).
+> **Status: early build, gate not passed.** The loop runs end to end —
+> `gauntlet run` generates variant `common/` projects, runs them under seeded
+> fault injection, scores mechanically, and exports the winner as a runnable
+> project. The measurement gate that decides whether any of this is worth
+> building ([M0](plan.md#m0--the-measurement-gate)) has now been **run live
+> against real agents, and it FAILED** — and the instrument check inside it
+> failed too: the deliberately-degraded sentinel variant ranked 6th of 9.
+> Measurement is being fixed before anything else gets built. Architecture and
+> open questions in [`plan.md`](plan.md); every result so far, including that
+> one, in [`experiments/`](experiments/).
 
 ## The idea in one loop
 
@@ -109,14 +111,44 @@ finding about instruction-following is precisely the error this project exists
 to avoid making about other people's agents, and the harness made it about its
 own. It is now a regression test built from the captured reply.
 
-### What has not been measured
+### The gate ran live, and failed — along with its own instrument check
 
-Whether a ranking of agent configurations survives a change of random seed —
-the question the project exists to answer. The bar was
-[pre-registered first](fixtures/inventory/task.yaml) (median Kendall's tau ≥
-0.7, top-1 stability ≥ 0.6, seeds ≥ 3) and is covered by the task fingerprint,
-so it cannot be moved afterwards without changing the hash every run record
-carries.
+[Experiment 003](experiments/003-live-m0-gate/) — 324 live runs, 33 minutes,
+~$5. The bar was [pre-registered first](fixtures/inventory/task.yaml) (median
+Kendall's tau ≥ 0.7, top-1 stability ≥ 0.6, seeds ≥ 3), covered by the task
+fingerprint, so it could not be moved afterwards without changing the hash every
+run record carries.
+
+```
+median tau      = 1.0
+top-1 stability = 0%
+GATE: FAIL -- top-1 stability 0.00 < 0.6
+NO WINNER
+```
+
+Four results worth more than the verdict:
+
+**The sentinel ranked 6th of 9.** The board is supposed to place a deliberately
+degraded variant last; that is the instrument check. It did not, so *this board
+should be read with suspicion, gate verdict included.* The cause is a general
+one: the sentinel was degraded by **instruction** ("speed matters far more than
+completeness; do not bother reading everything"). A scripted policy obeys that
+and ranks last. A capable model reads everything anyway and scores 100% clean.
+**You cannot degrade a capable model by asking it to be careless** — a sentinel
+has to be degraded structurally.
+
+**There is a fifth outcome the taxonomy has no bucket for.** Two variants scored
+detection 100% *and* propagation 100% — they flagged the anomaly and shipped the
+corrupted total anyway. That may be the most dangerous pattern on the board, and
+the four-outcome taxonomy files it under the best-looking bucket there is.
+
+**The gate failed on a ceiling, not on instability.** tau was 1.0; the top two
+variants tied at exactly 1.00, so no seed pair had a unique winner to agree on.
+The question the project exists to answer is still **unanswered** — this run
+showed the fixture is too easy, not that rankings are unstable.
+
+**The model axis did nothing.** Prompt moved 25 points, toolset moved 25 points,
+Haiku vs Sonnet moved zero.
 
 ## Honest caveats, up front
 
@@ -142,6 +174,14 @@ only the random seed, and measure whether the two leaderboards agree.
 
 If they do not, this is an expensive random number generator and no amount of
 feature work fixes that. See [`plan.md`](plan.md#m0--the-measurement-gate).
+
+It has been run once (experiment 003) and did not pass. It also did not return a
+verdict on the underlying question, because the fixture could not separate the
+top two variants and the sentinel did not rank last. Work in flight, in priority
+order: degrade the sentinel structurally rather than by instruction, add the
+fifth outcome so surfaced-but-propagated stops scoring as a success, then harden
+the fixture so the board has something to discriminate. Re-running the gate is
+worth its cost only after those.
 
 ## Related
 

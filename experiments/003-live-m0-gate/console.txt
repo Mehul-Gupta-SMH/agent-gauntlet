@@ -1,0 +1,51 @@
+# Captured from GitHub Actions run 35009572280, job 104517855931
+# https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/runs/35009572280
+# 2026-09-15 18:46:57 -> 19:20:12 UTC (33 min)
+
+models      cheap=anthropic/claude-haiku-4-5, smart=anthropic/claude-sonnet-5
+variants    9 generated (1 sentinel)
+mode        LIVE via target=langgraph -- this spends money
+runs        324 across 3 seed(s)
+
+--- board --------------------------------------------------------------
+variant                                         qual   acc  clean  fault  prop   det   FA
+model-cheap__prompt-verifying__toolset-records+summary  100%  1.00   100%   100%    0% 100%   0%
+model-smart__prompt-verifying__toolset-records+summary  100%  1.00   100%   100%    0% 100%   0%
+model-smart__prompt-naive__toolset-records       50%  0.95   100%     0%  100%  n/a  33%  [GATED: propagated]
+model-cheap__prompt-sentinel__toolset-records    50%  0.93   100%     0%  100%  n/a   0%  [GATED: propagated]
+model-cheap__prompt-naive__toolset-records+summary   50%  0.92   100%     0%  100% 100%   0%  [GATED: propagated]
+model-smart__prompt-verifying__toolset-records   50%  0.92   100%     0%  100%  n/a   0%  [GATED: propagated]
+model-cheap__prompt-verifying__toolset-records   50%  0.91   100%     0%  100%  n/a   0%  [GATED: propagated]
+model-smart__prompt-naive__toolset-records+summary   50%  0.91   100%     0%  100% 100%   0%  [GATED: propagated]
+model-cheap__prompt-naive__toolset-records       50%  0.90   100%     0%  100%  n/a   0%  [GATED: propagated]
+
+--- per-factor effects -------------------------------------------------
+prompt       spread=  25%   naive=50%  verifying=75%
+toolset      spread=  25%   records=50%  records+summary=75%
+model        spread=   0%   cheap=62%  smart=62%
+
+  One-at-a-time marginal effect. Wrong under factor interaction; Shapley attribution is issue #22.
+
+--- stability gate -----------------------------------------------------
+  variants=9  seeds=3  pairs=3  undefined tau=0
+  median tau      = 1.0
+  top-1 stability = 0%
+
+  pre-registered bar (fingerprint 5c9848747223eaa4):
+    median tau      >= 0.7
+    top-1 stability >= 0.6
+    seeds           >= 3
+    set by Mehul-Gupta-SMH on 2026-09-15
+
+  GATE: FAIL
+    - top-1 stability 0.00 < 0.6
+
+  Per plan.md: stop and fix measurement before building more.
+
+--- winner -------------------------------------------------------------
+  NO WINNER -- more than one config is non-dominated, or every
+  config is gated. That is the honest answer, not a failure to
+  compute one: the remaining tradeoff is yours to make.
+
+wrote       runs/runs.jsonl, runs/summary.json
+exit code 3
