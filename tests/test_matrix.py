@@ -47,6 +47,22 @@ def test_fingerprint_changes_when_the_bar_changes(task):
     assert moved.fingerprint() != before, "a looser bar must not reuse the old hash"
 
 
+def test_fingerprint_survives_adding_a_field_nobody_set(task):
+    """The other half of the contract, and the harder half.
+
+    A hash that moves when the *schema* grows is worse than no hash: every
+    run record recorded before the change points at a task that no longer
+    exists, and the pre-registration argument quietly evaporates. Adding
+    `Scenario.audited` did exactly that until `fingerprint()` was written
+    out field by field.
+    """
+    assert task.fingerprint() == "5c9848747223eaa4", (
+        "the fingerprint experiment 003's records were judged against has "
+        "moved -- those records no longer resolve to any task"
+    )
+    assert all(not s.audited for s in task.scenarios)
+
+
 def test_matrix_runs_every_cell(task, tmp_path):
     ledger = Ledger(tmp_path / "runs.jsonl")
     records = run_matrix(

@@ -19,7 +19,7 @@ import random
 from typing import Callable, Optional
 
 from .interpose import (
-    RunContext, ToolTimeout, ToolUnavailable,
+    RunContext, ToolTimeout, ToolUnavailable, audited_record_ids,
     fetch_quantity, list_record_ids, list_record_ids_partial, summary_total,
 )
 from .score import Answer
@@ -96,13 +96,13 @@ def verifying(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     difference engineered this deliberately fails to show up, the instrument
     cannot detect subtler ones either.
     """
-    total = 0
+    seen: dict[str, int] = {}
     for rid in _enumerate():
         try:
-            total += fetch_quantity(rid)
+            seen[rid] = fetch_quantity(rid)
         except ToolTimeout:
             continue
-    total += _slip(seed, total, rate)
+    total = sum(seen.values()) + _slip(seed, sum(seen.values()), rate)
     try:
         cross_check = summary_total()
     except ToolUnavailable:
@@ -110,8 +110,18 @@ def verifying(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
         # degrades to the credulous path. That is the toolset factor doing
         # real work rather than labelling.
         return Answer(total=total, flagged_anomaly=False)
-    if cross_check != total:
-        return Answer(total=cross_check, flagged_anomaly=True)
+
+    # The audit may cover only part of the inventory, so the cross-check is
+    # not the answer -- it verifies a subset. Reconcile against that subset
+    # and carry the correction into the grand total. Reporting the audited
+    # figure directly would undercount whenever coverage is partial.
+    try:
+        covered = audited_record_ids()
+    except ToolUnavailable:
+        covered = list(seen)
+    mine = sum(seen.get(rid, 0) for rid in covered)
+    if cross_check != mine:
+        return Answer(total=total + (cross_check - mine), flagged_anomaly=True)
     return Answer(total=total, flagged_anomaly=False)
 
 

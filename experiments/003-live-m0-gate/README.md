@@ -2,6 +2,7 @@
 
 **Date:** 2026-09-15 · **Cost:** ~$5 · **Runs:** 324 · **Duration:** 33 min
 **Status:** complete — **GATE: FAIL**, and the instrument check failed too
+· all three follow-up fixes have since landed (see the end of this file)
 
 [Actions run 35009572280](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/runs/35009572280)
 · raw output in [`console.txt`](console.txt)
@@ -140,3 +141,27 @@ more.** Concretely, in priority order:
    model axis has room to show an effect.
 
 Only then is re-running the gate worth $5.
+
+## Status of those three
+
+All landed, offline suite green. Each is a claim until the gate is re-run.
+
+| # | Fix | Where |
+|---|---|---|
+| 1 | Sentinel degraded by a tool set that returns half the record ids, not by a prompt asking for carelessness | `architect.SENTINEL_TOOLSET`, `interpose.list_record_ids_partial` |
+| 2 | `SURFACED_BUT_PROPAGATED`, ranked with the propagating failures | `score.Outcome` |
+| 3 | Cross-check given partial coverage, so reporting it is now wrong | [`fixtures/inventory/audited.yaml`](../../fixtures/inventory/audited.yaml) |
+
+Offline, the sentinel's margin went from 6th of 9 to accuracy 0.46 against a
+next-worst 0.90, and the model axis moved from 0% spread to 12%.
+
+Two things this record depends on, both preserved deliberately:
+
+- `task.yaml` is untouched and still hashes to `5c9848747223eaa4`, so the
+  324 runs above still resolve to the task they were actually judged against.
+  Adding one optional field to the scenario schema broke that hash silently
+  while the fix was being written; `fingerprint()` is now built field by field
+  and a test pins the value.
+- The gate thresholds in the new fixture are byte-identical to the ones
+  pre-registered on 2026-09-15, `set_by` and `set_at` included. A failed gate
+  is a reason to change the task. It is never a reason to lower the bar.

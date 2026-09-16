@@ -26,4 +26,10 @@ jobs:
           pip install -e ".[dev]"
       - run: pytest -q
       - name: End-to-end offline run
-        run: gauntlet run fixtures/inventory/task.yaml --out /tmp/ci --repeats 2 --seeds 2
+        # Both fixtures: the original keeps experiment 003 reproducible, the
+        # audited one is what the gate runs against now.
+        run: |
+          gauntlet run fixtures/inventory/task.yaml --out /tmp/ci --repeats 2 --seeds 2
+          gauntlet run fixtures/inventory/audited.yaml --out /tmp/ci-audited --repeats 2 --seeds 2
+      - name: The example must keep running
+        run: python examples/offline_gate.py

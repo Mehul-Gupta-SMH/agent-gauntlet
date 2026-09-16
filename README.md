@@ -177,11 +177,18 @@ feature work fixes that. See [`plan.md`](plan.md#m0--the-measurement-gate).
 
 It has been run once (experiment 003) and did not pass. It also did not return a
 verdict on the underlying question, because the fixture could not separate the
-top two variants and the sentinel did not rank last. Work in flight, in priority
-order: degrade the sentinel structurally rather than by instruction, add the
-fifth outcome so surfaced-but-propagated stops scoring as a success, then harden
-the fixture so the board has something to discriminate. Re-running the gate is
-worth its cost only after those.
+top two variants and the sentinel did not rank last.
+
+All three fixes that result called for have since landed: the sentinel is
+degraded structurally rather than by instruction, `SURFACED_BUT_PROPAGATED`
+names the fifth outcome, and
+[`fixtures/inventory/audited.yaml`](fixtures/inventory/audited.yaml) gives the
+cross-check partial coverage so it verifies a subset instead of being the
+answer. **The pre-registered thresholds are byte-identical in the new fixture** —
+the task changed, the bar did not, and the fingerprint moved with the task,
+which is exactly what it is for.
+
+The gate has not been re-run live. Until it is, those are claims.
 
 ## Related
 

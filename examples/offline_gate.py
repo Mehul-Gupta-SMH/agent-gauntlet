@@ -18,13 +18,20 @@ from agent_gauntlet import Ledger, TaskSpec, VariantSpec, run_matrix, stability
 from agent_gauntlet.analyze import DetectionReport
 
 ROOT = Path(__file__).resolve().parent.parent
-TASK = TaskSpec.from_yaml(ROOT / "fixtures" / "inventory" / "task.yaml")
+TASK = TaskSpec.from_yaml(ROOT / "fixtures" / "inventory" / "audited.yaml")
 
 VARIANTS = [
     VariantSpec(id="v_naive", factors={"prompt": "naive", "toolset": "records"}),
     VariantSpec(id="v_verify", factors={"prompt": "verifying", "toolset": "records+summary"}),
     VariantSpec(id="v_summary", factors={"prompt": "summary_only", "toolset": "summary"}),
-    VariantSpec(id="v_sentinel", factors={"prompt": "sentinel"}, is_sentinel=True),
+    # Degraded by a tool set that cannot enumerate every record, not by a
+    # prompt asking it to hurry -- experiment 003 showed a capable model
+    # simply ignores the latter.
+    VariantSpec(
+        id="v_sentinel",
+        factors={"prompt": "naive", "toolset": "records-partial"},
+        is_sentinel=True,
+    ),
 ]
 SEEDS = ["seedA", "seedB", "seedC"]
 REPEATS = 3

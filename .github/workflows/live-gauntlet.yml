@@ -18,6 +18,18 @@ on:
       seeds:
         description: "independent seeds (pre-registered minimum is 3)"
         default: "3"
+      fixture:
+        description: "Task fixture. audited.yaml is the hardened one"
+        type: choice
+        default: fixtures/inventory/audited.yaml
+        options:
+          # Partial audit coverage. The cross-check verifies a subset, so it
+          # is not the answer and a variant still has work to do.
+          - fixtures/inventory/audited.yaml
+          # The original. Kept runnable so experiment 003 stays reproducible;
+          # its cross-check IS the answer, so the top variants tie at 1.00 and
+          # the gate cannot pass however stable the system is.
+          - fixtures/inventory/task.yaml
       mode:
         description: "How far to go -- escalate one step at a time"
         type: choice
@@ -89,7 +101,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           set -euo pipefail
-          gauntlet probe fixtures/inventory/task.yaml --target "${{ inputs.target }}"
+          gauntlet probe "${{ inputs.fixture }}" --target "${{ inputs.target }}"
 
       - name: Live gauntlet
         if: ${{ inputs.mode == 'matrix' }}
@@ -98,7 +110,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
-          gauntlet run fixtures/inventory/task.yaml \
+          gauntlet run "${{ inputs.fixture }}" \
             --out runs \
             --live \
             --target "${{ inputs.target }}" \

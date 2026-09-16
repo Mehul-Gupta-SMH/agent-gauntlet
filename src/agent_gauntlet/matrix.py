@@ -85,13 +85,23 @@ def run_matrix(
                     records=scenario.records,
                     kind=fault_kind,
                     evidence_tool="get_summary" if _has_evidence(variant) else None,
+                    # Only the audited records may be corrupted. A fault
+                    # outside the cross-check's coverage contradicts nothing
+                    # reachable, so it is undetectable in principle -- but
+                    # the run would still look like one where detection was
+                    # possible and score as a miss. Confining injection
+                    # keeps censoring a property of the tool set alone.
+                    targets=scenario.audited_ids,
                 )
                 for condition, schedule in (
                     ("clean", FaultSchedule.clean(seed)),
                     ("faulted", faulted),
                 ):
                     with run_context(
-                        scenario.records, schedule, _allowed_tools(variant)
+                        scenario.records,
+                        schedule,
+                        _allowed_tools(variant),
+                        scenario.audited_ids,
                     ) as ctx:
                         answer = execute(variant, f"{seed}:{condition}")
                         score = score_run(

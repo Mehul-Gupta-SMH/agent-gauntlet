@@ -66,7 +66,12 @@ undefined tau is treated as failure rather than success.
 - Propagation is confined to credulous variants, and gates them
 - Counterfactual clean/faulted pairs share a seed
 - Every variant faces identical scenarios and fault seeds
-- The sentinel ranks last — the instrument check (#29)
+- The sentinel ranks last — the instrument check (#29).
+  **Superseded by [experiment 003](../003-live-m0-gate/):** it did rank last
+  here, but the sentinel was degraded by a prompt asking it to be careless,
+  and a scripted policy has no choice but to comply. Live, a capable model
+  ignored the instruction and the sentinel ranked 6th of 9. This line
+  validated the *scoring*, using a subject that could not disobey.
 - The pre-registered gate renders a verdict and exits non-zero on failure
 
 ## What this does NOT establish

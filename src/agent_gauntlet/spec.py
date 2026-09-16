@@ -40,9 +40,43 @@ class Scenario(BaseModel, frozen=True):
     records: dict[str, int]
     """Record id -> quantity. The world this scenario's tools serve."""
 
+    audited: list[str] = Field(default_factory=list)
+    """Which records the independent cross-check covers. Empty = all of them.
+
+    Partial coverage is what gives the task any headroom at all. When the
+    cross-check covers everything it *is* the answer, so a variant that can
+    reach it scores 1.00 deterministically and every such variant ties --
+    which is exactly how experiment 003's gate failed: perfect rank
+    stability (tau 1.0) and no unique winner to be stable about.
+
+    With partial coverage the cross-check verifies a subset and the variant
+    still has to do the rest of the work itself, so there is something for
+    model capability to show up in.
+    """
+
     @property
     def expected_total(self) -> int:
         return sum(self.records.values())
+
+    @property
+    def audited_ids(self) -> list[str]:
+        """The covered record ids, defaulting to all of them."""
+        return sorted(self.audited) if self.audited else sorted(self.records)
+
+    @property
+    def audited_total(self) -> int:
+        """What the independent cross-check reports. Not the answer, unless
+        coverage happens to be total."""
+        return sum(self.records[r] for r in self.audited_ids)
+
+    @model_validator(mode="after")
+    def _check_audited(self) -> "Scenario":
+        unknown = sorted(set(self.audited) - set(self.records))
+        if unknown:
+            raise ValueError(
+                f"scenario {self.id!r} audits records that do not exist: {unknown}"
+            )
+        return self
 
 
 class GateCriteria(BaseModel, frozen=True):
@@ -116,9 +150,32 @@ class TaskSpec(BaseModel):
         Any edit to the statement, the scenarios, the oracle, the tolerance,
         or the error budget produces a different fingerprint -- which is how
         a run record proves which bar it was scored against.
+
+        The payload is built from named fields rather than dumped wholesale,
+        and that is load-bearing rather than tidiness. Hashing the whole
+        model means *adding a field* rehashes every spec that does not use
+        it, and the fingerprint on last week's run records stops resolving
+        to any task that still exists. Experiment 003 was judged against
+        `5c9848747223eaa4`; adding `Scenario.audited` moved that hash until
+        this method was written out explicitly, silently detaching the one
+        record the whole pre-registration argument rests on.
+
+        So the rule for extending this: a new field joins the payload only
+        when it is actually set. A field left at its default was not part of
+        the bar, and must not be part of the hash.
         """
         payload = json.dumps(
-            self.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+            {
+                "id": self.id,
+                "statement": self.statement,
+                "oracle": self.oracle.value,
+                "scenarios": [_scenario_payload(s) for s in self.scenarios],
+                "acceptable_degradation": self.acceptable_degradation,
+                "tolerance": self.tolerance,
+                "gate": self.gate.model_dump(mode="json") if self.gate else None,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
@@ -126,6 +183,18 @@ class TaskSpec(BaseModel):
     def from_yaml(cls, path: Union[str, Path]) -> TaskSpec:
         data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
         return cls.model_validate(data)
+
+
+def _scenario_payload(scenario: Scenario) -> dict[str, Any]:
+    """One scenario's contribution to the fingerprint.
+
+    Optional fields appear only when set, so a scenario that predates them
+    keeps the hash it was recorded under.
+    """
+    payload: dict[str, Any] = {"id": scenario.id, "records": dict(scenario.records)}
+    if scenario.audited:
+        payload["audited"] = sorted(scenario.audited)
+    return payload
 
 
 class VariantSpec(BaseModel, frozen=True):

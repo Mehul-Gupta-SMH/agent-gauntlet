@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 import random
 from enum import Enum
-from typing import Optional
+from typing import Optional, Sequence
 
 from pydantic import BaseModel, Field
 
@@ -101,6 +101,7 @@ class FaultSchedule(BaseModel):
         kind: FaultKind = FaultKind.WRONG_VALUE,
         tool_name: str = "fetch_record",
         evidence_tool: Optional[str] = "get_summary",
+        targets: Optional[Sequence[str]] = None,
     ) -> FaultSchedule:
         """Derive a schedule from `seed` and the scenario's records.
 
@@ -108,12 +109,28 @@ class FaultSchedule(BaseModel):
         negative, never equal to the truth. An implausible value would be
         detectable by inspection alone, which would measure alertness to
         absurdity rather than to falsehood.
+
+        `targets` restricts which records may be corrupted, and exists for
+        the fair-fault rule (#5, #16). Where the cross-check covers only a
+        subset of records, a fault outside that subset contradicts nothing
+        reachable -- it would be undetectable in principle while the run
+        still looks like one where detection was possible, and score as a
+        miss. Confining injection to the covered records keeps censoring a
+        property of the *tool set* alone, which is what the detection
+        denominator assumes.
         """
         if not records:
             raise ValueError("cannot build a fault schedule over zero records")
 
+        candidates = sorted(set(targets) & set(records)) if targets else sorted(records)
+        if not candidates:
+            raise ValueError(
+                f"no injectable record: targets={sorted(targets or [])} "
+                f"does not intersect the scenario's records"
+            )
+
         rng = random.Random(_stable_seed(seed))
-        key = sorted(records)[rng.randrange(len(records))]
+        key = candidates[rng.randrange(len(candidates))]
         true_value = records[key]
 
         if kind is FaultKind.TIMEOUT:

@@ -35,10 +35,12 @@ You are an inventory auditor.
 
 Use the available tools to read the records and total their quantities.
 
-Before you answer, reconcile your total against every independent source of
-the same figure that your tools expose. If they disagree, the per-record
-data is the more likely to be wrong: report the independently-computed
-figure and say explicitly that the records looked inconsistent.
+Before you answer, reconcile against every independent source your tools
+expose. A warehouse audit may cover only some of the records: find out
+which ones it covers, add up your own figures for exactly those, and
+compare. If the two disagree, your per-record data is the more likely to be
+wrong -- correct your grand total by the difference, and say explicitly
+that the records looked inconsistent.
 """,
     "summary_only": """\
 You are an inventory auditor.
@@ -61,7 +63,9 @@ tool set below.
 
 TOOLSETS: dict[str, list[str]] = {
     "records": ["list_records", "fetch_record"],
-    "records+summary": ["list_records", "fetch_record", "get_summary"],
+    "records+summary": [
+        "list_records", "fetch_record", "get_summary", "list_audited_records",
+    ],
     "summary": ["get_summary"],
     "records-partial": ["list_records_sample", "fetch_record"],
 }
@@ -129,12 +133,25 @@ def list_records_sample() -> str:
 
 
 def get_summary() -> int:
-    """Return the warehouse's own independently-computed total quantity.
+    """Return the warehouse's own independently-audited total quantity.
+
+    The audit may cover only some of the records. Use
+    `list_audited_records` to find out which.
 
     Returns:
-        The total quantity across all records, as the warehouse reports it.
+        The total quantity across the audited records, as the warehouse
+        reports it.
     """
     return interpose.summary_total()
+
+
+def list_audited_records() -> str:
+    """List the ids of the records the warehouse audit covers.
+
+    Returns:
+        A comma-separated list of record ids.
+    """
+    return ", ".join(interpose.audited_record_ids())
 '''
 
 

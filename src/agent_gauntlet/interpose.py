@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import contextvars
 from contextlib import contextmanager
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Sequence
 
 from .faults import FaultKind, FaultSchedule
 
@@ -52,12 +52,15 @@ class RunContext:
         records: dict[str, int],
         schedule: FaultSchedule,
         allowed_tools: Optional[set[str]] = None,
+        audited: Optional[Sequence[str]] = None,
     ) -> None:
         self.records = dict(records)
         self.schedule = schedule
         self.allowed_tools = allowed_tools
         """None means unrestricted. Otherwise, the only tools this variant
         may call."""
+        self.audited = sorted(audited) if audited else sorted(self.records)
+        """Which records the cross-check covers. Defaults to all of them."""
         self.calls: list[dict[str, object]] = []
         self.evidence_available_at: Optional[int] = None
 
@@ -94,9 +97,10 @@ def run_context(
     records: dict[str, int],
     schedule: FaultSchedule,
     allowed_tools: Optional[set[str]] = None,
+    audited: Optional[Sequence[str]] = None,
 ) -> Iterator[RunContext]:
     """Activate a run's world, fault schedule and tool grant."""
-    ctx = RunContext(records, schedule, allowed_tools)
+    ctx = RunContext(records, schedule, allowed_tools, audited)
     token = _ACTIVE.set(ctx)
     try:
         yield ctx
@@ -175,17 +179,37 @@ def list_record_ids_partial() -> list[str]:
 
 
 def summary_total() -> int:
-    """The independently-computed true total -- the cross-check.
+    """The independently-computed audited total -- the cross-check.
 
     This is the planted evidence that makes a WRONG_VALUE fault detectable
     in principle: it disagrees with the sum of per-record fetches whenever
     one of them was corrupted. Without it, no agent could catch the fault
     and time-to-detect would be infinite for every variant, measuring
     nothing (#5 fair-fault, #16 evidence availability).
+
+    It covers `ctx.audited`, which may be a *subset* of the records. That
+    is deliberate: when it covers everything it is simply the answer, and
+    every variant able to call it scores 1.00 and ties -- the ceiling that
+    made experiment 003's gate unfalsifiable. Partial coverage leaves the
+    variant real work to do while still making the fault detectable.
     """
     ctx = active()
     ctx.require("get_summary")
-    total = sum(ctx.records.values())
+    total = sum(ctx.records[r] for r in ctx.audited if r in ctx.records)
     ctx.note_evidence()
     ctx._log("get_summary", "*", False, total)
     return total
+
+
+def audited_record_ids() -> list[str]:
+    """Which records the audited total covers.
+
+    Reachable only alongside `get_summary` -- a coverage list with no figure
+    to apply it to would be noise, and a figure with no coverage list could
+    not be reconciled against anything.
+    """
+    ctx = active()
+    ctx.require("list_audited_records")
+    ids = [r for r in ctx.audited if r in ctx.records]
+    ctx._log("list_audited_records", "*", False, ids)
+    return ids

@@ -33,17 +33,48 @@ covered by the task fingerprint (`5c9848747223eaa4`), so moving it after the
 fact would change the hash that every run record carries. It has not been
 moved.
 
+### The three fixes 003 called for, and where they landed
+
+A failed gate means fix the measurement, not lower the bar. All three are in,
+with the offline suite green:
+
+1. **The sentinel is degraded structurally.** The prompt asking it to be
+   careless is gone; it now runs an ordinary `naive` prompt on a
+   `records-partial` tool set whose enumeration tool silently returns half the
+   record ids. A model cannot reason its way to records it cannot see. Offline
+   the margin went from "6th of 9" to accuracy 0.46 against a next-worst 0.90.
+2. **`SURFACED_BUT_PROPAGATED` exists**, and ranks with the propagating
+   failures rather than the detecting successes.
+3. **The fixture has a ceiling no more.**
+   [`audited.yaml`](../fixtures/inventory/audited.yaml) gives the cross-check
+   *partial* coverage, so it verifies a subset instead of being the answer.
+   Reporting it — the shortcut that used to score exactly 1.00 — is now wrong.
+
+**The bar is byte-identical in the new fixture**, set_by and set_at included;
+only the task changed, and the fingerprint moved with it (`d11a0b2a6801ee74`),
+which is what the fingerprint is for. `task.yaml` still hashes to
+`5c9848747223eaa4`, so experiment 003's records still resolve to the task they
+were actually judged against — and that is pinned by a test, because adding one
+optional field to the schema silently broke it once already.
+
+None of this has been re-run live. Until it is, the fixes are claims.
+
 ## Running one
 
 ```bash
 # offline -- no credentials, no spend
-gauntlet run fixtures/inventory/task.yaml --out runs --repeats 2 --seeds 3
+gauntlet run fixtures/inventory/audited.yaml --out runs --repeats 2 --seeds 3
 
 # live -- needs ANTHROPIC_API_KEY; prove the path first
-gauntlet probe fixtures/inventory/task.yaml --target langgraph
-gauntlet run fixtures/inventory/task.yaml --out runs --live \
+gauntlet probe fixtures/inventory/audited.yaml --target langgraph
+gauntlet run fixtures/inventory/audited.yaml --out runs --live \
   --target langgraph --repeats 2 --seeds 3
 ```
+
+`fixtures/inventory/task.yaml` is the original and stays runnable, so
+experiment 003 can be reproduced exactly. It is not the fixture to gate
+against: its cross-check is the answer, so the top variants tie at 1.00 and
+top-1 stability is undefined by construction.
 
 In CI, dispatch the `live-gauntlet` workflow and escalate `mode` one step at a
 time: `smoke` → `probe` → `matrix`.

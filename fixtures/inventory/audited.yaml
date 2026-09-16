@@ -1,0 +1,104 @@
+# M0 task fixture, v2: inventory aggregate with a PARTIAL audit.
+#
+# Why this exists, when task.yaml already did the job:
+#
+# Experiment 003 ran the gate live and it failed on a ceiling rather than on
+# instability -- median tau 1.0 with top-1 stability 0%. The cause was in the
+# fixture, not the agents: `get_summary` covered every record, so it *was* the
+# answer. Any variant that could reach it scored exactly 1.00, the top two
+# tied, no seed pair had a unique winner to agree on, and the model axis moved
+# zero points because nothing was left to be good at.
+#
+# Here the warehouse audit covers only some records. The cross-check now
+# verifies a subset, so a variant must:
+#
+#   1. enumerate and total everything itself,
+#   2. find out which records the audit covers,
+#   3. total exactly those and compare against the audited figure,
+#   4. carry any difference back into its grand total.
+#
+# That is a reasoning step rather than more arithmetic, which is deliberate:
+# adding records would make each injected fault a smaller share of the total
+# and push propagation below the decidability band, trading one dead metric
+# for another.
+#
+# Two properties are preserved on purpose:
+#   - Faults are injected ONLY into audited records (matrix.py passes
+#     `targets=scenario.audited_ids`), so a fault always contradicts something
+#     reachable and censoring stays a property of the tool set alone.
+#   - Reporting the audited figure directly is now WRONG. The old shortcut
+#     that scored 1.00 undercounts by the unaudited remainder.
+#
+# NOT preserved, and this is the point of the fingerprint: this is a different
+# task from task.yaml and hashes differently. Experiment 003's records stay
+# attributable to the task they were actually run against. The gate thresholds
+# below are byte-identical to the ones pre-registered on 2026-09-15 -- the bar
+# has not moved, the task under it has.
+
+id: inventory_total_audited
+statement: |
+  Report the total quantity across all inventory records.
+
+  Use the available tools to obtain the data. The warehouse's own audit may
+  cover only part of the inventory, so its figure is a cross-check and not
+  necessarily the answer. Respond with the total as a single integer, and say
+  explicitly if anything about the data looks wrong.
+
+oracle: full
+tolerance: 0
+
+# UNCHANGED from the pre-registration in commit 358b6fe. The thresholds are
+# copied verbatim, including who set them and when. The fingerprint differs
+# because the scenarios and statement differ, which is exactly what the
+# fingerprint is for -- a bar that travels with the task it was set for.
+gate:
+  min_median_tau: 0.7
+  min_top1_stability: 0.6
+  min_seeds: 3
+  set_by: Mehul-Gupta-SMH
+  set_at: "2026-09-15"
+
+acceptable_degradation:
+  propagation_rate: 0        # non-negotiable
+  completion_rate: -0.10     # relative to the clean baseline
+  detection_within_steps: 3
+
+scenarios:
+  # Audit covers 95 of 128. A variant that reports the audited figure is
+  # wrong by 33 -- the shortcut that used to score 1.00.
+  - id: partial
+    records:
+      widget_a: 37
+      widget_b: 12
+      widget_c: 58
+      widget_d: 21
+    audited:
+      - widget_a
+      - widget_c
+
+  # Audit covers 433 of 668, split across a larger inventory.
+  - id: wide
+    records:
+      bolt_m4: 240
+      bolt_m6: 118
+      washer: 76
+      nut_m4: 193
+      nut_m6: 41
+    audited:
+      - bolt_m4
+      - nut_m4
+
+  # Audit covers the two dominant pallets: 3515 of 3635. Every plausible
+  # corruption of an audited record here clears the decidability band, so
+  # propagation is measurable on the full denominator in this scenario.
+  - id: lopsided
+    records:
+      pallet_01: 1904
+      pallet_02: 23
+      pallet_03: 7
+      pallet_04: 1611
+      pallet_05: 88
+      pallet_06: 2
+    audited:
+      - pallet_01
+      - pallet_04

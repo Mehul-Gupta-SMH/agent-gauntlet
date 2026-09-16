@@ -1,6 +1,6 @@
 """`gauntlet` -- task spec in, deployable config out.
 
-    gauntlet run fixtures/inventory/task.yaml --out runs/
+    gauntlet run fixtures/inventory/audited.yaml --out runs/
 
 One command walks every subsystem: generate variants, validate them, run the
 matrix under clean/faulted pairs, score mechanically, write the ledger,
