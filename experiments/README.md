@@ -18,6 +18,7 @@ Two rules this directory follows:
 | [001](001-offline-harness-validation/) | Offline harness validation | $0.00 | Machinery correct; **gate FAILs** on a tied ranking, which is the right verdict |
 | [002](002-live-path-validation/) | Live path validation | ~$0.05 | Path works end to end; found two defects that would each have voided a matrix |
 | [003](003-live-m0-gate/) | The M0 gate, live | ~$5 | **Gate FAILs**, and so does the instrument check — the sentinel ranked 6th of 9 |
+| [004](004-hardened-fixture-probe/) | Does the hardened fixture work live? | $0.02 | **PASS** — the reconciliation lands on a real model; found a probe that went green having called nothing |
 
 ## Where that leaves the question
 
@@ -57,7 +58,10 @@ which is what the fingerprint is for. `task.yaml` still hashes to
 were actually judged against — and that is pinned by a test, because adding one
 optional field to the schema silently broke it once already.
 
-None of this has been re-run live. Until it is, the fixes are claims.
+[Experiment 004](004-hardened-fixture-probe/) tested the cheapest falsifiable
+part of fix 3 for $0.02: on a real model the partial audit does produce
+reconciliation, and the answer was the grand total rather than the audited
+figure. The remaining claims need the matrix.
 
 ## Running one
 

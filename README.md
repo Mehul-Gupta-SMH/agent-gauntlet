@@ -162,10 +162,13 @@ Haiku vs Sonnet moved zero.
   successive halving are load-bearing parts of the design, not optimizations.
 - **Generated code runs sandboxed. Always.** LLM-written tools executing against
   real credentials is the obvious way for a project like this to hurt someone.
-- **The harness is a suspect too.** Every defect found so far produced a
-  plausible-looking board rather than an error, and one of them blamed the model
-  for a harness bug. Cheap checks that escalate — `smoke`, then `probe`, then
-  the matrix — exist because a confident wrong number costs more than a crash.
+- **The harness is a suspect too, and it fails green.** Every defect this
+  project has found in itself presented as a *pass*, never as an error: the
+  harness blaming the model for its own bug, a sentinel a capable model simply
+  ignored, and a CI probe that went green having called no model at all. A
+  crash gets investigated; a green tick does not. Cheap checks that
+  escalate — `smoke`, then `probe`, then the matrix — exist for that reason,
+  and each one has to be able to tell "this passed" from "this did nothing."
 
 ## Before any of it gets built
 
@@ -188,7 +191,10 @@ answer. **The pre-registered thresholds are byte-identical in the new fixture** 
 the task changed, the bar did not, and the fingerprint moved with the task,
 which is exactly what it is for.
 
-The gate has not been re-run live. Until it is, those are claims.
+The gate has not been re-run live. Until it is, those are mostly claims — with
+one tested for $0.02: on a real model the partial audit
+[does produce reconciliation](experiments/004-hardened-fixture-probe/), and the
+answer came back as the grand total rather than the audited figure.
 
 ## Related
 

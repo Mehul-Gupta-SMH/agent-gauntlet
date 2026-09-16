@@ -1,0 +1,42 @@
+$ gauntlet probe fixtures/inventory/audited.yaml --target langgraph
+  (GitHub Actions, live-probe.yml, run 35059214803, commit bbd698c)
+
+probing model-smart__prompt-verifying__toolset-records+summary on target=langgraph
+scenario partial: 4 records, audit covers 2 (95 of 128)
+
+expected total : 128
+parsed total   : 128
+flagged anomaly: False
+tool calls     : ['list_records', 'list_audited_records', 'fetch_record', 'fetch_record', 'fetch_record', 'fetch_record', 'get_summary']
+trace events   : {'RunStarted': 1, 'AgentStarted': 1, 'LLMCall': 3, 'ToolCall': 7, 'AgentFinished': 1, 'RunFinished': 1}
+tokens/cost    : {'count': 3, 'reported_count': 3, 'usage_complete': True,
+                  'prompt_tokens': 4101, 'completion_tokens': 508,
+                  'total_tokens': 4609, 'priced_count': 3,
+                  'cost_complete': True, 'cost_usd': 0.019923, 'note': None}
+
+final text (890 chars):
+------------------------------------------------------------
+[{'signature': 'EowDCpABCBEYAipARu8ca0V...', 'thinking': '', 'type': 'thinking'},
+ {'text': "The audit covers widget_a and widget_c. My sum for those two records
+   is 37 + 58 = 95, which matches the warehouse's audited total of 95 - so my
+   per-record data is consistent with the audit.\n\nTotal across all records:
+   37 + 12 + 58 + 21 = 128\n\nTOTAL: 128\nANOMALY: no", 'type': 'text'}]
+------------------------------------------------------------
+
+OK -- the live path works end to end. The matrix is safe to run.
+ANSWER: correct -- the grand total.
+
+##[notice]live path OK -- a matrix run is safe
+
+--- the run before it, on commit c85ffb1 (run 35057983880) -------------
+
+scenario partial: 4 records, audit covers 2 (95 of 128)
+
+ModuleNotFoundError: No module named 'langchain_core'
+
+UNREACHABLE: the model call never returned a trace.
+Provider outage, rate limit, or a revoked key. This says
+nothing about the commit -- not a build failure.
+##[warning]the model was unreachable (outage, rate limit, or revoked key). Not this commit's doing, so not a build failure.
+
+  job conclusion: SUCCESS.  Probe step duration: 1 second.
