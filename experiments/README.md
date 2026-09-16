@@ -76,5 +76,26 @@ experiment 003 can be reproduced exactly. It is not the fixture to gate
 against: its cross-check is the answer, so the top variants tie at 1.00 and
 top-1 stability is undefined by construction.
 
-In CI, dispatch the `live-gauntlet` workflow and escalate `mode` one step at a
-time: `smoke` → `probe` → `matrix`.
+### The escalation ladder, and what runs by itself
+
+| Step | Cost | Proves | When |
+|---|---|---|---|
+| offline suite (`ci.yml`) | $0 | the machinery, on every Python we support | every push and PR |
+| `probe` (`live-probe.yml`) | ~$0.02 | the whole live path, end to end | **automatically**, on every push to `main` that touches code, plus daily |
+| `matrix` (`live-gauntlet.yml`) | ~$5 | the gate | manual dispatch only |
+
+Only the last one is manual, because only the last one is expensive. Dispatch
+`live-gauntlet` with `mode: matrix` when the probe is green.
+
+The daily probe is not redundant with the per-push one: it catches drift no
+commit of ours causes — a model update, a CommonADK release, an SDK moving
+where the final text lives. Both defects experiment 002 found were of exactly
+that shape, and both were silent.
+
+The probe never fails the build for something a contributor cannot fix. It
+exits 4 when the model is unreachable (outage, rate limit, revoked key) and CI
+turns that into a warning; a missing secret skips the job entirely. Only a
+genuinely broken path goes red. That distinction is the whole reason the probe
+can be automatic at all — `ci.yml` spent several days red because a
+pre-registered gate FAIL, which is a measurement, was being read as a build
+failure.

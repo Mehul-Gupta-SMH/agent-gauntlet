@@ -88,6 +88,10 @@ def build_parser() -> argparse.ArgumentParser:
     probe.add_argument("task", type=Path)
     probe.add_argument("--out", type=Path, default=Path("runs-probe"))
     probe.add_argument("--target", default="langgraph")
+    probe.add_argument(
+        "--scenario", default=None,
+        help="which scenario to probe (default: the first)",
+    )
     return p
 
 
@@ -107,6 +111,21 @@ def _probe(args) -> int:
     project, drive the SDK, get a Trace, find the final text, parse it. A
     silent failure in any of those scores every run as unanswered, and
     finding that out from a full matrix costs the whole matrix.
+
+    Exit codes, because this runs unattended in CI:
+
+    ==  ===================================================================
+    0   the path works; the matrix is safe to run
+    1   the path is broken -- a real defect, and the build should go red
+    2   no credential
+    4   the model was unreachable -- provider outage, rate limit, revoked
+        key. NOT this commit's fault, and a build must not go red for it
+    ==  ===================================================================
+
+    Code 4 exists because of what happened to `ci.yml`: a red signal nobody
+    can act on is indistinguishable from the background, and it hides the
+    red signals that matter. A probe that fails the build when Anthropic has
+    a bad afternoon would reintroduce exactly that.
     """
     from .faults import FaultSchedule
     from .interpose import run_context
@@ -128,7 +147,13 @@ def _probe(args) -> int:
         print(f"\nPREFLIGHT FAILED\n{exc}")
         return 2
 
-    scenario = task.scenarios[0]
+    scenario = (
+        task.scenario(args.scenario) if getattr(args, "scenario", None)
+        else task.scenarios[0]
+    )
+    print(f"scenario {scenario.id}: {len(scenario.records)} records, "
+          f"audit covers {len(scenario.audited_ids)} "
+          f"({scenario.audited_total} of {scenario.expected_total})")
     execute = live_executor(args.target)
 
     # Capture the Trace itself, not just the parsed answer. Without this the
@@ -148,8 +173,28 @@ def _probe(args) -> int:
 
     _live._final_text = _capture
     try:
-        with run_context(scenario.records, FaultSchedule.clean("probe")) as ctx:
+        with run_context(
+            scenario.records,
+            FaultSchedule.clean("probe"),
+            set(architect.TOOLSETS[variant.factors["toolset"]]),
+            scenario.audited_ids,
+        ) as ctx:
             answer = execute(variant, "probe")
+    except Exception as exc:
+        # Classified by evidence, not by exception type: matching provider
+        # exception names would be guesswork that differs across six SDKs.
+        # If nothing ever reached `_final_text`, the call did not come back
+        # at all -- that is the network or the provider, not this repo.
+        reached_us = "trace" in captured
+        print(f"\n{type(exc).__name__}: {exc}")
+        if not reached_us:
+            print("\nUNREACHABLE: the model call never returned a trace.")
+            print("Provider outage, rate limit, or a revoked key. This says")
+            print("nothing about the commit -- not a build failure.")
+            return 4
+        print("\nFAILED: the run produced a trace and then raised. That is")
+        print("ours -- the defect is between the trace and the parsed answer.")
+        return 1
     finally:
         _live._final_text = original
 
@@ -196,6 +241,31 @@ def _probe(args) -> int:
         print("score as unanswered and the whole spend would be wasted.")
         return 1
     print("\nOK -- the live path works end to end. The matrix is safe to run.")
+
+    # Correctness is the experiment's subject, not a build invariant, so
+    # none of this changes the exit code. It is printed because one case is
+    # worth knowing before committing $5: under a partial audit, a model
+    # that reports the audited figure has not done the reconciliation, and
+    # every verifying variant in the matrix will undercount identically.
+    if answer.total == scenario.expected_total:
+        print("ANSWER: correct -- the grand total.")
+    elif (
+        scenario.audited_total != scenario.expected_total
+        and answer.total == scenario.audited_total
+    ):
+        print(
+            f"ANSWER: the AUDITED figure ({scenario.audited_total}), not the "
+            f"grand total ({scenario.expected_total}).\n"
+            "  The reconciliation instruction is not landing. The matrix will\n"
+            "  run and score, but every verifying variant will undercount by\n"
+            f"  the same {scenario.expected_total - scenario.audited_total} "
+            "and the prompt factor will measure nothing."
+        )
+    else:
+        print(
+            f"ANSWER: wrong ({answer.total} vs {scenario.expected_total}). "
+            "A result about the model, not the path."
+        )
     return 0
 
 

@@ -16,6 +16,7 @@ from agent_gauntlet import TaskSpec, architect
 from agent_gauntlet.live import ANSWER_FORMAT, MissingCredentials, parse_answer, preflight
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "inventory" / "task.yaml"
+AUDITED = Path(__file__).resolve().parents[1] / "fixtures" / "inventory" / "audited.yaml"
 MODELS = {"cheap": "openai/gpt-4o-mini", "smart": "anthropic/claude-sonnet-5"}
 
 
@@ -240,3 +241,92 @@ def test_multiple_text_blocks_are_joined():
     reply = "[{'text': 'first', 'type': 'text'}, {'text': 'TOTAL: 9\\nANOMALY: no', 'type': 'text'}]"
     assert parse_answer(reply).total == 9
     assert "first" in normalize_reply(reply)
+
+
+# --- probe exit codes, because CI reads them -------------------------------
+#
+# The probe now runs unattended on every push. That only works if it can tell
+# "this commit broke the path" from "Anthropic had a bad afternoon" -- a build
+# that goes red for the second is the ci.yml failure mode all over again: a
+# signal nobody can act on, hiding the ones that matter.
+
+
+def _probe_argv(fixture: Path, tmp_path: Path):
+    from agent_gauntlet.cli import build_parser
+
+    return build_parser().parse_args(
+        ["probe", str(fixture), "--out", str(tmp_path / "p"), "--target", "langgraph"]
+    )
+
+
+def _run_probe(monkeypatch, tmp_path, executor, fixture):
+    from agent_gauntlet import live as live_mod
+    from agent_gauntlet.cli import _probe
+
+    monkeypatch.setattr(live_mod, "preflight", lambda *a, **k: None)
+    monkeypatch.setattr(live_mod, "live_executor", lambda target: executor)
+    return _probe(_probe_argv(fixture, tmp_path))
+
+
+def test_probe_reports_an_unreachable_model_separately(tmp_path, monkeypatch):
+    """Provider outage -> 4. Never a red build."""
+    def never_returns(variant, seed):
+        raise RuntimeError("overloaded_error: the model is overloaded")
+
+    assert _run_probe(monkeypatch, tmp_path, never_returns, FIXTURE) == 4
+
+
+def test_probe_fails_when_the_trace_arrives_and_then_breaks(tmp_path, monkeypatch):
+    """A trace came back and something downstream broke -> 1, ours to fix.
+
+    Classified on evidence -- did anything reach `_final_text` -- rather than
+    on the exception type, which would be six SDKs' worth of guesswork.
+    """
+    from agent_gauntlet import live as live_mod
+
+    def breaks_after_the_trace(variant, seed):
+        live_mod._final_text(object())
+        raise RuntimeError("something downstream of the trace")
+
+    assert _run_probe(monkeypatch, tmp_path, breaks_after_the_trace, FIXTURE) == 1
+
+
+def test_probe_restores_the_patched_final_text_after_a_failure(tmp_path, monkeypatch):
+    """The probe swaps `_final_text` to capture the raw reply. If a failure
+    left the swap in place, every later run in the same process would write
+    into a dead dict."""
+    from agent_gauntlet import live as live_mod
+
+    before = live_mod._final_text
+    _run_probe(
+        monkeypatch, tmp_path,
+        lambda v, s: (_ for _ in ()).throw(RuntimeError("boom")),
+        FIXTURE,
+    )
+    assert live_mod._final_text is before
+
+
+def test_probe_runs_against_the_hardened_fixture(tmp_path, monkeypatch, capsys):
+    """The fixture CI actually probes, and the diagnostic it exists for.
+
+    A model that reports the audited figure has not reconciled, and every
+    verifying variant in the matrix will undercount by the same amount --
+    the prompt factor would measure nothing and the $5 would be wasted. The
+    probe says so, and does NOT fail: correctness is the experiment's
+    subject, not a build invariant.
+    """
+    from agent_gauntlet import live as live_mod
+    from agent_gauntlet.score import Answer
+
+    audited = TaskSpec.from_yaml(AUDITED).scenarios[0]
+
+    def reports_the_audit(variant, seed):
+        live_mod._final_text(object())
+        return Answer(total=audited.audited_total, flagged_anomaly=False)
+
+    code = _run_probe(monkeypatch, tmp_path, reports_the_audit, AUDITED)
+    out = capsys.readouterr().out
+
+    assert code == 0, "a wrong answer is a result, not a broken path"
+    assert "ANSWER: the AUDITED figure" in out
+    assert str(audited.expected_total) in out

@@ -38,6 +38,9 @@ on:
           - smoke    # one raw API call; proves the credential
           - probe    # one full gauntlet run; proves build->run->trace->parse
           - matrix   # the full run; the only step that costs real money
+        # `probe` also runs by itself -- see live-probe.yml, which fires on
+        # every code push to main and daily. Dispatching it here is for
+        # probing a fixture or target that workflow does not cover.
 
 permissions:
   contents: read

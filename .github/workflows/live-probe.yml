@@ -1,0 +1,116 @@
+name: live-probe
+
+# One live agent run, ~$0.02, guarding a ~$5 matrix.
+#
+# Deliberately a separate workflow from ci.yml rather than another job in it:
+#
+# 1. ci.yml runs on pull_request, including from forks, where the checked-out
+#    code is untrusted. A workflow that never references a secret cannot leak
+#    one however that code behaves. This file is the only one in CI that
+#    touches ANTHROPIC_API_KEY, and it never runs on a fork PR.
+# 2. It needs path filters ci.yml must not have. A docs-only commit should
+#    not spend money; every commit should still run the tests.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "experiments/**"
+      - "LICENSE"
+  schedule:
+    # Daily, to catch drift that no commit of ours causes: a model update, a
+    # CommonADK release, an SDK changing where the final text lives. The two
+    # defects experiment 002 found were both of that shape and both silent.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      fixture:
+        description: "Task fixture to probe"
+        type: choice
+        default: fixtures/inventory/audited.yaml
+        options:
+          - fixtures/inventory/audited.yaml
+          - fixtures/inventory/task.yaml
+      target:
+        description: "CommonADK SDK target"
+        type: choice
+        default: langgraph
+        options: [langgraph, claude, openai, crewai, autogen, google-adk]
+
+# Supersede in-flight probes rather than stacking spend on a run of pushes.
+concurrency:
+  group: live-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Probe the live path
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FIXTURE: ${{ inputs.fixture || 'fixtures/inventory/audited.yaml' }}
+          TARGET: ${{ inputs.target || 'langgraph' }}
+        run: |
+          # +e deliberately: Actions runs this under bash -e, and the whole
+          # point of this step is to read the exit code rather than die on it.
+          set +e
+          set -u
+
+          # Only the NAME is checked; the value is never printed. A fork PR or
+          # a repo without the secret skips instead of failing -- there is
+          # nothing here for a contributor to fix.
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::notice::no ANTHROPIC_API_KEY available -- skipping the live probe"
+            exit 0
+          fi
+
+          gauntlet probe "$FIXTURE" --target "$TARGET" | tee probe.txt
+          status=${PIPESTATUS[0]}
+
+          case "$status" in
+            0)
+              echo "::notice::live path OK -- a matrix run is safe"
+              # Not a failure: correctness is the experiment's subject, not a
+              # build invariant. But it is the one result worth seeing before
+              # committing $5, so it gets an annotation.
+              if grep -q "ANSWER: the AUDITED figure" probe.txt; then
+                echo "::warning::the model reported the audited figure, not the grand total -- the reconciliation instruction is not landing, and a matrix would measure nothing on the prompt factor"
+              elif grep -q "ANSWER: wrong" probe.txt; then
+                echo "::warning::$(grep 'ANSWER: wrong' probe.txt)"
+              fi
+              exit 0
+              ;;
+            4)
+              echo "::warning::the model was unreachable (outage, rate limit, or revoked key). Not this commit's doing, so not a build failure."
+              exit 0
+              ;;
+            2)
+              echo "::error::preflight failed -- a credential the grid needs is missing"
+              exit 1
+              ;;
+            *)
+              echo "::error::the live path is broken (exit $status). Do NOT run the matrix."
+              exit 1
+              ;;
+          esac
+
+      - name: Keep the probe output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-output
+          path: probe.txt
+          if-no-files-found: ignore
