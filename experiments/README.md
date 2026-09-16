@@ -19,6 +19,7 @@ Two rules this directory follows:
 | [002](002-live-path-validation/) | Live path validation | ~$0.05 | Path works end to end; found two defects that would each have voided a matrix |
 | [003](003-live-m0-gate/) | The M0 gate, live | ~$5 | **Gate FAILs**, and so does the instrument check — the sentinel ranked 6th of 9 |
 | [004](004-hardened-fixture-probe/) | Does the hardened fixture work live? | $0.02 | **PASS** — the reconciliation lands on a real model; found a probe that went green having called nothing |
+| [005](005-fifth-outcome-live/) | The fifth outcome, caught in the wild | $0.02 | `SURFACED_BUT_PROPAGATED` fired on its first live faulted run — the taxonomy gap was real |
 
 ## Where that leaves the question
 

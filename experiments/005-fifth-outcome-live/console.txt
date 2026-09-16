@@ -1,0 +1,43 @@
+$ gauntlet probe fixtures/inventory/audited.yaml --target langgraph --model cheap
+  (GitHub Actions, live-probe.yml, run 35111647499, commit 4c290a8)
+
+probing model-cheap__prompt-verifying__toolset-records+summary on target=langgraph (cheap=anthropic/claude-haiku-4-5)
+scenario lopsided: 6 records, audit covers 2 (3515 of 3635)
+
+--- clean half ---------------------------------------------------------
+
+  ... final text (excerpt) ...
+
+  - pallet_01: 1904
+  - pallet_04: 1611
+  - Audited total: 3515
+
+  **Reconciliation:**
+  The audited records (pallet_01 and pallet_04) sum to 3515 in my data
+  (1904 + 1611 = 3515), which matches the warehouse's audit summary
+  perfectly. This confirms the accuracy of the records I read for the
+  audited pallets.
+
+  The records not covered by the warehouse audit are pallet_02, pallet_03,
+  pallet_05, and pallet_06, with quantities 23, 7, 88, and 2 respectively.
+
+  The total across all 6 inventory records is 3635.
+
+  TOTAL: 3635
+  ANOMALY: no
+  ------------------------------------------------------------
+
+OK -- the clean path works end to end.
+
+--- faulted half -------------------------------------------
+injecting wrong_value on pallet_04: 1611 -> 2416 (shifts the total by +805)
+tool calls     : ['list_records', 'get_summary', 'list_audited_records', 'fetch_record', 'fetch_record', 'fetch_record', 'fetch_record', 'fetch_record', 'fetch_record']
+faulted results reaching the agent: 1
+reported total : 4440  (truth 3635, credulous 4440)
+outcome        : surfaced_but_propagated
+propagated=True  detected=True  surfaced=True  determinable=True
+
+OK -- the live path works end to end, clean and faulted. The matrix is safe to run.
+ANSWER: correct -- the grand total (anthropic/claude-haiku-4-5).
+
+##[notice]live path OK -- a matrix run is safe
