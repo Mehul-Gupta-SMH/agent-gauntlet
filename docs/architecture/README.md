@@ -22,6 +22,13 @@ truth, so "did this agent's answer swallow the lie?" is decided by comparison
 rather than by a judge. That single property is what the rest of the
 architecture is arranged around.
 
+There are four lies, asking four questions: `wrong_value` (does a false
+**number** survive?), `timeout` (the loud contrast), `instruction` (does the
+agent still know **whose instructions are instructions**?) and
+`poisoned_memory` (does it **re-derive** what it already decided?). Each has
+its own oracle, so a task declares one rather than mixing them — see
+[hld.md](hld.md#what-the-harness-can-lie-about).
+
 ```mermaid
 flowchart LR
     SPEC["task spec<br/>+ pre-registered bar"] --> ARCH["architect<br/><i>generate variants</i>"]

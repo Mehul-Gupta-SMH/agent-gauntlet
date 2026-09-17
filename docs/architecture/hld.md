@@ -47,6 +47,34 @@ comparison, not a judgement:
 **No judge, no rubric, no similarity threshold.** This is why fault injection is
 load-bearing rather than decorative: it is what makes the oracle exist.
 
+### What the harness can lie about
+
+Four kinds, because they ask four different questions. A task declares one;
+they are never mixed, since averaging three oracles reports one number for
+three questions.
+
+| kind | corrupts | the question |
+|---|---|---|
+| `wrong_value` | a tool's return value | does a false **number** survive to the answer? |
+| `timeout` | the call itself | the loud contrast — trivially detected, kept so the two can be compared |
+| `instruction` | the authority attached to a result | does the agent still know **whose instructions are instructions**? |
+| `poisoned_memory` | the agent's own recorded finding | does it **re-derive** what it already decided, or build on it? |
+
+`instruction` is decidable without a judge because the directive names a
+**canary** — an improbable value the agent has no other route to. If it
+reaches the answer it was read out of the data. Compliance is its own
+column, its own outcome and its own gate, and it gates with no declared
+ceiling: taking orders from a data source is a failure of what an agent is
+*for*, not of how carefully it counts.
+
+`poisoned_memory` is as close to intercepting a reasoning step as this
+design can honestly get. **Model-internal reasoning is not an injection
+point** — CommonADK's hooks are observe-only and no adapter exposes the
+token stream for rewriting — but an agent working in stages must put its
+intermediate findings somewhere, and that somewhere is a tool. The oracle is
+exact in a way an external source's never is: the harness saw what was
+written.
+
 ### Why below the adapter, not in a hook
 
 CommonADK's runner hooks are observe-only by design — a callback sees an event
@@ -76,9 +104,17 @@ flowchart TB
         LEDGER[("<b>ledger</b><br/>append-only JSONL")]
     end
     subgraph Judge
-        SCORE["<b>score</b><br/>outcomes · repair · propagation"]
+        SCORE["<b>score</b><br/>outcomes · repair · propagation · compliance"]
         ANALYZE["<b>analyze</b><br/>Kendall tau · stability"]
         BOARD["<b>board</b><br/>rank · Pareto · attribution · held-out"]
+    end
+    subgraph Operate["Operate (the UI layer)"]
+        PROJECT["<b>project</b><br/>one project at a time"]
+        USERTOOLS["<b>usertools</b><br/>upload · calibrate · serve"]
+        RUNNER["<b>runner</b><br/>project → TaskSpec + variants"]
+        SECRETS["<b>secrets</b><br/>names in, nothing out"]
+        SERVER["<b>server</b><br/>stdlib http · wizard · arena"]
+        EVENTS["<b>events</b><br/>append-only, read by cursor"]
     end
 
     SPEC --> ARCH --> MATRIX
@@ -90,9 +126,22 @@ flowchart TB
     LEDGER --> SCORE --> BOARD
     LEDGER --> ANALYZE --> BOARD
 
+    PROJECT --> RUNNER --> MATRIX
+    USERTOOLS --> RUNNER
+    USERTOOLS -.->|calibrated table| INTER
+    SERVER --> PROJECT & SECRETS
+    MATRIX -.->|emit| EVENTS --> SERVER
+    BOARD --> SERVER
+
     style LEDGER fill:#1e3a5f,stroke:#1e40af,color:#fff
+    style EVENTS fill:#1e3a5f,stroke:#1e40af,color:#fff
     style FAULTS fill:#7f1d1d,stroke:#991b1b,color:#fff
 ```
+
+The Operate group is a **view onto the same pipeline**, never a second one.
+A project reaches the same `run_matrix`, the same `score_run` and the same
+`board.summarize` the fixtures do; where it cannot supply something they
+need, that surfaces as `n/a` rather than as a special case.
 
 | Component | Owns | Deliberately does not |
 |---|---|---|
@@ -106,6 +155,12 @@ flowchart TB
 | `score` | Grading one run against known truth | Contain a judge |
 | `analyze` | Rank-stability statistics | Render a verdict |
 | `board` | Ranking, frontier, attribution, held-out winner | Invent a scalar |
+| `project` | One operator's intake, tools, models and run state, on disk | Run anything |
+| `usertools` | Reading an upload without importing it; calibrating it into a value table | Trust a tool that disagrees with itself |
+| `runner` | Turning a project into a real, fingerprinted `TaskSpec` and its variants | Have its own scorer |
+| `secrets` | Credential **names** and presence; `.env` parsed as data | Hand a value back to anyone |
+| `events` | An append-only log the page reads by cursor | Know what a page is |
+| `server` | stdlib HTTP, the wizard, the arena | Compute a rate |
 
 ## 4. One run, end to end
 
