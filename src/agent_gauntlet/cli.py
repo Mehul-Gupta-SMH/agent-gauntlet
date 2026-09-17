@@ -107,6 +107,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--scenario", default=None,
         help="which scenario to probe (default: the first)",
     )
+    ui = sub.add_parser(
+        "ui",
+        help="watch a gauntlet run in the browser -- intake, arena, and the "
+             "real board underneath it",
+    )
+    ui.add_argument("--host", default="127.0.0.1",
+                    help="bind address (default: loopback only)")
+    ui.add_argument("--port", type=int, default=8420)
     return p
 
 
@@ -116,6 +124,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _run(args)
     if args.command == "probe":
         return _probe(args)
+    if args.command == "ui":
+        from .server import serve
+
+        serve(host=args.host, port=args.port)
+        return 0
     return 1
 
 

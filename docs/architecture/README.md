@@ -36,3 +36,49 @@ flowchart LR
     style LEDGER fill:#1e3a5f,stroke:#1e40af,color:#fff
     style OUT fill:#14532d,stroke:#166534,color:#fff
 ```
+
+## The UI layer
+
+`gauntlet ui` is a view onto that same pipeline, not a second one. It taps the
+event stream the harness already produces and renders it; it has no path to a
+number the CLI would not print.
+
+```mermaid
+flowchart LR
+    FORM["intake form<br/><i>statement · tools · world</i>"] -->|POST /api/run| SRV["server<br/><i>stdlib http</i>"]
+    SRV --> TASK["task_from_intake<br/><i>a real, fingerprinted TaskSpec</i>"]
+    TASK --> ARCH["architect.generate<br/><i>refuses a grid that<br/>cannot fire the fault</i>"]
+    ARCH --> MATRIX["run_matrix<br/><i>worker thread</i>"]
+
+    MATRIX -.->|emit| LOG[("EventLog<br/><i>append-only, by cursor</i>")]
+    INTER["interpose._log"] -.->|emit| LOG
+    LOG -->|GET /api/events?since=| PAGE["arena page"]
+
+    MATRIX --> BOARD["board.summarize<br/>+ held_out_winner"]
+    BOARD --> LOG
+
+    PAGE --> ARENA["arena<br/><i>avatars, strikes</i>"]
+    PAGE --> TECH["technical panel<br/><i>steps · oracle · board</i>"]
+
+    style INTER fill:#7f1d1d,stroke:#991b1b,color:#fff
+    style LOG fill:#1e3a5f,stroke:#1e40af,color:#fff
+    style PAGE fill:#14532d,stroke:#166534,color:#fff
+```
+
+Three constraints hold it to the rest of the project:
+
+1. **The page derives nothing.** Every rate it shows arrives in a `board`
+   event, serialized straight off `board.summarize` — `None` included, which
+   crosses as `null` and renders as `n/a`. There is no client-side branch that
+   could turn an unmeasured rate into a zero.
+2. **The emitter is optional and off by default.** `events.emit` with nothing
+   attached is a lookup and a return, so the CLI, the tests and CI run exactly
+   as they did before the UI existed. A test pins that.
+3. **The intake builds a real `TaskSpec`.** Same validation, same
+   fingerprint, same instrument check — an intake whose fault tool no
+   contender can call is refused rather than rendered as a full arena over a
+   matrix where nothing could happen.
+
+Polled by cursor rather than streamed: a run is seconds to minutes on
+localhost, and a cursor poll is far less fragile than holding a response open
+through `http.server` while a worker thread may raise.

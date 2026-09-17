@@ -66,3 +66,10 @@ Not by looking at the source and reasoning about it:
 
 The bullet columns were widened after that measurement: the original gap was
 40px, which a 15%-wider system font could have eaten.
+
+## `ui-arena.png`, `ui-intake.png`
+
+Screenshots of `gauntlet ui`, captured from a real offline run — 13
+contenders, 104 runs, fixture-derived intake. Not mockups: the board rows,
+the injected values in the step log, and the oracle's figures are the run's
+own output. The `n/a` cells are real censoring, not placeholders.

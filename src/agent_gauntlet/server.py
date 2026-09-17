@@ -1,0 +1,338 @@
+"""A local UI for watching a gauntlet run happen.
+
+Stdlib only, on purpose. A dashboard that costs the project a web framework
+would be a bad trade for something that runs on localhost for the length of
+one matrix.
+
+The contract with the page is narrow and one-directional: the browser posts
+an intake, polls `/api/events` by cursor, and draws what it is given. It
+never computes a score, a rate or a ranking of its own. Everything it
+displays comes from `score_run` and `board.summarize` -- the same functions
+the CLI prints and the ledger records -- so the arena cannot drift from the
+numbers the project stands behind.
+
+Offline by default: scripted policies, no credentials, no spend. Live runs
+are opt-in per request and still go through `preflight`.
+"""
+
+from __future__ import annotations
+
+import json
+import mimetypes
+import threading
+import traceback
+from dataclasses import dataclass, field
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any, Optional
+from urllib.parse import parse_qs, urlparse
+
+from . import architect, board, events
+from .ledger import Ledger
+from .ledger import errors as ledger_errors
+from .matrix import run_matrix
+from .spec import GridSpec, Scenario, TaskSpec
+
+UI_DIR = Path(__file__).resolve().parent / "ui"
+
+DEFAULT_MODELS = {"cheap": "anthropic/claude-haiku-4-5",
+                  "smart": "anthropic/claude-sonnet-5"}
+
+
+@dataclass
+class Session:
+    """One run's worth of state, shared between the worker and the pollers."""
+
+    log: events.EventLog = field(default_factory=events.EventLog)
+    status: str = "idle"
+    """idle | running | done | failed."""
+    error: Optional[str] = None
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    thread: Optional[threading.Thread] = None
+
+    def running(self) -> bool:
+        return self.status == "running"
+
+
+SESSION = Session()
+
+
+# --- intake ---------------------------------------------------------------
+
+
+def catalog() -> dict[str, Any]:
+    """What the form may offer, read from the real registries.
+
+    Derived rather than duplicated: a prompt strategy or tool set added to
+    `architect` shows up in the UI without anyone remembering to update a
+    list here, and one that is removed cannot be selected.
+    """
+    tools: dict[str, dict[str, Any]] = {}
+    for name, members in architect.TOOLSETS.items():
+        for tool in members:
+            tools.setdefault(tool, {"name": tool, "toolsets": []})
+            tools[tool]["toolsets"].append(name)
+    return {
+        "tools": sorted(tools.values(), key=lambda t: t["name"]),
+        "toolsets": {k: sorted(v) for k, v in architect.TOOLSETS.items()},
+        "prompts": sorted(architect.PROMPTS),
+        "models": DEFAULT_MODELS,
+        "sentinel": {"prompt": architect.SENTINEL_PROMPT,
+                     "toolset": architect.SENTINEL_TOOLSET},
+    }
+
+
+def toolsets_within(selected: set[str]) -> list[str]:
+    """Named tool sets the operator's inventory can actually supply.
+
+    You cannot compete a configuration you have no tools for. Deriving the
+    axis from the declared inventory -- rather than letting the form offer
+    every tool set regardless -- means the grid the UI runs is one the
+    operator could really deploy.
+    """
+    return sorted(
+        name for name, members in architect.TOOLSETS.items()
+        if name != architect.SENTINEL_TOOLSET and set(members) <= selected
+    )
+
+
+def task_from_intake(intake: dict[str, Any]) -> TaskSpec:
+    """Build a real `TaskSpec` from the form. No display-only shortcuts.
+
+    The statement goes in verbatim -- it is passed identically to every
+    variant, which is one of the fairness invariants -- and the result is
+    fingerprinted like any other task, so a UI run is as citable as a CLI
+    one.
+    """
+    records = {str(k): int(v) for k, v in (intake.get("records") or {}).items()}
+    if not records:
+        raise ValueError("the scenario needs at least one record")
+    audited = [r for r in (intake.get("audited") or []) if r in records]
+
+    selected = set(intake.get("tools") or [])
+    toolsets = toolsets_within(selected)
+    if not toolsets:
+        raise ValueError(
+            "no tool set is fully covered by the selected tools -- pick "
+            f"enough tools to supply one of: {sorted(architect.TOOLSETS)}"
+        )
+
+    prompts = [p for p in (intake.get("prompts") or []) if p in architect.PROMPTS]
+    if not prompts:
+        raise ValueError("pick at least one prompt strategy")
+
+    return TaskSpec(
+        id=intake.get("id") or "ui_task",
+        statement=(intake.get("statement") or "").strip()
+        or "Report the total across all records, using the available tools.",
+        oracle="full",
+        tolerance=int(intake.get("tolerance") or 0),
+        fault_tool=intake.get("fault_tool") or "fetch_record",
+        acceptable_degradation={"propagation_rate": 0},
+        grid=GridSpec(prompts=prompts, toolsets=toolsets),
+        scenarios=[Scenario(id="scenario_1", records=records, audited=audited)],
+    )
+
+
+# --- the run --------------------------------------------------------------
+
+
+def _row(r: board.VariantResult) -> dict[str, Any]:
+    """One board row, censored exactly as the CLI censors it.
+
+    `None` travels to the page as `null` and renders as `n/a`. The page has
+    no rule for turning a missing measurement into a zero, because it is
+    never given the chance to.
+    """
+    return {
+        "variant_id": r.variant_id,
+        "label": r.label,
+        "factors": r.factors,
+        "n_runs": r.n_runs,
+        "quality": r.quality,
+        "accuracy": r.accuracy,
+        "clean_quality": r.clean_quality,
+        "faulted_quality": r.faulted_quality,
+        "propagation_rate": r.propagation_rate,
+        "propagation_unmeasured": r.propagation_unmeasured,
+        "detection_rate": r.detection_rate,
+        "repair_rate": r.repair_rate,
+        "false_alarm_rate": r.false_alarm_rate,
+        "median_detect_latency": r.median_detect_latency,
+        "material_calls": r.material_calls,
+        "redundant_material_calls": r.redundant_material_calls,
+        "n_errored": r.n_errored,
+        "cost_per_run": r.cost_per_run,
+        "gated": r.gated,
+        "is_sentinel": r.is_sentinel,
+    }
+
+
+def _worker(session: Session, intake: dict[str, Any]) -> None:
+    try:
+        task = task_from_intake(intake)
+        repeats = max(1, min(int(intake.get("repeats") or 2), 10))
+        seeds = max(1, min(int(intake.get("seeds") or 2), 10))
+
+        with TemporaryDirectory() as tmp:
+            variants = architect.generate(
+                out_dir=Path(tmp) / "variants", task=task, models=DEFAULT_MODELS,
+            )
+            session.log.emit(
+                "intake.accepted",
+                task=task.id,
+                statement=task.statement,
+                fingerprint=task.fingerprint(),
+                toolsets=task.grid.toolsets,
+                prompts=task.grid.prompts,
+                records=task.scenarios[0].records,
+                audited=task.scenarios[0].audited_ids,
+                expected=task.scenarios[0].expected_total,
+                seeds=seeds,
+                repeats=repeats,
+                # The whole plan up front, so the progress counter never
+                # shows a total that grows as seeds arrive.
+                total_runs=len(variants) * len(task.scenarios) * repeats * seeds * 2,
+            )
+            ledger = Ledger(Path(tmp) / "runs.jsonl")
+            records: list = []
+            for i in range(seeds):
+                records.extend(run_matrix(
+                    task=task, variants=variants, ledger=ledger,
+                    base_seed=f"seed{i}", repeats=repeats, offline=True,
+                ))
+
+            results = board.summarize(records)
+            held = board.held_out_winner(records)
+            session.log.emit(
+                "board",
+                rows=[_row(r) for r in results],
+                errored=len(ledger_errors(records)),
+                total=len(records),
+                # The selection score is never the reported score (#20).
+                # If the split could not be formed, the page is told so
+                # rather than being handed the optimistic number.
+                # Why there is no winner matters: a tie is a real answer
+                # (#11), while one seed simply cannot be split. Telling the
+                # page "run more seeds" for a tie would be advice that does
+                # not fix anything.
+                winner_reason=(
+                    None if held is not None
+                    else "one seed -- nothing to hold the winner out on"
+                    if len({r.base_seed for r in records}) < 2
+                    else "The selection half is tied at the top, and a tie is "
+                         "a real answer rather than a winner."
+                ),
+                winner=None if held is None else {
+                    "variant_id": held.variant_id,
+                    "selection_score": held.selection_score,
+                    "holdout_score": held.holdout_score,
+                    "held_up": held.held_up,
+                    "holdout_rank": held.holdout_rank,
+                    "n_candidates": held.n_candidates,
+                },
+            )
+        with session.lock:
+            session.status = "done"
+    except Exception as exc:  # surfaced to the page, not swallowed
+        with session.lock:
+            session.status = "failed"
+            session.error = f"{type(exc).__name__}: {exc}"
+        session.log.emit("failed", error=session.error,
+                         trace=traceback.format_exc()[-2000:])
+    finally:
+        events.attach(None)
+
+
+def start_run(session: Session, intake: dict[str, Any]) -> None:
+    with session.lock:
+        if session.running():
+            raise RuntimeError("a run is already in progress")
+        session.status = "running"
+        session.error = None
+    session.log.clear()
+    events.attach(session.log)
+    session.thread = threading.Thread(
+        target=_worker, args=(session, intake), daemon=True
+    )
+    session.thread.start()
+
+
+# --- http -----------------------------------------------------------------
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "agent-gauntlet"
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        pass  # the console belongs to the run, not to request noise
+
+    def _send(self, code: int, body: bytes, ctype: str) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        # A localhost dev surface. No caching, so an edited asset shows up
+        # on reload rather than needing a hard refresh.
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, code: int, payload: dict[str, Any]) -> None:
+        self._send(code, json.dumps(payload).encode("utf-8"), "application/json")
+
+    def do_GET(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        route = parsed.path
+
+        if route in ("/", "/index.html"):
+            return self._file(UI_DIR / "index.html")
+        if route == "/api/catalog":
+            return self._json(200, catalog())
+        if route == "/api/events":
+            cursor = int((parse_qs(parsed.query).get("since") or ["0"])[0])
+            with SESSION.lock:
+                status, error = SESSION.status, SESSION.error
+            return self._json(200, {
+                "status": status,
+                "error": error,
+                "cursor": SESSION.log.cursor,
+                "events": [e.as_json() for e in SESSION.log.since(cursor)],
+            })
+
+        # Static assets, resolved under UI_DIR and nowhere else.
+        candidate = (UI_DIR / route.lstrip("/")).resolve()
+        if candidate.is_file() and UI_DIR.resolve() in candidate.parents:
+            return self._file(candidate)
+        return self._json(404, {"error": "not found"})
+
+    def do_POST(self) -> None:  # noqa: N802
+        if urlparse(self.path).path != "/api/run":
+            return self._json(404, {"error": "not found"})
+        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            intake = json.loads(self.rfile.read(length) or b"{}")
+        except json.JSONDecodeError as exc:
+            return self._json(400, {"error": f"bad JSON: {exc}"})
+        try:
+            start_run(SESSION, intake)
+        except RuntimeError as exc:
+            return self._json(409, {"error": str(exc)})
+        return self._json(202, {"status": "running"})
+
+    def _file(self, path: Path) -> None:
+        ctype, _ = mimetypes.guess_type(path.name)
+        self._send(200, path.read_bytes(), ctype or "application/octet-stream")
+
+
+def serve(host: str = "127.0.0.1", port: int = 8420) -> None:
+    httpd = ThreadingHTTPServer((host, port), Handler)
+    print(f"gauntlet ui   http://{host}:{port}")
+    print("              offline by default -- scripted policies, no spend")
+    print("              ctrl-c to stop")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+    finally:
+        httpd.server_close()

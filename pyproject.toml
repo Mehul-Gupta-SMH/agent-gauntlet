@@ -27,5 +27,11 @@ dev = ["pytest"]
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_gauntlet"]
 
+[tool.hatch.build.targets.wheel.force-include]
+# The UI is served from the installed package, so the assets have to ship
+# with it -- an installed `gauntlet ui` that 404s on its own stylesheet is
+# the kind of thing that only shows up after release.
+"src/agent_gauntlet/ui" = "agent_gauntlet/ui"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -30,7 +30,32 @@ gauntlet run fixtures/inventory/audited.yaml --out runs --repeats 2 --seeds 3
 gauntlet probe fixtures/inventory/audited.yaml --target langgraph
 gauntlet run fixtures/inventory/audited.yaml --out runs --live \
   --target langgraph --repeats 2 --seeds 3
+
+# Watch it happen: describe an agent, declare your tools, see the matrix run.
+gauntlet ui            # http://127.0.0.1:8420, offline, no spend
 ```
+
+## Watch it run
+
+`gauntlet ui` serves a local page: describe the agent you want, declare the
+tools you have, and watch every configuration your inventory can supply
+compete in one arena — with the real technical detail underneath it.
+
+![the arena](docs/assets/ui-arena.png)
+
+The animation is a **view of run data, never a decoration.** Every avatar is
+a real variant, and its crest is drawn from that variant's fingerprint, so two
+configurations that differ in substance cannot look alike. Every strike is a
+real injected value. Contenders whose tool set omits the corrupted tool are
+greyed out from the start, because they are not really in this fight and their
+propagation rate is `n/a` rather than a clean sweep.
+
+The page computes nothing. Every rate it prints came from `score_run` or
+`board.summarize`, nulls included — it has no branch that turns an absent
+measurement into a zero, because it is never handed the chance. The one
+display-only liberty is **pacing**: a 300-run matrix finishes in seconds, so
+real events are replayed in real order at a watchable rate, and the page says
+so and reports the true wall clock.
 
 ## What you get
 

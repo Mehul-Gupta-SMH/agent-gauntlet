@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from enum import Enum
 from typing import Iterator, Optional, Sequence
 
+from . import events
 from .faults import FaultKind, FaultSchedule
 
 _ACTIVE: contextvars.ContextVar[Optional["RunContext"]] = contextvars.ContextVar(
@@ -94,6 +95,9 @@ class RunContext:
         self.calls: list[dict[str, object]] = []
         self.evidence_available_at: Optional[int] = None
         self._material_seen: set[tuple[str, str]] = set()
+        self.run_label: Optional[str] = None
+        """Which run these calls belong to, for the event stream. Set by
+        the matrix; None outside it, where nothing is listening anyway."""
         self.redundant_material: list[tuple[str, str]] = []
         """Material tools invoked more than once on the same target.
 
@@ -116,20 +120,25 @@ class RunContext:
         result: object,
         cost: ToolCost = ToolCost.NEGLIGIBLE,
     ) -> None:
+        redundant = False
         if cost is ToolCost.MATERIAL:
             if (tool, key) in self._material_seen:
                 self.redundant_material.append((tool, key))
+                redundant = True
             self._material_seen.add((tool, key))
-        self.calls.append(
-            {
-                "step": self.step,
-                "tool": tool,
-                "key": key,
-                "faulted": faulted,
-                "result": result,
-                "cost": cost.value,
-            }
-        )
+        call = {
+            "step": self.step,
+            "tool": tool,
+            "key": key,
+            "faulted": faulted,
+            "result": result,
+            "cost": cost.value,
+        }
+        self.calls.append(call)
+        # The UI reads this. A faulted call is the moment a lie reaches the
+        # agent, and it is the only thing the arena is allowed to draw as a
+        # hit -- there is no display-only notion of one.
+        events.emit("tool.call", run=self.run_label, redundant=redundant, **call)
 
     @property
     def material_calls(self) -> int:

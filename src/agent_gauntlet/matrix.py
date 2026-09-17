@@ -13,6 +13,7 @@ from typing import Any, Callable, Optional, Sequence
 
 import time
 
+from . import events
 from .faults import FaultKind, FaultSchedule
 from .interpose import run_context
 from .live import provider_unreachable
@@ -126,6 +127,28 @@ def run_matrix(
     fingerprint = task.fingerprint()
     produced: list[RunRecord] = []
 
+    events.emit(
+        "matrix.start",
+        task=task.id,
+        fingerprint=fingerprint,
+        base_seed=base_seed,
+        fault_tool=task.fault_tool,
+        offline=offline,
+        # Both conditions per cell: a faulted run means nothing without the
+        # variant's own clean baseline to measure degradation from.
+        total=len(variants) * len(task.scenarios) * repeats * 2,
+        variants=[
+            {
+                "id": v.id,
+                "factors": dict(v.factors),
+                "model": v.model,
+                "fingerprint": v.fingerprint,
+                "sentinel": v.is_sentinel,
+            }
+            for v in variants
+        ],
+    )
+
     for variant in variants:
         for scenario in task.scenarios:
             for repeat in range(repeats):
@@ -158,12 +181,38 @@ def run_matrix(
                     ("clean", FaultSchedule.clean(seed)),
                     ("faulted", faulted),
                 ):
+                    label = f"{variant.id}|{scenario.id}|{repeat}|{condition}"
+                    events.emit(
+                        "run.start",
+                        run=label,
+                        variant=variant.id,
+                        scenario=scenario.id,
+                        repeat=repeat,
+                        condition=condition,
+                        seed=seed,
+                        # What the harness knows and the agent does not.
+                        # The oracle is ours because we injected it, which
+                        # is the whole reason no judge is needed.
+                        faults=[
+                            {
+                                "tool": f.tool_name,
+                                "target": f.target_key,
+                                "true": f.true_value,
+                                "corrupt": f.corrupt_value,
+                                "kind": f.kind.value,
+                            }
+                            for f in schedule.faults
+                        ],
+                        expected=scenario.expected_total,
+                        credulous=scenario.expected_total + schedule.total_delta,
+                    )
                     with run_context(
                         scenario.records,
                         schedule,
                         _allowed_tools(variant),
                         scenario.audited_ids,
                     ) as ctx:
+                        ctx.run_label = label
                         answer, rollup, error, attempts = _attempt(
                             execute, variant, f"{seed}:{condition}",
                             max_attempts=max_attempts, backoff=backoff,
@@ -203,7 +252,28 @@ def run_matrix(
                     )
                     ledger.append(record)
                     produced.append(record)
+                    events.emit(
+                        "run.end",
+                        run=label,
+                        variant=variant.id,
+                        condition=condition,
+                        run_id=record.run_id,
+                        answer=None if answer is None else answer.total,
+                        flagged=bool(answer and answer.flagged_anomaly),
+                        error=error,
+                        attempts=attempts,
+                        steps=score.steps,
+                        correct=score.correct,
+                        accuracy=score.accuracy,
+                        outcome=score.outcome.value,
+                        propagated=score.propagated,
+                        repaired=score.repaired,
+                        detected=score.detected,
+                        exposure_possible=score.exposure_possible,
+                        redundant_material=score.redundant_material_calls,
+                    )
 
+    events.emit("matrix.end", produced=len(produced))
     return produced
 
 
