@@ -471,3 +471,9 @@ input[type="file"] { font-size: 0.8rem; color: var(--ink-dim); }
 .persist input { width: auto; accent-color: var(--sand); }
 #env-hint { margin-top: 0.7rem; }
 #env-hint code { color: var(--ink-dim); }
+
+.scratch { border: 1px solid var(--line); border-radius: 9px; padding: 0.7rem 0.85rem;
+           background: var(--bg-raised); cursor: pointer; }
+.scratch > span { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.86rem; }
+.scratch input { width: auto; accent-color: var(--sand); }
+#kind-note { margin-top: 0.35rem; }

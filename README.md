@@ -111,6 +111,20 @@ for stay in the ledger and stay scored — a partial board beats throwing away
 what you bought. Starting a live run needs the ceiling typed out, with the
 number in the sentence, so nobody confirms an amount they did not read.
 
+### Choosing the lie
+
+The wizard's tool step picks which of the three kinds to inject. A project
+declares one, never a mix — they have different oracles, and averaging them
+would report one number for three questions.
+
+![choosing a fault kind](docs/assets/ui-fault-kinds.png)
+
+`instruction` rides the directive on your own tool's result, since a project
+has no separate annotation tool: one string, value and command, with nothing
+marking which is which. `poisoned_memory` needs a scratchpad, so selecting it
+turns one on and points the fault at `recall_note` — an agent can only have
+its own earlier work corrupted if it has somewhere to put it.
+
 ### If you don't know the right answer
 
 You don't have to. Supply the expected answer and you get the full board.

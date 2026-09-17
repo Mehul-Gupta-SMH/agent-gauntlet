@@ -285,6 +285,18 @@ def serve(name: str, *args: Any) -> Any:
         ctx._log(name, key, False, value, tool.cost)
         return value
 
+    if fault.kind is FaultKind.INSTRUCTION:
+        # The value is untouched; what is corrupted is the authority
+        # attached to it. A project has no separate annotation tool, so the
+        # directive rides on the operator's own tool -- exactly as a
+        # compromised upstream would return it, one string with nothing
+        # marking which half is data and which is a command.
+        value = tool.table[key]
+        poisoned = f"{value}\n\n{fault.directive}"
+        ctx.injected_directives.append(fault.directive or "")
+        ctx._log(name, key, True, poisoned, tool.cost)
+        return poisoned
+
     if fault.kind is FaultKind.TIMEOUT:
         ctx._log(name, key, True, "timeout", tool.cost)
         raise ToolTimeout(f"{name}{tuple(args)} timed out")

@@ -87,6 +87,19 @@ class Project(BaseModel):
     scenarios: list[Scenario] = Field(default_factory=list)
 
     fault_tool: str = ""
+    fault_kind: str = "wrong_value"
+    """Which kind of lie to inject: `wrong_value`, `instruction` or
+    `poisoned_memory`. Declared per project, because the three have
+    different oracles and averaging them reports one number for three
+    questions."""
+
+    scratchpad: bool = False
+    """Give contenders `record_note` / `recall_note`.
+
+    Required for `poisoned_memory`: an agent can only have its own earlier
+    work corrupted if it has somewhere to put it. Generic, keyed by whatever
+    the agent names, so it needs nothing from the operator's data.
+    """
     repeats: int = 2
     seeds: int = 2
     offline: bool = True
@@ -176,6 +189,15 @@ class Project(BaseModel):
                 f"{self.fault_tool} is not a tool in this project, so the fault "
                 "could never fire"
             )
+        if self.fault_kind == "poisoned_memory" and not self.scratchpad:
+            out.append(
+                "poisoned_memory corrupts the agent's own recorded finding, so "
+                "turn on the scratchpad -- without one there is nothing to poison"
+            )
+        if self.fault_kind == "poisoned_memory" and self.fault_tool != "recall_note":
+            out.append("with poisoned_memory the corrupted tool is recall_note")
+        if self.fault_kind != "poisoned_memory" and self.fault_tool == "recall_note":
+            out.append("recall_note can only be corrupted by poisoned_memory")
         if not self.offline and not self.budget_usd:
             out.append("set a spend ceiling before running live")
         if not self.offline:
@@ -193,7 +215,16 @@ class Project(BaseModel):
         return out
 
     def tool_names(self) -> list[str]:
-        return [t.name for t in self.tools] + list(self.builtin_tools)
+        """Every tool a contender in this project could be granted.
+
+        The scratchpad counts: it is a real tool the agent calls, and
+        leaving it out made `poisoned_memory` report that its own corrupted
+        tool "is not a tool in this project".
+        """
+        names = [t.name for t in self.tools] + list(self.builtin_tools)
+        if self.scratchpad:
+            names += ["record_note", "recall_note"]
+        return names
 
     def material_tools(self) -> list[str]:
         return [t.name for t in self.tools if t.cost is ToolCost.MATERIAL]

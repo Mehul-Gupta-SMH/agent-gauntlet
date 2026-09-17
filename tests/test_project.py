@@ -515,3 +515,42 @@ def test_the_progress_total_matches_the_runs_that_actually_happen(project):
 
     ended = sum(1 for e in log.since(0) if e.kind == "run.end")
     assert announced == len(produced) == ended
+
+
+def test_concurrent_edits_do_not_overwrite_each_other(project):
+    """Found by driving the wizard: selecting a fault kind right after
+    typing an expected answer silently lost the kind.
+
+    Each wizard edit is its own POST and `ThreadingHTTPServer` handles them
+    concurrently. `apply_patch` is load-mutate-save, so two in flight both
+    read the old project and the second save discarded the first's change.
+    It presented as the UI ignoring a click.
+    """
+    import threading
+
+    from agent_gauntlet import server
+
+    edits = [
+        {"statement": "one"},
+        {"fault_kind": "instruction"},
+        {"repeats": 7},
+        {"scratchpad": True},
+    ]
+    barrier = threading.Barrier(len(edits))
+
+    def apply(patch):
+        barrier.wait()          # maximise the overlap
+        server.patch_project(project.id, patch)
+
+    threads = [threading.Thread(target=apply, args=(e,)) for e in edits]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    final = projects.Project.load(project.id)
+    # Every edit survived; none was overwritten by a concurrent one.
+    assert final.statement == "one"
+    assert final.fault_kind == "instruction"
+    assert final.repeats == 7
+    assert final.scratchpad is True

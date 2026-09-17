@@ -107,6 +107,32 @@ function hydrate() {
   q('#seeds').value = p.seeds;
   q('#expected').value = p.scenarios[0]?.expected ?? '';
 
+  q('#scratchpad').checked = Boolean(p.scratchpad);
+  q('#fault-kinds').innerHTML = Object.entries(W.catalog.fault_kinds).map(
+    ([kind, blurb]) => `
+    <button type="button" class="chip" data-kind="${kind}" title="${blurb}"
+      aria-pressed="${(p.fault_kind || 'wrong_value') === kind}">${kind}</button>`
+  ).join('');
+  qa('[data-kind]').forEach((chip) => chip.addEventListener('click', async () => {
+    const kind = chip.dataset.kind;
+    // Radio, not multi-select: the three have different oracles, and a
+    // board that averaged them would report one number for three questions.
+    qa('[data-kind]').forEach((c) =>
+      c.setAttribute('aria-pressed', String(c === chip)));
+    const patchBody = { fault_kind: kind };
+    // poisoned_memory corrupts the scratchpad, so it implies both the
+    // scratchpad and the tool the fault lands on. Making the operator
+    // discover that through two blockers would be worse than setting it.
+    if (kind === 'poisoned_memory') {
+      patchBody.scratchpad = true;
+      patchBody.fault_tool = 'recall_note';
+      q('#scratchpad').checked = true;
+    } else if (W.project.fault_tool === 'recall_note') {
+      patchBody.fault_tool = W.project.tools[0]?.name || '';
+    }
+    await patch(patchBody);
+  }));
+
   q('#prompts').innerHTML = (W.catalog.policies || []).map((name) => `
     <button type="button" class="chip" data-prompt="${name}"
       aria-pressed="${p.prompts.includes(name)}">${name}</button>`).join('');
@@ -302,14 +328,20 @@ q('#add-input').addEventListener('click', () => {
 q('#expected').addEventListener('change', () => saveScenario(inputs(), q('#expected').value));
 
 function renderFaultTool() {
+  const p = W.project;
+  q('#kind-note').textContent = W.catalog.fault_kinds[p.fault_kind || 'wrong_value'] || '';
+
   const sel = q('#fault-tool');
-  const names = W.project.tools.map((t) => t.name);
+  const names = p.tools.map((t) => t.name)
+    .concat(p.scratchpad ? W.catalog.note_tools : []);
   sel.innerHTML = names.map((n) => `<option value="${n}">${n}</option>`).join('')
     || '<option value="">(add a tool first)</option>';
-  if (names.includes(W.project.fault_tool)) sel.value = W.project.fault_tool;
-  else if (names.length && W.project.fault_tool !== names[0]) patch({ fault_tool: names[0] });
+  if (names.includes(p.fault_tool)) sel.value = p.fault_tool;
+  else if (names.length && p.fault_tool !== names[0]) patch({ fault_tool: names[0] });
 }
 q('#fault-tool').addEventListener('change', () => patch({ fault_tool: q('#fault-tool').value }));
+q('#scratchpad').addEventListener('change', () =>
+  patch({ scratchpad: q('#scratchpad').checked }));
 
 /* ------------------------------------------------------------- credentials */
 
@@ -410,7 +442,7 @@ function renderReview() {
     <div class="review-grid">
       <div><span class="k">task</span><span class="v">${p.statement.slice(0, 120) || '—'}</span></div>
       <div><span class="k">tools</span><span class="v">${p.tools.map((t) => t.name).join(', ') || '—'}</span></div>
-      <div><span class="k">corrupting</span><span class="v">${p.fault_tool || '—'}</span></div>
+      <div><span class="k">corrupting</span><span class="v">${p.fault_tool || '—'} · ${p.fault_kind}</span></div>
       <div><span class="k">contenders</span><span class="v">${contenders} → ${runs} runs</span></div>
       <div><span class="k">mode</span><span class="v">${p.offline
         ? 'offline — scripted policies, no spend'

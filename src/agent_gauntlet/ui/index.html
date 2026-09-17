@@ -109,6 +109,20 @@
     <div id="tool-list" class="tool-list"></div>
 
     <div class="intake-grid">
+      <div class="field span2">
+        <span class="label">What kind of lie?</span>
+        <div id="fault-kinds" class="chips"></div>
+        <small id="kind-note"></small>
+      </div>
+
+      <label class="field span2 scratch">
+        <span><input type="checkbox" id="scratchpad">
+        <strong>Give contenders a scratchpad</strong> — <code>record_note</code>
+        and <code>recall_note</code>, so they can work in stages.</span>
+        <small>Required for <code>poisoned_memory</code>: an agent can only
+        have its own earlier work corrupted if it has somewhere to put it.</small>
+      </label>
+
       <div class="field">
         <span class="label">Corrupt which tool?</span>
         <select id="fault-tool"></select>

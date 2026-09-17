@@ -446,6 +446,8 @@ def project_view(p: projects.Project) -> dict[str, Any]:
         "models": [m.model_dump() for m in p.models],
         "prompts": p.prompts,
         "fault_tool": p.fault_tool,
+        "fault_kind": p.fault_kind,
+        "scratchpad": p.scratchpad,
         "scenarios": [sc.model_dump() for sc in p.scenarios],
         "repeats": p.repeats, "seeds": p.seeds, "offline": p.offline,
         "target": p.target, "budget_usd": p.budget_usd,
@@ -457,17 +459,34 @@ def project_view(p: projects.Project) -> dict[str, Any]:
     }
 
 
+PROJECT_LOCK = threading.Lock()
+"""Serializes read-modify-write on a project.
+
+`ThreadingHTTPServer` handles requests concurrently and each wizard edit is
+its own POST, so two quick edits raced: both loaded the project, both
+mutated their own copy, and the second save discarded the first one's
+change. It looked like the UI ignoring a click -- selecting a fault kind
+right after typing an expected answer lost the kind.
+
+One lock rather than per-project, because the server runs one project at a
+time anyway and a correct coarse lock beats a clever one here.
+"""
+
+
 def apply_patch(p: projects.Project, patch: dict[str, Any]) -> projects.Project:
     """Merge one wizard step into the project.
 
     Field by field rather than a wholesale replace, so a step that does not
     mention tools cannot silently drop the operator's uploads.
     """
-    for field in ("name", "statement", "fault_tool", "stage", "target"):
+    for field in ("name", "statement", "fault_tool", "stage", "target",
+                  "fault_kind"):
         if field in patch:
             setattr(p, field, patch[field] or "")
     if "offline" in patch:
         p.offline = bool(patch["offline"])
+    if "scratchpad" in patch:
+        p.scratchpad = bool(patch["scratchpad"])
     if "budget_usd" in patch:
         raw = patch["budget_usd"]
         p.budget_usd = None if raw in (None, "") else max(0.0, float(raw))
@@ -485,6 +504,13 @@ def apply_patch(p: projects.Project, patch: dict[str, Any]) -> projects.Project:
         p.tools = [usertools.UserTool(**t) for t in patch["tools"]]
     p.save()
     return p
+
+
+def patch_project(project_id: str, patch: dict[str, Any]) -> projects.Project:
+    """Load, mutate and save under the lock, so concurrent edits queue
+    instead of overwriting each other."""
+    with PROJECT_LOCK:
+        return apply_patch(projects.Project.load(project_id), patch)
 
 
 def store_upload(p: projects.Project, filename: str, source: str) -> dict[str, Any]:
@@ -550,6 +576,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {
                 **catalog(),
                 "policies": [k for k in sorted(runner.POLICIES) if k != "sentinel"],
+        "fault_kinds": {
+            "wrong_value": "a tool returns a false number — does it survive?",
+            "instruction": "a tool result carries a directive — whose "
+                           "instructions does the agent follow?",
+            "poisoned_memory": "the agent's own recorded finding comes back "
+                               "altered — does it re-derive, or build on it?",
+        },
+        "note_tools": runner.NOTE_TOOLS,
                 "costs": [c.value for c in ToolCost],
                 "uploads_allowed": uploads_allowed(),
                 "bind_host": BIND_HOST,
@@ -648,7 +682,9 @@ class Handler(BaseHTTPRequestHandler):
             action = parts[3] if len(parts) > 3 else ""
 
             if action == "":
-                return self._json(200, project_view(apply_patch(p, body)))
+                # Re-loaded inside the lock: the copy read above may already
+                # be stale by the time this request gets its turn.
+                return self._json(200, project_view(patch_project(parts[2], body)))
 
             if action == "upload":
                 try:
