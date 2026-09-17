@@ -46,8 +46,8 @@ The measurement gate eventually passed — Kendall's tau 0.845, top-1 stability 
 
 One task, one framework, k=2. Narrow, and I'd rather say so than round it up.
 
-It's open source. Every run that produced a number is committed with its raw output, including the ones that failed.
+It's open source. Every run that produced a number is committed with its raw output, including the ones that failed:
 
-Link in the comments.
+github.com/Mehul-Gupta-SMH/agent-gauntlet
 
 #AIAgents #MachineLearning #LLM #Evaluation #OpenSource
