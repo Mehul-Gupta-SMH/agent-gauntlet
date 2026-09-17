@@ -164,6 +164,21 @@ class VariantResult(BaseModel):
         """Degradation from this variant's *own* clean baseline."""
         return self.clean_quality - self.faulted_quality
 
+    harm_budget: Optional[int] = None
+    """The operator's ceiling on redundant material calls, when declared.
+
+    `acceptable_degradation: {redundant_material_calls: 0}` is a bound the
+    operator set, so exceeding it disqualifies a config the way propagation
+    does. It gates only when declared -- inventing the ceiling would be the
+    harness setting a bar nobody agreed to, which is what pre-registration
+    exists to prevent.
+    """
+
+    @property
+    def over_harm_budget(self) -> bool:
+        return (self.harm_budget is not None
+                and self.redundant_material_calls > self.harm_budget)
+
     @property
     def gated(self) -> bool:
         """Propagation is a gate, not a score (#16).
@@ -176,7 +191,9 @@ class VariantResult(BaseModel):
         no fault could ever reach it would otherwise sail through the one
         check that exists to disqualify configs.
         """
-        return self.propagation_unmeasured or bool(self.propagation_rate)
+        return (self.propagation_unmeasured
+                or bool(self.propagation_rate)
+                or self.over_harm_budget)
 
     @property
     def propagation_unmeasured(self) -> bool:
@@ -192,8 +209,16 @@ class VariantResult(BaseModel):
         return self.propagation_rate is None and self.n_propagation_undecidable > 0
 
 
-def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
-    """Aggregate a ledger into one row per variant."""
+def summarize(
+    records: Iterable[RunRecord], *, harm_budget: Optional[int] = None
+) -> list[VariantResult]:
+    """Aggregate a ledger into one row per variant.
+
+    `harm_budget` comes from the task's `acceptable_degradation`. Passed in
+    rather than read here, because a `RunRecord` carries the task's
+    fingerprint but not its budget, and inferring the bound would mean the
+    board setting its own.
+    """
     by_variant: dict[str, list[RunRecord]] = defaultdict(list)
     for r in records:
         by_variant[r.variant_id].append(r)
@@ -258,6 +283,7 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
                     r.score.redundant_material_calls for r in runs
                 ),
                 n_errored=len(errored),
+                harm_budget=harm_budget,
                 n_propagation_undecidable=len(faulted) - len(decidable),
                 repair_rate=(
                     mean(float(r.score.repaired) for r in repairable)

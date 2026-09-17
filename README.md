@@ -78,6 +78,20 @@ the server is bound to loopback. Functions are listed by *parsing* the file, so
 you choose one before anything in it has executed — and anything that will run
 on import is reported as a warning first.
 
+### Running live
+
+The model step has a **Run live** toggle: real models through CommonADK, on
+generated `common/` projects whose `tools.py` exposes your tools through the
+interposer — below the SDK adapter, which is the only place a fault can be
+injected.
+
+Live runs need a **spend ceiling**, and it is a real one: checked against the
+rollups the runs actually returned, after every run. An estimate is not a
+ceiling. When the ceiling is hit the matrix stops, and the runs already paid
+for stay in the ledger and stay scored — a partial board beats throwing away
+what you bought. Starting a live run needs the ceiling typed out, with the
+number in the sentence, so nobody confirms an amount they did not read.
+
 ### If you don't know the right answer
 
 You don't have to. Supply the expected answer and you get the full board.

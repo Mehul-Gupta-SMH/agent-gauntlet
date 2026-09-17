@@ -444,3 +444,12 @@ input[type="file"] { font-size: 0.8rem; color: var(--ink-dim); }
   .tool-sources, .model-list { grid-template-columns: minmax(0, 1fr); }
   .fn-row { grid-template-columns: 1fr; }
 }
+
+.live-box { border: 1px solid #52241c; border-radius: 9px; padding: 0.85rem;
+            background: rgba(212, 85, 63, 0.05); margin-top: 1.25rem; }
+.live-toggle { display: flex; align-items: flex-start; gap: 0.6rem; cursor: pointer;
+               font-size: 0.86rem; }
+.live-toggle input { width: auto; margin-top: 0.25rem; accent-color: var(--blood); }
+.live-toggle em { color: var(--blood); font-style: normal; }
+#live-fields { margin-top: 0.9rem; }
+#estimate { margin-top: 0.6rem; }

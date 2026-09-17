@@ -106,19 +106,34 @@ function buildArena(variants, faultTool) {
   // Two rings past ten, because a full grid (models x prompts x tool sets,
   // plus the sentinel) crowds one ellipse until the name plates collide and
   // the arena stops being readable.
+  // Rings are added as the grid grows rather than shrinking one ring until
+  // the name plates collide. Past ~28 contenders even that stops being
+  // readable and the arena becomes a grid -- an honest admission that a
+  // picture of a crowd is not a picture of anything.
   const n = variants.length;
-  const twoRings = n > 10;
-  const outer = twoRings ? Math.ceil(n / 2) : n;
-  const scale = n > 16 ? 0.78 : 1;
+  const rings = n <= 10 ? 1 : n <= 20 ? 2 : 3;
+  const grid = n > 28;
+  const scale = grid ? 0.5 : rings === 3 ? 0.66 : rings === 2 ? 0.85 : 1;
+  const spreads = [0.84, 0.54, 0.26];
+  const perRing = Math.ceil(n / rings);
 
   variants.forEach((v, i) => {
-    const onInner = twoRings && i >= outer;
-    const idx = onInner ? i - outer : i;
-    const count = onInner ? n - outer : outer;
-    const spread = onInner ? 0.42 : 0.82;
-    const angle = (-Math.PI / 2) + ((idx + (onInner ? 0.5 : 0)) / count) * Math.PI * 2;
-    const x = cx + Math.cos(angle) * rx * spread;
-    const y = cy + Math.sin(angle) * ry * spread;
+    let x, y;
+    if (grid) {
+      const cols = Math.ceil(Math.sqrt(n * 1.8));
+      const rows = Math.ceil(n / cols);
+      const col = i % cols, row = Math.floor(i / cols);
+      x = cx + ((col - (cols - 1) / 2) / Math.max(1, cols)) * rx * 1.7;
+      y = cy + ((row - (rows - 1) / 2) / Math.max(1, rows)) * ry * 1.5;
+    } else {
+      const ring = Math.min(rings - 1, Math.floor(i / perRing));
+      const idx = i - ring * perRing;
+      const count = Math.min(perRing, n - ring * perRing);
+      const angle = (-Math.PI / 2)
+        + ((idx + (ring % 2 ? 0.5 : 0)) / count) * Math.PI * 2;
+      x = cx + Math.cos(angle) * rx * spreads[ring];
+      y = cy + Math.sin(angle) * ry * spreads[ring];
+    }
 
     const g = svgEl('g', { class: 'fighter', transform: `translate(${x} ${y})` });
     g.dataset.variant = v.id;
@@ -143,25 +158,35 @@ function buildArena(variants, faultTool) {
     crestG.innerHTML = svg;
     g.appendChild(crestG);
 
-    const label = [v.factors.model, v.factors.prompt].filter(Boolean).join(' ');
-    const name = svgEl('text', { class: 'name', y: 38 * scale, 'text-anchor': 'middle' });
-    name.textContent = label || v.id;
-    g.appendChild(name);
+    // Past a crowd, the plates are dropped rather than overlapped: the tab
+    // list and the board below carry the names, and unreadable text on top
+    // of an avatar is worse than none.
+    if (!grid) {
+      const label = [v.factors.model, v.factors.prompt].filter(Boolean).join(' ');
+      const name = svgEl('text', { class: 'name', y: 38 * scale, 'text-anchor': 'middle' });
+      name.textContent = label || v.id;
+      g.appendChild(name);
 
-    const plate = svgEl('text', { class: 'plate', y: 49 * scale, 'text-anchor': 'middle' });
-    plate.textContent = v.factors.toolset || '';
-    g.appendChild(plate);
+      const plate = svgEl('text', { class: 'plate', y: 49 * scale, 'text-anchor': 'middle' });
+      plate.textContent = v.factors.toolset || '';
+      g.appendChild(plate);
+    }
+    const title = svgEl('title');
+    title.textContent = [v.factors.model, v.factors.prompt, v.factors.toolset]
+      .filter(Boolean).join(' / ') || v.id;
+    g.appendChild(title);
 
     // Health is running accuracy, and starts empty rather than full: nothing
     // has been measured yet, and a full bar would be a claim.
-    const barY = 54 * scale;
-    g.appendChild(svgEl('rect', { x: -24, y: barY, width: 48, height: 3, fill: '#241d16', rx: 1.5 }));
-    const bar = svgEl('rect', { class: 'hp', x: -24, y: barY, width: 0, height: 3, fill: 'hsl(160 40% 45%)', rx: 1.5 });
+    const barY = grid ? 20 : 54 * scale;
+    const barW = 48 * scale;
+    g.appendChild(svgEl('rect', { x: -barW / 2, y: barY, width: barW, height: 3, fill: '#241d16', rx: 1.5 }));
+    const bar = svgEl('rect', { class: 'hp', x: -barW / 2, y: barY, width: 0, height: 3, fill: 'hsl(160 40% 45%)', rx: 1.5 });
     g.appendChild(bar);
 
     fighters.appendChild(g);
     state.fighters.set(v.id, {
-      el: g, bar, x, y, factors: v.factors, sentinel: v.sentinel,
+      el: g, bar, x, y, barW, factors: v.factors, sentinel: v.sentinel,
       fingerprint: v.fingerprint, runs: 0, accSum: 0, unarmed,
     });
     state.logs.set(v.id, []);
@@ -308,7 +333,7 @@ function handle(ev) {
       const f = state.fighters.get(ev.variant);
       if (f) {
         f.runs += 1; f.accSum += ev.accuracy;
-        f.bar.setAttribute('width', (f.accSum / f.runs) * 48);
+        f.bar.setAttribute('width', (f.accSum / f.runs) * (f.barW || 48));
         f.bar.setAttribute('fill', ev.propagated ? 'hsl(8 62% 52%)' : 'hsl(160 40% 45%)');
       }
       if (ev.propagated) setFighterState(ev.variant, 'fallen');
@@ -447,7 +472,10 @@ function renderBoard(rows, winner, errored, total, reason) {
   tbody.innerHTML = rows.map((r) => {
     const cls = [r.gated ? 'gated' : '', r.is_sentinel ? 'sentinel' : ''].join(' ').trim();
     const flag = r.propagation_unmeasured ? 'GATED: propagation not measurable'
-               : r.gated ? 'GATED: propagated' : '';
+               : r.propagation_rate ? 'GATED: propagated'
+               : r.over_harm_budget
+                 ? `GATED: ${r.redundant_material_calls} redundant material calls`
+               : '';
     // Short-circuits on the VALUE, not just the class. The first version
     // set the `na` class correctly and still called the formatter on null,
     // so a custom formatter threw and took the whole board down with it.

@@ -59,7 +59,17 @@ async function refreshProjects() {
 }
 
 async function open(id) {
-  W.project = await api(`/api/projects/${id}`);
+  try {
+    W.project = await api(`/api/projects/${id}`);
+  } catch (err) {
+    // Deleted in another tab, or its directory removed underneath us. Go
+    // back to the list and say so, rather than leaving a wizard open over
+    // a project that is not there.
+    q('#project-list').innerHTML =
+      `<p class="error">Could not open ${id}: ${err.message}</p>`;
+    await refreshProjects();
+    return;
+  }
   q('#projects').hidden = true;
   q('#wizard').hidden = false;
   q('#fingerprint').textContent = W.project.id;
@@ -88,6 +98,10 @@ function goto(step) {
 function hydrate() {
   const p = W.project;
   q('#statement').value = p.statement || '';
+  q('#live').checked = !p.offline;
+  q('#live-fields').hidden = p.offline;
+  q('#target').value = p.target || 'langgraph';
+  q('#budget').value = p.budget_usd ?? '';
   q('#repeats').value = p.repeats;
   q('#seeds').value = p.seeds;
   q('#expected').value = p.scenarios[0]?.expected ?? '';
@@ -293,6 +307,17 @@ function renderFaultTool() {
 }
 q('#fault-tool').addEventListener('change', () => patch({ fault_tool: q('#fault-tool').value }));
 
+/* -------------------------------------------------------------------- live */
+
+q('#live').addEventListener('change', () => {
+  const live = q('#live').checked;
+  q('#live-fields').hidden = !live;
+  patch({ offline: !live });
+});
+q('#target').addEventListener('change', () => patch({ target: q('#target').value }));
+q('#budget').addEventListener('change', () =>
+  patch({ budget_usd: q('#budget').value === '' ? null : q('#budget').value }));
+
 /* ------------------------------------------------------------------ review */
 
 function renderReview() {
@@ -303,12 +328,21 @@ function renderReview() {
   const labelled = p.scenarios[0]?.expected !== null
                 && p.scenarios[0]?.expected !== undefined;
 
+  q('#estimate').textContent = p.offline ? '' :
+    `Rough forecast for this grid: about $${p.estimate_usd.toFixed(2)}. ` +
+    'Crude on purpose — the real number is metered from the run and stops it ' +
+    'at your ceiling.';
+
   q('#review').innerHTML = `
     <div class="review-grid">
       <div><span class="k">task</span><span class="v">${p.statement.slice(0, 120) || '—'}</span></div>
       <div><span class="k">tools</span><span class="v">${p.tools.map((t) => t.name).join(', ') || '—'}</span></div>
       <div><span class="k">corrupting</span><span class="v">${p.fault_tool || '—'}</span></div>
       <div><span class="k">contenders</span><span class="v">${contenders} → ${runs} runs</span></div>
+      <div><span class="k">mode</span><span class="v">${p.offline
+        ? 'offline — scripted policies, no spend'
+        : `LIVE via ${p.target} · ceiling $${(p.budget_usd || 0).toFixed(2)} · ` +
+          `forecast ~$${p.estimate_usd.toFixed(2)}`}</span></div>
       <div><span class="k">oracle</span><span class="v">${labelled
         ? 'your expected answer — full board'
         : 'each contender’s own clean run — propagation is gated, correctness reads n/a'}</span></div>
@@ -342,6 +376,19 @@ qa('[data-next]').forEach((b) => b.addEventListener('click', () => {
 qa('.stepbtn').forEach((b) => b.addEventListener('click', () => goto(b.dataset.step)));
 
 q('#start').addEventListener('click', async () => {
+  const p = W.project;
+  if (!p.offline) {
+    // An irreversible, outward-facing action with a real cost. It is typed
+    // out rather than clicked through, and the ceiling is in the sentence
+    // so nobody confirms a number they did not read.
+    const want = `spend ${(p.budget_usd || 0).toFixed(2)}`;
+    const got = prompt(
+      `This runs ${p.target} against real models and spends real money.\n` +
+      `Forecast ~$${p.estimate_usd.toFixed(2)}; hard ceiling ` +
+      `$${(p.budget_usd || 0).toFixed(2)}.\n\n` +
+      `Type "${want}" to confirm.`);
+    if (got !== want) return;
+  }
   q('#intake-error').hidden = true;
   q('#start').disabled = true;
   try {

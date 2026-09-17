@@ -93,6 +93,17 @@ class Project(BaseModel):
     """Scripted policies and no spend. The default, and the only mode that
     runs without a credential."""
 
+    target: str = "langgraph"
+    """Which SDK adapter a live run drives, via CommonADK."""
+
+    budget_usd: Optional[float] = None
+    """Hard ceiling on a live run, in dollars.
+
+    Required for a live run and meaningless offline. Checked against the
+    rollups the runs actually returned, after every run -- an estimate is
+    not a ceiling.
+    """
+
     stage: str = "describe"
     """describe | tools | models | ready | running | done | failed."""
     error: Optional[str] = None
@@ -164,6 +175,18 @@ class Project(BaseModel):
                 f"{self.fault_tool} is not a tool in this project, so the fault "
                 "could never fire"
             )
+        if not self.offline and not self.budget_usd:
+            out.append("set a spend ceiling before running live")
+        if not self.offline:
+            from .architect import _env_requirements
+
+            for m in self.models:
+                if not _env_requirements(m.model):
+                    out.append(
+                        f"{m.model!r} resolves to no known provider, so no "
+                        "credential can be checked for it -- the first sign of "
+                        "trouble would be a provider error mid-matrix"
+                    )
         for name in self.missing_credentials():
             out.append(f"environment variable {name} is not set")
         return out

@@ -102,6 +102,7 @@ class FaultSchedule(BaseModel):
         tool_name: str = "fetch_record",
         evidence_tool: Optional[str] = "get_summary",
         targets: Optional[Sequence[str]] = None,
+        decidable_band: Optional[int] = None,
     ) -> FaultSchedule:
         """Derive a schedule from `seed` and the scenario's records.
 
@@ -142,7 +143,7 @@ class FaultSchedule(BaseModel):
                 evidence_tool=evidence_tool,
             )
 
-        corrupt = _plausible_corruption(rng, true_value)
+        corrupt = _plausible_corruption(rng, true_value, band=decidable_band)
         return cls(
             seed=seed,
             faults=[
@@ -168,11 +169,30 @@ def _stable_seed(seed: str) -> int:
     return int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16], 16)
 
 
-def _plausible_corruption(rng: random.Random, true_value: int) -> int:
-    """A wrong value that looks like it could have been right."""
+def _plausible_corruption(
+    rng: random.Random, true_value: int, band: Optional[int] = None
+) -> int:
+    """A wrong value that looks like it could have been right.
+
+    With `band`, the value is pushed out until the delta clears it, so the
+    run can actually decide propagation. The direction stays random and the
+    smallest sufficient multiple is used -- overshooting further would trade
+    away more plausibility than the measurement needs.
+    """
     for _ in range(16):
         factor = rng.choice([0.4, 0.5, 0.6, 1.5, 1.7, 2.0])
         candidate = max(1, int(round(true_value * factor)))
-        if candidate != true_value:
+        if candidate == true_value:
+            continue
+        if band is None or abs(candidate - true_value) > band:
             return candidate
-    return true_value + max(1, true_value // 2)
+        # Too small to be told apart from a miscount. Keep the sign, grow
+        # the magnitude to just past the band.
+        sign = 1 if candidate > true_value else -1
+        needed = band + max(1, band // 10)
+        forced = true_value + sign * needed
+        if forced > 0 and forced != true_value:
+            return forced
+        # Deflating past zero is not a plausible read; inflate instead.
+        return true_value + needed
+    return true_value + max(1, (band or 0) + true_value // 2)

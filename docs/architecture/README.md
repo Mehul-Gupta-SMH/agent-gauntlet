@@ -102,6 +102,22 @@ Two properties are load-bearing:
   nothing rather than ordering rows by a number that was never measured. An
   unlabelled project gets a gate, not a leaderboard.
 
+A live project adds two guards. The **spend ceiling** is enforced in
+`run_matrix`, after the ledger append and never before — a run that pushed
+the total past the limit still happened, and dropping its record would hide
+spend the operator has already been charged for. And a model string that
+resolves to no known provider is a **blocker**, because it implies no
+credential, so preflight has nothing to check and the first sign of trouble
+would be a provider error mid-matrix.
+
+Fault magnitudes on a project are widened until the injected delta clears
+twice the noise band, or propagation is undecidable for most runs and the
+gate has nothing to gate on. The scaling applies to the *magnitude* and never
+to the *choice of target*, so the board still cannot be an artifact of the
+harness preferring convenient records — what it trades is a little
+plausibility, since a very large corruption might be caught by disbelief
+rather than by the cross-check.
+
 Credentials travel as **names** and are checked for presence. Nothing in the
 project reads a credential's value, so there is nothing for the project file,
 the ledger or the page to leak. Uploaded code executes in the server process,

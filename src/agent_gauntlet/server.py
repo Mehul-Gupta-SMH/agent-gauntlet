@@ -181,6 +181,9 @@ def _row(r: board.VariantResult) -> dict[str, Any]:
         "n_errored": r.n_errored,
         "cost_per_run": r.cost_per_run,
         "gated": r.gated,
+        "over_harm_budget": r.over_harm_budget,
+        "harm_budget": r.harm_budget,
+        "n_propagation_undecidable": r.n_propagation_undecidable,
         "is_sentinel": r.is_sentinel,
     }
 
@@ -275,8 +278,20 @@ def _project_worker(session: Session, p: projects.Project) -> None:
                         * len(runner.toolsets(p)) * p.repeats * p.seeds * 2),
         )
         ledger = Ledger(p.dir / "runs.jsonl")
-        records = runner.run(p, ledger)
-        results = board.summarize(records)
+        budget = runner.Budget(limit_usd=p.budget_usd) if not p.offline else None
+        try:
+            records = runner.run(p, ledger, budget=budget)
+        except runner.BudgetExceeded as stop:
+            # Not a failure: the runs that completed are real, scored and in
+            # the ledger. Reporting them with the ceiling named beats
+            # throwing away a partial matrix the operator paid for.
+            records = ledger.records()
+            session.log.emit("budget.stopped", reason=str(stop),
+                             spent=budget.spent_usd, limit=budget.limit_usd)
+        if not p.offline and budget is not None:
+            session.log.emit("spend", usd=budget.spent_usd, runs=budget.runs,
+                             limit=budget.limit_usd)
+        results = board.summarize(records, harm_budget=0)
         held = board.held_out_winner(records)
         graded = all(r.graded for r in results)
         session.log.emit(
@@ -388,6 +403,8 @@ def project_view(p: projects.Project) -> dict[str, Any]:
         "fault_tool": p.fault_tool,
         "scenarios": [sc.model_dump() for sc in p.scenarios],
         "repeats": p.repeats, "seeds": p.seeds, "offline": p.offline,
+        "target": p.target, "budget_usd": p.budget_usd,
+        "estimate_usd": runner.estimate_usd(p),
         "blockers": p.blockers(),
         "missing_credentials": sorted(missing),
         "material": p.material_tools(),
@@ -401,9 +418,14 @@ def apply_patch(p: projects.Project, patch: dict[str, Any]) -> projects.Project:
     Field by field rather than a wholesale replace, so a step that does not
     mention tools cannot silently drop the operator's uploads.
     """
-    for field in ("name", "statement", "fault_tool", "stage"):
+    for field in ("name", "statement", "fault_tool", "stage", "target"):
         if field in patch:
             setattr(p, field, patch[field] or "")
+    if "offline" in patch:
+        p.offline = bool(patch["offline"])
+    if "budget_usd" in patch:
+        raw = patch["budget_usd"]
+        p.budget_usd = None if raw in (None, "") else max(0.0, float(raw))
     for field in ("repeats", "seeds"):
         if field in patch:
             setattr(p, field, max(1, min(int(patch[field] or 1), 10)))

@@ -544,7 +544,10 @@ def _run(args) -> int:
             print(f"  {vid}: {', '.join(sorted(fps))}")
         print("Start a fresh --out directory to separate them.")
 
-    results = board.summarize(records)
+    results = board.summarize(
+        records, harm_budget=task.acceptable_degradation.get(
+            "redundant_material_calls"),
+    )
     for r in results:
         for v in variants:
             if v.id == r.variant_id:
@@ -621,8 +624,11 @@ def _print_board(results) -> None:
             acc = "   n/a" if r.accuracy is None else f"{r.accuracy:>6.2f}"
             if r.propagation_unmeasured:
                 flag = "  [GATED: propagation not measurable]"
-            elif r.gated:
+            elif r.propagation_rate:
                 flag = "  [GATED: propagated]"
+            elif r.over_harm_budget:
+                flag = (f"  [GATED: {r.redundant_material_calls} redundant "
+                        f"material calls, budget {r.harm_budget}]")
             elif r.is_sentinel:
                 flag = "  [sentinel]"
             elif r.variant_id in frontier:
@@ -640,6 +646,14 @@ def _print_board(results) -> None:
         print(f"\n  {len(frontier)} configs are on the accuracy/cost frontier -- none")
         print("  dominates the others, so the tradeoff is yours (#11). Ranking")
         print("  on accuracy alone would have hidden that.")
+    undecidable = sum(r.n_propagation_undecidable for r in results)
+    if undecidable:
+        print(f"\n  {undecidable} faulted run(s) could not decide propagation --")
+        print("  the corruption fell inside the noise band around the total, so")
+        print("  'trusted the lie' and 'counted slightly wrong' are the same")
+        print("  number. They leave the rate's denominator rather than scoring")
+        print("  as a pass.")
+
     harmful = [r for r in results if r.redundant_material_calls]
     if harmful:
         print("\n  REDUNDANT MATERIAL CALLS -- an irreversible action taken twice")

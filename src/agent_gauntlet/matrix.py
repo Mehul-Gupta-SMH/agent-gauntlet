@@ -19,7 +19,7 @@ from .interpose import run_context
 from .live import provider_unreachable
 from .ledger import Ledger, RunRecord
 from .offline import run_policy
-from .score import Answer, score_run
+from .score import Answer, _band, score_run
 from .spec import TaskSpec, VariantSpec
 
 Executor = Callable[[VariantSpec, str], Any]
@@ -119,6 +119,8 @@ def run_matrix(
     user_tools: Optional[dict] = None,
     allowed_tools: Optional[dict] = None,
     project_inputs: Optional[Sequence] = None,
+    decidable_faults: bool = False,
+    budget: Optional[Any] = None,
 ) -> list[RunRecord]:
     """Run the full matrix and append every run to `ledger`."""
     if repeats < 1:
@@ -179,6 +181,15 @@ def run_matrix(
                     # possible and score as a miss. Confining injection
                     # keeps censoring a property of the tool set alone.
                     targets=scenario.audited_ids,
+                    decidable_band=(
+                        # TWICE the noise band: `_determinable` requires the
+                        # delta to clear the band around the truth AND the
+                        # one around the lie, or the two overlap and no
+                        # answer could separate them. Passing one band's
+                        # worth left most faults undecidable anyway.
+                        2 * _band(scenario.expected_total, task.tolerance)
+                        if decidable_faults else None
+                    ),
                 )
                 # Clean first, always, and its answer is kept: under
                 # `Oracle.BASELINE` it is the only truth the faulted half
@@ -264,6 +275,12 @@ def run_matrix(
                     )
                     ledger.append(record)
                     produced.append(record)
+                    # After the append, never before: a run that pushed the
+                    # total past the ceiling is still a run that happened,
+                    # and dropping its record would hide spend the operator
+                    # has already been charged for.
+                    if budget is not None:
+                        budget.record(rollup)
                     events.emit(
                         "run.end",
                         run=label,

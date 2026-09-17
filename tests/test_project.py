@@ -65,8 +65,12 @@ def project(home, monkeypatch):
         UserTool(name="internal_balance", module="lending.py",
                  function="internal_balance"),
     ]
-    p.models = [projects.ModelChoice(alias="cheap", model="m-cheap"),
-                projects.ModelChoice(alias="smart", model="m-smart")]
+    p.models = [
+        projects.ModelChoice(alias="cheap", model="anthropic/claude-haiku-4-5",
+                             credential="ANTHROPIC_API_KEY"),
+        projects.ModelChoice(alias="smart", model="anthropic/claude-sonnet-5",
+                             credential="ANTHROPIC_API_KEY"),
+    ]
     p.prompts = ["naive", "verifying"]
     p.fault_tool = "pull_exposure"
     p.scenarios = [projects.Scenario(
@@ -325,3 +329,164 @@ def test_the_ui_scripts_parse():
         result = subprocess.run([shutil.which("node"), "--check", str(script)],
                                 capture_output=True, text=True)
         assert result.returncode == 0, f"{script.name}: {result.stderr}"
+
+
+# --- live: the ceiling, and the generated project --------------------------
+
+
+def test_the_ceiling_stops_the_matrix_and_keeps_what_it_bought(project):
+    """A ceiling that is only an estimate is not a ceiling.
+
+    Checked against the rollups the runs actually returned, after every run,
+    so the worst case is one run's overshoot rather than a whole matrix. The
+    runs already paid for stay in the ledger and stay scored.
+    """
+    from agent_gauntlet.runner import Budget, BudgetExceeded
+
+    # No ceiling means no stop, and that is only allowed offline.
+    free = Budget()
+    for _ in range(10):
+        free.record({"cost_usd": 0.02})
+    assert free.runs == 10
+
+    budget = Budget(limit_usd=0.10)
+    with pytest.raises(BudgetExceeded, match=r"\$0\.10 ceiling"):
+        for _ in range(100):
+            budget.record({"cost_usd": 0.02})
+    assert budget.runs == 6          # five under, the sixth crosses
+    assert budget.spent_usd == pytest.approx(0.12)
+
+
+def test_a_run_that_crossed_the_ceiling_is_still_recorded(project, monkeypatch):
+    """The record is appended before the budget is checked. A run that
+    pushed the total over still happened, and dropping it would hide spend
+    the operator has already been charged for."""
+    from agent_gauntlet.matrix import run_matrix
+    from agent_gauntlet.runner import Budget, BudgetExceeded
+
+    ledger = Ledger(project.dir / "r.jsonl")
+    tables = runner.calibrate_all(project)
+    sets = runner.toolsets(project)
+    task = runner.task_for(project, tables)
+    inner = runner.executor_for(project, sets)
+
+    def priced(variant, seed):
+        return inner(variant, seed), {"cost_usd": 0.05}
+
+    with pytest.raises(BudgetExceeded):
+        run_matrix(task=task, variants=runner.variants_for(project, sets),
+                   ledger=ledger, base_seed="s", repeats=2, executor=priced,
+                   user_tools={t.name: t for t in project.tools},
+                   allowed_tools=sets,
+                   project_inputs=project.scenarios[0].inputs,
+                   budget=Budget(limit_usd=0.10))
+
+    kept = ledger.records()
+    assert len(kept) == 3           # two under the ceiling, one that crossed
+    assert board.summarize(kept)    # and they are scorable, not discarded
+
+
+def test_a_live_project_will_not_start_without_a_ceiling(project, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    project.offline = False
+    assert any("ceiling" in b for b in project.blockers())
+    project.budget_usd = 5.0
+    assert not any("ceiling" in b for b in project.blockers())
+
+
+def test_a_live_model_whose_provider_is_unknown_is_a_blocker(project):
+    """Otherwise it requires no credential, preflight has nothing to check,
+    and the first thing anyone learns is a provider error mid-matrix."""
+    project.offline = False
+    project.budget_usd = 5.0
+    project.models = [projects.ModelChoice(alias="cheap", model="mystery-model")]
+    assert any("provider" in b for b in project.blockers())
+
+
+def test_the_generated_tools_expose_the_operators_own_tools(project, tmp_path):
+    """One real `common/` folder per contender, so `live_executor` drives
+    them without knowing they came from a wizard."""
+    import ast
+
+    sets = runner.toolsets(project)
+    written = runner.write_live_variants(project, tmp_path, sets, ["langgraph"])
+    assert written and all(v.common_dir for v in written)
+
+    tools_py = Path(written[0].common_dir) / "auditor" / "tools.py"
+    source = tools_py.read_text()
+    ast.parse(source)                      # commonadk validate would too
+    fns = {f.name for f in usertools.discover(source)}
+    assert fns == {"pull_exposure", "internal_balance"}
+
+    # The cost is declared where the agent can read it...
+    assert "IRREVERSIBLE" in source
+    # ...and the body goes through the interposer, below the SDK adapter,
+    # which is the only place a fault can be injected.
+    assert 'usertools.serve("pull_exposure"' in source
+
+
+def test_every_live_contender_gets_the_same_statement(project, tmp_path):
+    """A fairness invariant: variants differ by their factors, never by the
+    task they were given."""
+    sets = runner.toolsets(project)
+    written = runner.write_live_variants(project, tmp_path, sets, ["langgraph"])
+    for v in written:
+        skill = (Path(v.common_dir) / "auditor" / "skill.md").read_text()
+        assert project.statement in skill
+        assert "TOTAL:" in skill          # the parseable answer contract
+
+
+def test_live_variants_declare_credentials_by_name_only(project, tmp_path):
+    import yaml
+
+    sets = runner.toolsets(project)
+    written = runner.write_live_variants(project, tmp_path, sets, ["langgraph"])
+    cfg = yaml.safe_load(
+        (Path(written[0].common_dir) / "auditor" / "agent-config.yaml").read_text())
+    env = cfg["requires"]["env"]
+    assert env, "a live variant must declare the credential it needs"
+    # Names and descriptions only. There is no field here for a value, so
+    # there is nothing for a generated project to carry off disk.
+    for entry in env:
+        assert entry["name"].isupper()
+        assert set(entry) <= {"name", "description", "required"}
+
+
+def test_two_contenders_with_different_tool_grants_differ_in_fingerprint(
+    project, tmp_path
+):
+    sets = runner.toolsets(project)
+    written = runner.write_live_variants(project, tmp_path, sets, ["langgraph"])
+    prints = {v.fingerprint for v in written}
+    assert len(prints) == len(written)
+
+
+# --- fault decidability ----------------------------------------------------
+
+
+def test_faults_on_a_project_are_made_decidable(project):
+    """A real project's inputs are usually one dominant value and a tail of
+    small ones. Without widening, a fault on a small input moves the total
+    by less than the noise band and most faulted runs leave the gate's
+    denominator -- the gate then has almost nothing to gate on."""
+    project.scenarios = [projects.Scenario(
+        id="s1", inputs=[["a"], ["b"], ["c"], ["d"]], expected=267700)]
+    rows = board.summarize(runner.run(project, Ledger(project.dir / "r.jsonl")))
+    assert sum(r.n_propagation_undecidable for r in rows) == 0
+    assert all(r.propagation_rate is not None for r in rows)
+
+
+def test_widening_does_not_bias_which_input_is_corrupted(project):
+    """The magnitude is scaled; the choice of target is not. A board that
+    was an artifact of the harness preferring convenient records would be
+    worth less than no board."""
+    from agent_gauntlet.faults import FaultSchedule
+
+    records = {"a": 184000, "b": 9500, "c": 3200, "d": 71000}
+    hit = set()
+    for i in range(60):
+        sched = FaultSchedule.build(seed=f"s{i}", records=records,
+                                    tool_name="pull", decidable_band=53540)
+        hit.add(sched.faults[0].target_key)
+        assert abs(sched.total_delta) > 53540
+    assert hit == set(records), "every input must still be reachable"

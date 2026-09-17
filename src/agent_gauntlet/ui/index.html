@@ -164,6 +164,29 @@
         <input id="seeds" type="number" min="1" max="10" value="2">
         <small>Two or more lets the winner be held out (#20).</small></label>
     </div>
+
+    <div class="live-box">
+      <label class="live-toggle">
+        <input type="checkbox" id="live">
+        <span><strong>Run live</strong> — drive real models through CommonADK.
+        <em>This spends money.</em></span>
+      </label>
+      <div id="live-fields" hidden>
+        <div class="intake-grid">
+          <label class="field"><span class="label">SDK target</span>
+            <select id="target">
+              <option>langgraph</option><option>openai</option>
+              <option>crewai</option><option>autogen</option>
+            </select></label>
+          <label class="field"><span class="label">Spend ceiling (USD)</span>
+            <input id="budget" type="number" min="0" step="0.5" placeholder="5.00">
+            <small>A hard stop, checked against the rollups after every run —
+            an estimate is not a ceiling. The runs that completed are still
+            scored.</small></label>
+        </div>
+        <p id="estimate" class="muted"></p>
+      </div>
+    </div>
     <div class="step-actions">
       <button data-next="tools">Back</button>
       <button class="primary" data-next="ready">Next: review</button>
