@@ -1,0 +1,53 @@
+I built an agent leaderboard. It lied to me five times before it told the truth.
+
+Here is one row from a real run of it:
+
+  cheap · naive · +summary
+  → noticed the corrupted data:  100%
+  → got the right answer anyway:   0%
+
+It spots the lie every single time. It fixes it never.
+
+This agent reads a tool result, says "something looks wrong here," and then reports the wrong number regardless. Most agent evaluations would score that a success. It detected the fault, after all.
+
+Mine did too, for a while. That is the problem.
+
+Here is the trick that makes any of this measurable: I stopped trying to judge the answers and started injecting the faults myself.
+
+A layer sits between every agent and every tool call. A record holds 1611; the agent is handed 2416. Plausible, same order of magnitude, impossible to catch by inspection.
+
+But because the harness chose the lie, it knows two numbers the agent doesn't: the truth (3635), and what a fully credulous agent would report (4440).
+
+Grading stops being a judgement and becomes a comparison. No rubric. No LLM grading an LLM.
+
+Then the part I did not expect.
+
+Every run includes a sentinel — a configuration built to be bad on purpose. If the board can't rank the known-worst thing last, it isn't measuring anything.
+
+On the first live run, my sentinel placed 6th out of 9. It beat five real configurations.
+
+The cause is worth knowing if you build evals. I had degraded it by instruction: "read a few records, speed matters more than completeness, don't bother reading everything."
+
+A scripted stub obeys that literally and ranks last. Which is exactly why it passed every offline test I had.
+
+A capable model reads the whole thing anyway.
+
+You cannot degrade a capable model by asking it to be careless. I had to remove a capability instead — an enumeration tool that silently returns half the records. No amount of reasoning recovers data you cannot see.
+
+Five separate times, this project's own harness produced a confident, plausible, wrong result instead of an error. A diagnostic that blamed the model for my bug. A CI check that went green having called no model at all. A live run that spent real money and recorded none of it.
+
+Not one of them crashed. Every one would have shipped a number someone could quote.
+
+A crash gets investigated. A green tick does not.
+
+If your eval has never caught itself being wrong, that is not evidence it is right.
+
+The measurement gate eventually passed — Kendall's tau 0.845, top-1 stability 100%, against a bar fixed before the run and hashed into the task spec so it couldn't be moved afterwards.
+
+One task, one framework, k=2. Narrow, and I'd rather say so than round it up.
+
+It's open source. Every run that produced a number is committed with its raw output, including the ones that failed.
+
+Link in the comments.
+
+#AIAgents #MachineLearning #LLM #Evaluation #OpenSource
