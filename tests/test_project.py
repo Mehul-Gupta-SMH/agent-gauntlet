@@ -490,3 +490,28 @@ def test_widening_does_not_bias_which_input_is_corrupted(project):
         hit.add(sched.faults[0].target_key)
         assert abs(sched.total_delta) > 53540
     assert hit == set(records), "every input must still be reachable"
+
+
+def test_the_progress_total_matches_the_runs_that_actually_happen(project):
+    """Found by running the UI: the counter read 72 / 96 on a finished run.
+
+    The total was re-derived from the factors, which multiplied by every
+    tool set -- including the sentinel's, which is not a grid cell -- and
+    omitted the sentinel variant itself. Nothing failed; the denominator was
+    just wrong, so a completed matrix looked three-quarters done forever.
+    """
+    from agent_gauntlet import events
+
+    sets = runner.toolsets(project)
+    announced = (len(runner.variants_for(project, sets)) * len(project.scenarios)
+                 * project.repeats * project.seeds * 2)
+
+    log = events.EventLog()
+    events.attach(log)
+    try:
+        produced = runner.run(project, Ledger(project.dir / "r.jsonl"))
+    finally:
+        events.attach(None)
+
+    ended = sum(1 for e in log.since(0) if e.kind == "run.end")
+    assert announced == len(produced) == ended

@@ -313,8 +313,14 @@ def _project_worker(session: Session, p: projects.Project) -> None:
             fingerprint="(after calibration)",
             tools=[t.name for t in p.tools], fault_tool=p.fault_tool,
             seeds=p.seeds, repeats=p.repeats,
-            total_runs=(len(p.models) * len(p.prompts)
-                        * len(runner.toolsets(p)) * p.repeats * p.seeds * 2),
+            # Counted from the REAL variant list, not re-derived from the
+            # factors. The re-derivation multiplied by every tool set --
+            # including the sentinel's, which is not a grid cell -- and left
+            # out the sentinel variant itself, so a finished run showed
+            # 72 / 96 forever. Everything had succeeded; only the
+            # denominator said otherwise.
+            total_runs=(len(runner.variants_for(p, runner.toolsets(p)))
+                        * len(p.scenarios) * p.repeats * p.seeds * 2),
         )
         ledger = Ledger(p.dir / "runs.jsonl")
         budget = runner.Budget(limit_usd=p.budget_usd) if not p.offline else None
