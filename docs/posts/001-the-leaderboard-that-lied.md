@@ -31,13 +31,14 @@ agent-gauntlet sidesteps that by **injecting the fault itself**. A tool
 interposer sits between every agent and every tool call:
 
 ```
-fetch_record('c')  →  58  99
+injecting wrong_value on pallet_04: 1611 -> 2416 (shifts the total by +805)
 ```
 
-The record really holds 58. The harness returns 99 — plausible, same order of
-magnitude, never absurd, so the agent cannot spot it by inspection. Because the
-harness *chose* the lie, it knows two things the agent does not: the truth
-(3635), and the figure a fully credulous agent would report (4440).
+That is a line from a real run. The record holds 1611; the agent is handed 2416
+— plausible, same order of magnitude, never absurd, so it cannot be spotted by
+inspection. Because the harness *chose* the lie, it knows two things the agent
+does not: the truth (3635), and the figure a fully credulous agent would report
+(4440).
 
 Grading is then a comparison, not a judgement:
 
@@ -123,6 +124,13 @@ wrong-or-empty result** instead of an error:
 5. A live matrix that cost real money recorded **zero** of it. The runner had the
    token counts and cost in hand, read the text off the response, and dropped the
    rest.
+
+Three more were record-keeping rather than measurement: a task hash that moved
+whenever the *schema* grew, detaching historical runs from any task that still
+existed; run records that stored the verdict but never the agent's answer, so no
+scoring change could be applied to runs already on disk; and factor labels that
+named a prompt instead of pinning it, so editing the prompt silently changed what
+every earlier record meant.
 
 Not one of these crashed. Every one would have shipped a number someone could
 quote.
