@@ -36,15 +36,27 @@ class VariantResult(BaseModel):
     is_sentinel: bool = False
 
     n_runs: int
-    quality: float
+
+    graded: bool = True
+    """Whether these runs had a label to be right or wrong against.
+
+    False under `Oracle.BASELINE`. Propagation still works -- it is decided
+    against each variant's own clean twin -- but correctness does not, and
+    `quality` and `accuracy` are None rather than a number that would be
+    read as one.
+    """
+
+    quality: Optional[float]
     """Mean correctness across every run, clean and faulted.
 
     Not faulted-only: under fault alone a credulous-but-competent variant
     and a broken one both sit at zero, and the clean half is what separates
     them (see tests/test_matrix.py)."""
 
-    clean_quality: float
-    faulted_quality: float
+    clean_quality: Optional[float]
+    faulted_quality: Optional[float]
+    """Correctness on each half of the pair -- and so, like `quality`, None
+    without a label to be correct against."""
 
     propagation_rate: Optional[float]
     """Share of decidable faulted runs where the lie reached the answer.
@@ -79,7 +91,7 @@ class VariantResult(BaseModel):
     """The denominator, printed so a rate from two runs is legible as one."""
 
     false_alarm_rate: float
-    accuracy: float = 0.0
+    accuracy: Optional[float] = 0.0
     """Graded quality. Ranking uses this: binary correctness ties too
     readily to correlate across seeds (#17 vs #29 correction 3)."""
     cost_usd: float
@@ -207,6 +219,7 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
             if r.score.evidence_available and r.score.exposure_possible
         ]
         decidable = [r for r in faulted if r.score.propagation_determinable]
+        graded = all(r.score.graded for r in runs)
         # Repair is only askable where a lie actually reached the agent AND
         # something existed to catch it with. Anything else is censored.
         repairable = [
@@ -219,11 +232,16 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
                 variant_id=vid,
                 factors=dict(runs[0].factors),
                 n_runs=len(runs),
-                quality=mean(float(r.score.correct) for r in runs),
-                accuracy=mean(float(r.score.accuracy) for r in runs),
-                clean_quality=mean(float(r.score.correct) for r in clean) if clean else 0.0,
+                graded=graded,
+                quality=mean(float(r.score.correct) for r in runs) if graded else None,
+                accuracy=mean(float(r.score.accuracy) for r in runs) if graded else None,
+                clean_quality=(
+                    mean(float(r.score.correct) for r in clean)
+                    if clean and graded else None
+                ),
                 faulted_quality=(
-                    mean(float(r.score.correct) for r in faulted) if faulted else 0.0
+                    mean(float(r.score.correct) for r in faulted)
+                    if faulted and graded else None
                 ),
                 # Over ALL faulted runs, never only the evidence-reachable
                 # ones. Whether a falsehood reached the answer is checkable
@@ -247,7 +265,7 @@ def summarize(records: Iterable[RunRecord]) -> list[VariantResult]:
                 ),
                 repair_quality=(
                     mean(float(r.score.accuracy) for r in repairable)
-                    if repairable else None
+                    if repairable and graded else None
                 ),
                 n_repair_eligible=len(repairable),
                 # None, not 0.0: no reachable evidence means "not measured",
@@ -309,6 +327,8 @@ def rank(
     pool = [r for r in results if not (exclude_sentinels and r.is_sentinel)]
     tiers: dict[float, list[VariantResult]] = defaultdict(list)
     for r in pool:
+        if r.accuracy is None:
+            continue   # nothing to rank an unlabelled run by
         tiers[round(r.accuracy, 4)].append(r)
     return [
         sorted(tiers[q], key=lambda r: r.variant_id)
@@ -470,6 +490,16 @@ def pareto(
     if len(objectives) != len(maximize):
         raise ValueError("objectives and maximize must be the same length")
 
+    # A row missing any objective cannot be compared on it, and a frontier
+    # over a value nobody measured is not a tradeoff -- it is a guess. An
+    # unlabelled project has no accuracy at all, so it has no frontier, and
+    # returning an empty one is the honest answer rather than treating the
+    # absent number as a zero and declaring everything dominated.
+    comparable = [
+        r for r in results
+        if all(getattr(r, obj, None) is not None for obj in objectives)
+    ]
+
     def better(a: VariantResult, b: VariantResult) -> bool:
         at_least = True
         strictly = False
@@ -484,8 +514,8 @@ def pareto(
         return at_least and strictly
 
     return [
-        r for r in results
-        if not any(better(other, r) for other in results if other is not r)
+        r for r in comparable
+        if not any(better(other, r) for other in comparable if other is not r)
     ]
 
 
@@ -511,6 +541,8 @@ def factor_effects(results: Sequence[VariantResult]) -> list[FactorEffect]:
         if r.is_sentinel:
             continue  # a deliberately broken config would skew every level
         for factor, level in r.factors.items():
+            if r.quality is None:
+                continue
             by_factor[factor][level].append(r.quality)
 
     effects: list[FactorEffect] = []

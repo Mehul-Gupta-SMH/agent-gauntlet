@@ -28,7 +28,8 @@ from tempfile import TemporaryDirectory
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
-from . import architect, board, events
+from . import architect, board, events, project as projects, runner, usertools
+from .interpose import ToolCost
 from .ledger import Ledger
 from .ledger import errors as ledger_errors
 from .matrix import run_matrix
@@ -50,12 +51,26 @@ class Session:
     error: Optional[str] = None
     lock: threading.Lock = field(default_factory=threading.Lock)
     thread: Optional[threading.Thread] = None
+    project_id: Optional[str] = None
+    """One project at a time: the matrix saturates the machine, and two
+    interleaving would make the per-run timings measure contention."""
 
     def running(self) -> bool:
         return self.status == "running"
 
 
 SESSION = Session()
+
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+BIND_HOST = "127.0.0.1"
+"""Set by `serve`. Uploading a Python file means running it in this process,
+so that endpoint is available only when the server is bound to loopback --
+it has to stay "the operator running their own code on their own machine"
+and never become anyone else running it on theirs."""
+
+
+def uploads_allowed() -> bool:
+    return BIND_HOST in LOOPBACK
 
 
 # --- intake ---------------------------------------------------------------
@@ -150,6 +165,7 @@ def _row(r: board.VariantResult) -> dict[str, Any]:
         "label": r.label,
         "factors": r.factors,
         "n_runs": r.n_runs,
+        "graded": r.graded,
         "quality": r.quality,
         "accuracy": r.accuracy,
         "clean_quality": r.clean_quality,
@@ -245,6 +261,86 @@ def _worker(session: Session, intake: dict[str, Any]) -> None:
         events.attach(None)
 
 
+def _project_worker(session: Session, p: projects.Project) -> None:
+    """Calibrate, run, score. Same matrix, same board as every fixture."""
+    try:
+        p.stage, p.error = "running", None
+        p.save()
+        session.log.emit(
+            "intake.accepted", task=p.id, statement=p.statement,
+            fingerprint="(after calibration)",
+            tools=[t.name for t in p.tools], fault_tool=p.fault_tool,
+            seeds=p.seeds, repeats=p.repeats,
+            total_runs=(len(p.models) * len(p.prompts)
+                        * len(runner.toolsets(p)) * p.repeats * p.seeds * 2),
+        )
+        ledger = Ledger(p.dir / "runs.jsonl")
+        records = runner.run(p, ledger)
+        results = board.summarize(records)
+        held = board.held_out_winner(records)
+        graded = all(r.graded for r in results)
+        session.log.emit(
+            "board",
+            rows=[_row(r) for r in results],
+            errored=len(ledger_errors(records)),
+            total=len(records),
+            graded=graded,
+            # Without a label there is a gate but no leaderboard, and saying
+            # so beats printing a ranking of numbers that do not mean what
+            # the column heading says.
+            winner_reason=(
+                None if held is not None
+                else "This project has no expected answer, so propagation is "
+                     "gated but nothing can be ranked by correctness. Add the "
+                     "right answer for a scenario to get a leaderboard."
+                if not graded
+                else "one seed -- nothing to hold the winner out on"
+                if p.seeds < 2
+                else "The selection half is tied at the top, and a tie is a "
+                     "real answer rather than a winner."
+            ),
+            winner=None if held is None else {
+                "variant_id": held.variant_id,
+                "selection_score": held.selection_score,
+                "holdout_score": held.holdout_score,
+                "held_up": held.held_up,
+                "holdout_rank": held.holdout_rank,
+                "n_candidates": held.n_candidates,
+            },
+        )
+        p.stage = "done"
+        p.save()
+        with session.lock:
+            session.status = "done"
+    except Exception as exc:
+        detail = f"{type(exc).__name__}: {exc}"
+        p.stage, p.error = "failed", detail
+        p.save()
+        with session.lock:
+            session.status, session.error = "failed", detail
+        session.log.emit("failed", error=detail,
+                         trace=traceback.format_exc()[-2000:])
+    finally:
+        events.attach(None)
+
+
+def start_project(session: Session, p: projects.Project) -> None:
+    blockers = p.blockers()
+    if blockers:
+        raise ValueError("; ".join(blockers))
+    with session.lock:
+        if session.running():
+            raise RuntimeError("a run is already in progress")
+        session.status, session.error = "running", None
+        session.project_id = p.id
+    session.log.clear()
+    events.attach(session.log)
+    session.thread = threading.Thread(
+        target=_project_worker, args=(session, p), daemon=True
+    )
+    session.thread.start()
+
+
 def start_run(session: Session, intake: dict[str, Any]) -> None:
     with session.lock:
         if session.running():
@@ -257,6 +353,102 @@ def start_run(session: Session, intake: dict[str, Any]) -> None:
         target=_worker, args=(session, intake), daemon=True
     )
     session.thread.start()
+
+
+# --- projects -------------------------------------------------------------
+
+
+def project_view(p: projects.Project) -> dict[str, Any]:
+    """Everything the wizard needs, and no secret.
+
+    Credential **names** travel, with whether each one is currently present
+    in the environment. The value is never read here or anywhere else, so
+    there is nothing for this payload to leak.
+    """
+    missing = set(p.missing_credentials())
+    return {
+        "id": p.id, "name": p.name, "created_at": p.created_at,
+        "statement": p.statement, "stage": p.stage, "error": p.error,
+        "tools": [
+            {
+                "name": t.name, "description": t.description,
+                "cost": t.cost.value, "module": t.module, "function": t.function,
+                "described": t.described,
+                "arguments": [a.model_dump() for a in t.arguments],
+                "credentials": [
+                    {"name": n, "present": n not in missing}
+                    for n in t.requires_credentials
+                ],
+                "rows": len(t.table),
+            }
+            for t in p.tools
+        ],
+        "models": [m.model_dump() for m in p.models],
+        "prompts": p.prompts,
+        "fault_tool": p.fault_tool,
+        "scenarios": [sc.model_dump() for sc in p.scenarios],
+        "repeats": p.repeats, "seeds": p.seeds, "offline": p.offline,
+        "blockers": p.blockers(),
+        "missing_credentials": sorted(missing),
+        "material": p.material_tools(),
+        "uploads_allowed": uploads_allowed(),
+    }
+
+
+def apply_patch(p: projects.Project, patch: dict[str, Any]) -> projects.Project:
+    """Merge one wizard step into the project.
+
+    Field by field rather than a wholesale replace, so a step that does not
+    mention tools cannot silently drop the operator's uploads.
+    """
+    for field in ("name", "statement", "fault_tool", "stage"):
+        if field in patch:
+            setattr(p, field, patch[field] or "")
+    for field in ("repeats", "seeds"):
+        if field in patch:
+            setattr(p, field, max(1, min(int(patch[field] or 1), 10)))
+    if "prompts" in patch:
+        p.prompts = [x for x in patch["prompts"] if x in runner.POLICIES
+                     and x != "sentinel"]
+    if "models" in patch:
+        p.models = [projects.ModelChoice(**m) for m in patch["models"]]
+    if "scenarios" in patch:
+        p.scenarios = [projects.Scenario(**sc) for sc in patch["scenarios"]]
+    if "tools" in patch:
+        p.tools = [usertools.UserTool(**t) for t in patch["tools"]]
+    p.save()
+    return p
+
+
+def store_upload(p: projects.Project, filename: str, source: str) -> dict[str, Any]:
+    """Save an uploaded file and report what is in it -- without running it.
+
+    The functions are listed by parsing, so the operator chooses which one
+    is the tool from the file's text. Anything at module level that will run
+    on import is reported as a warning, because picking a function from this
+    file also runs everything beside it.
+    """
+    if not uploads_allowed():
+        raise PermissionError(
+            f"uploads are disabled because this server is bound to {BIND_HOST}, "
+            "not loopback. Uploading a file means executing it here."
+        )
+    name = projects.slug(Path(filename).stem, "tool") + ".py"
+    try:
+        found = usertools.discover(source)
+        effects = usertools.top_level_effects(source)
+    except SyntaxError as exc:
+        raise ValueError(f"{filename} does not parse: {exc}") from exc
+    if not found:
+        raise ValueError(f"{filename} defines no top-level functions")
+
+    p.tools_dir.mkdir(parents=True, exist_ok=True)
+    (p.tools_dir / name).write_text(source, encoding="utf-8")
+    return {
+        "module": name,
+        "functions": [f.model_dump() for f in found],
+        "import_effects": effects,
+    }
 
 
 # --- http -----------------------------------------------------------------
@@ -288,7 +480,22 @@ class Handler(BaseHTTPRequestHandler):
         if route in ("/", "/index.html"):
             return self._file(UI_DIR / "index.html")
         if route == "/api/catalog":
-            return self._json(200, catalog())
+            return self._json(200, {
+                **catalog(),
+                "policies": [k for k in sorted(runner.POLICIES) if k != "sentinel"],
+                "costs": [c.value for c in ToolCost],
+                "uploads_allowed": uploads_allowed(),
+                "bind_host": BIND_HOST,
+            })
+        if route == "/api/projects":
+            return self._json(200, {"projects": projects.listing(),
+                                    "uploads_allowed": uploads_allowed()})
+        if route.startswith("/api/projects/"):
+            try:
+                p = projects.Project.load(route.split("/")[3])
+            except (OSError, ValueError):
+                return self._json(404, {"error": "no such project"})
+            return self._json(200, project_view(p))
         if route == "/api/events":
             cursor = int((parse_qs(parsed.query).get("since") or ["0"])[0])
             with SESSION.lock:
@@ -307,18 +514,59 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if urlparse(self.path).path != "/api/run":
-            return self._json(404, {"error": "not found"})
+        route = urlparse(self.path).path
         length = int(self.headers.get("Content-Length") or 0)
         try:
-            intake = json.loads(self.rfile.read(length) or b"{}")
+            body = json.loads(self.rfile.read(length) or b"{}")
         except json.JSONDecodeError as exc:
             return self._json(400, {"error": f"bad JSON: {exc}"})
-        try:
-            start_run(SESSION, intake)
-        except RuntimeError as exc:
-            return self._json(409, {"error": str(exc)})
-        return self._json(202, {"status": "running"})
+
+        if route == "/api/run":                      # the quick fixture path
+            try:
+                start_run(SESSION, body)
+            except RuntimeError as exc:
+                return self._json(409, {"error": str(exc)})
+            return self._json(202, {"status": "running"})
+
+        if route == "/api/projects":
+            p = projects.new(body.get("name") or "untitled")
+            return self._json(201, project_view(p))
+
+        parts = route.strip("/").split("/")
+        if len(parts) >= 3 and parts[0] == "api" and parts[1] == "projects":
+            try:
+                p = projects.Project.load(parts[2])
+            except (OSError, ValueError):
+                return self._json(404, {"error": "no such project"})
+            action = parts[3] if len(parts) > 3 else ""
+
+            if action == "":
+                return self._json(200, project_view(apply_patch(p, body)))
+
+            if action == "upload":
+                try:
+                    found = store_upload(p, body.get("filename") or "tool.py",
+                                         body.get("source") or "")
+                except PermissionError as exc:
+                    return self._json(403, {"error": str(exc)})
+                except ValueError as exc:
+                    return self._json(400, {"error": str(exc)})
+                return self._json(200, found)
+
+            if action == "run":
+                try:
+                    start_project(SESSION, p)
+                except ValueError as exc:
+                    return self._json(400, {"error": str(exc)})
+                except RuntimeError as exc:
+                    return self._json(409, {"error": str(exc)})
+                return self._json(202, {"status": "running", "project": p.id})
+
+            if action == "delete":
+                p.delete()
+                return self._json(200, {"deleted": p.id})
+
+        return self._json(404, {"error": "not found"})
 
     def _file(self, path: Path) -> None:
         ctype, _ = mimetypes.guess_type(path.name)
@@ -326,9 +574,16 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(host: str = "127.0.0.1", port: int = 8420) -> None:
+    global BIND_HOST
+    BIND_HOST = host
     httpd = ThreadingHTTPServer((host, port), Handler)
     print(f"gauntlet ui   http://{host}:{port}")
-    print("              offline by default -- scripted policies, no spend")
+    print(f"projects      {projects.root()}")
+    print("              offline -- scripted policies, no spend")
+    if uploads_allowed():
+        print("              uploaded tools RUN IN THIS PROCESS, on this machine")
+    else:
+        print(f"              tool upload DISABLED: bound to {host}, not loopback")
     print("              ctrl-c to stop")
     try:
         httpd.serve_forever()

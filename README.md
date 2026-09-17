@@ -37,11 +37,58 @@ gauntlet ui            # http://127.0.0.1:8420, offline, no spend
 
 ## Watch it run
 
-`gauntlet ui` serves a local page: describe the agent you want, declare the
-tools you have, and watch every configuration your inventory can supply
-compete in one arena — with the real technical detail underneath it.
+`gauntlet ui` serves a local page and walks one project through four steps:
+
+1. **Describe** the agent you want, in your words.
+2. **Tools** — upload the `.py` functions you already have, or describe one
+   you want. Declare what each call costs the world, and name any environment
+   variables it needs.
+3. **Models** — which levels compete, and how many repeats and seeds.
+4. **Begin** — review the grid, then send them in.
+
+![declaring tools](docs/assets/ui-tools.png)
+
+Then every configuration your inventory can supply competes in one arena,
+with the real technical detail underneath it.
 
 ![the arena](docs/assets/ui-arena.png)
+
+### Your tools, and where the truth comes from
+
+The gauntlet grades by comparison against something it knows, so a tool whose
+return it cannot predict cannot be scored. Both routes therefore converge on
+one thing — a **calibrated value table**:
+
+- an **uploaded** function is called once per declared input, before the
+  matrix, and what it returns becomes the truth for every run;
+- a **described** tool has no implementation, so you supply the same table.
+
+Calibrating once is not an optimisation. It makes runs reproducible, and it is
+the only version that is safe for an irreversible tool: a 300-run matrix must
+not put 300 hard inquiries on a real credit file. Determinism is **checked**,
+not assumed — a function that disagrees with itself has no stable truth, and
+the project is refused rather than averaged.
+
+**Credentials are names, never values.** You declare the environment variables
+a tool needs; the harness checks they are present and stops there. No value is
+read, stored in the project, written to the ledger, or sent to the page.
+
+**Uploaded code runs in the server process**, so uploads are accepted only when
+the server is bound to loopback. Functions are listed by *parsing* the file, so
+you choose one before anything in it has executed — and anything that will run
+on import is reported as a warning first.
+
+### If you don't know the right answer
+
+You don't have to. Supply the expected answer and you get the full board.
+Leave it blank and the harness uses **each contender's own clean run** as the
+oracle: whether the injected delta moved the answer away from where that same
+variant put it without the lie is perfectly decidable without a label.
+
+So an unlabelled project gets a **gate, not a leaderboard**. Propagation,
+detection, repair and the cost columns all work; `qual` and `acc` read `n/a`,
+and no winner is reported — because nothing can be ranked by a correctness
+nobody declared.
 
 The animation is a **view of run data, never a decoration.** Every avatar is
 a real variant, and its crest is drawn from that variant's fingerprint, so two

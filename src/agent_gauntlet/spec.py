@@ -28,6 +28,20 @@ class Oracle(str, Enum):
     PARTIAL = "partial"
     NONE = "none"
 
+    BASELINE = "baseline"
+    """No label, but a usable oracle anyway.
+
+    The right answer is unknown; the answer this same variant gave on its own
+    clean run is not. Propagation -- the gate -- is "did the injected delta
+    move the answer away from where this variant put it without the lie",
+    which needs no label at all.
+
+    Accuracy still does, and reads `n/a` under this oracle rather than being
+    quietly redefined as agreement with a baseline. The two are different
+    claims and a board that printed one under the other's heading would be
+    the exact failure this project is about.
+    """
+
 
 class Scenario(BaseModel, frozen=True):
     """One concrete input, with its known-correct answer.
@@ -54,9 +68,17 @@ class Scenario(BaseModel, frozen=True):
     model capability to show up in.
     """
 
+    expected: Optional[int] = None
+    """The known-correct answer, when it is not simply the sum of the world.
+
+    A project whose task is not a total supplies it here. Absent, and with a
+    `full` oracle, the sum stands -- which is what every bundled fixture
+    means. Joins `fingerprint()` only when set, so no existing hash moves.
+    """
+
     @property
     def expected_total(self) -> int:
-        return sum(self.records.values())
+        return self.expected if self.expected is not None else sum(self.records.values())
 
     @property
     def audited_ids(self) -> list[str]:
@@ -224,6 +246,8 @@ def _scenario_payload(scenario: Scenario) -> dict[str, Any]:
     payload: dict[str, Any] = {"id": scenario.id, "records": dict(scenario.records)}
     if scenario.audited:
         payload["audited"] = sorted(scenario.audited)
+    if scenario.expected is not None:
+        payload["expected"] = scenario.expected
     return payload
 
 

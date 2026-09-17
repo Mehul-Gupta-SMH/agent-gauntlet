@@ -116,6 +116,9 @@ def run_matrix(
     offline: bool = True,
     max_attempts: int = 3,
     backoff: float = 1.0,
+    user_tools: Optional[dict] = None,
+    allowed_tools: Optional[dict] = None,
+    project_inputs: Optional[Sequence] = None,
 ) -> list[RunRecord]:
     """Run the full matrix and append every run to `ledger`."""
     if repeats < 1:
@@ -168,7 +171,7 @@ def run_matrix(
                     records=scenario.records,
                     kind=fault_kind,
                     tool_name=task.fault_tool,
-                    evidence_tool="get_summary" if _has_evidence(variant) else None,
+                    evidence_tool=_evidence_tool(variant, allowed_tools, task.fault_tool),
                     # Only the audited records may be corrupted. A fault
                     # outside the cross-check's coverage contradicts nothing
                     # reachable, so it is undetectable in principle -- but
@@ -177,6 +180,10 @@ def run_matrix(
                     # keeps censoring a property of the tool set alone.
                     targets=scenario.audited_ids,
                 )
+                # Clean first, always, and its answer is kept: under
+                # `Oracle.BASELINE` it is the only truth the faulted half
+                # has to be judged against.
+                baseline: Optional[int] = None
                 for condition, schedule in (
                     ("clean", FaultSchedule.clean(seed)),
                     ("faulted", faulted),
@@ -209,8 +216,10 @@ def run_matrix(
                     with run_context(
                         scenario.records,
                         schedule,
-                        _allowed_tools(variant),
+                        _allowed_tools(variant, allowed_tools),
                         scenario.audited_ids,
+                        user_tools=user_tools,
+                        project_inputs=project_inputs,
                     ) as ctx:
                         ctx.run_label = label
                         answer, rollup, error, attempts = _attempt(
@@ -228,7 +237,10 @@ def run_matrix(
                             schedule=schedule,
                             ctx=ctx,
                             answer=answer if answer is not None else Answer(),
+                            baseline=baseline,
                         )
+                    if condition == "clean":
+                        baseline = answer.total if answer is not None else None
                     record = RunRecord(
                         run_id=uuid.uuid4().hex[:12],
                         task_id=task.id,
@@ -277,30 +289,60 @@ def run_matrix(
     return produced
 
 
-def _has_evidence(variant: VariantSpec) -> bool:
-    """Can this variant reach the cross-check at all?
+def _evidence_tool(
+    variant: VariantSpec, override: Optional[dict], fault_tool: str
+) -> Optional[str]:
+    """Which tool would contradict the lie, if this variant holds one."""
+    if not _has_evidence(variant, override, fault_tool):
+        return None
+    if override is None:
+        return "get_summary"
+    granted = override.get(variant.factors.get("toolset", ""), [])
+    return next((t for t in sorted(granted) if t != fault_tool), None)
+
+
+def _has_evidence(
+    variant: VariantSpec,
+    override: Optional[dict] = None,
+    fault_tool: str = "",
+) -> bool:
+    """Can this variant reach a cross-check at all?
 
     Derived from the declared tool set where one exists. Variants exercised
     only through scripted policies (no `toolset` factor) are assumed to have
-    it, since every offline policy can call `summary_total()`.
+    it, since every bundled offline policy can call `summary_total()`.
+
+    For a project the cross-check is not a named tool but a *shape*: any
+    granted source other than the corrupted one covers the same inputs and
+    can therefore contradict it. A grant with nothing but the corrupted tool
+    has no reachable evidence, and detection is censored for it rather than
+    scored as a miss (#16).
     """
     toolset = variant.factors.get("toolset")
     if toolset is None:
         return True
+    if override is not None:
+        return any(t != fault_tool for t in override.get(toolset, []))
     from .architect import TOOLSETS
 
     return "get_summary" in TOOLSETS.get(toolset, [])
 
 
-def _allowed_tools(variant: VariantSpec) -> Optional[set[str]]:
+def _allowed_tools(
+    variant: VariantSpec, override: Optional[dict] = None
+) -> Optional[set[str]]:
     """The tool grant implied by this variant's factors.
 
-    None (unrestricted) when no toolset factor is declared, so variants
-    exercised directly in tests keep working.
+    `override` maps tool-set name -> members, for a project whose tool sets
+    are built from the operator's own tools rather than the bundled
+    inventory. None (unrestricted) when no toolset factor is declared, so
+    variants exercised directly in tests keep working.
     """
     toolset = variant.factors.get("toolset")
     if toolset is None:
         return None
+    if override is not None:
+        return set(override.get(toolset, []))
     from .architect import TOOLSETS
 
     return set(TOOLSETS.get(toolset, []))

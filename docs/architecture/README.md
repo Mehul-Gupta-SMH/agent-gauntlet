@@ -65,6 +65,48 @@ flowchart LR
     style PAGE fill:#14532d,stroke:#166534,color:#fff
 ```
 
+### Projects: the operator's own tools
+
+A project is a directory, one at a time, holding the intake, the uploaded
+source exactly as uploaded, the ledger and the board.
+
+```mermaid
+flowchart TB
+    subgraph intake["wizard"]
+        D["1 describe"] --> T["2 tools"] --> M["3 models"] --> R["4 begin"]
+    end
+    T -->|"parse, don't import"| DISC["discover()<br/><i>functions + import-time effects</i>"]
+    R --> CAL["calibrate<br/><i>call each tool once per input</i>"]
+    CAL -->|"disagrees with itself"| REFUSE["refused<br/><i>no stable truth</i>"]
+    CAL --> TABLE[("value table<br/><i>the oracle</i>")]
+    TABLE --> TASK["TaskSpec<br/><i>fingerprinted</i>"]
+    TASK --> MX["run_matrix"]
+    TABLE -.->|"serve / corrupt"| MX
+
+    style REFUSE fill:#7f1d1d,stroke:#991b1b,color:#fff
+    style TABLE fill:#1e3a5f,stroke:#1e40af,color:#fff
+```
+
+Two properties are load-bearing:
+
+- **Calibrate once, replay many.** The operator's function is called once per
+  input, not once per run. That is what makes runs reproducible, and it is the
+  only version that is safe for a MATERIAL tool — a 300-run matrix must not put
+  300 hard inquiries on a real file. Non-determinism is checked and refused
+  rather than averaged, because a tool that disagrees with itself has no truth
+  and its noise would be scored as the agent's.
+- **A label is optional; a gate is not.** With no expected answer the oracle
+  becomes each variant's own clean twin (`Oracle.BASELINE`). Propagation,
+  detection and repair all still work. Correctness does not, so `quality` and
+  `accuracy` are `None` — and `pareto`, `rank` and `held_out_winner` return
+  nothing rather than ordering rows by a number that was never measured. An
+  unlabelled project gets a gate, not a leaderboard.
+
+Credentials travel as **names** and are checked for presence. Nothing in the
+project reads a credential's value, so there is nothing for the project file,
+the ledger or the page to leak. Uploaded code executes in the server process,
+so uploads are refused unless the bind address is loopback.
+
 Three constraints hold it to the rest of the project:
 
 1. **The page derives nothing.** Every rate it shows arrives in a `board`

@@ -71,107 +71,6 @@ function svgEl(name, attrs = {}) {
   return el;
 }
 
-/* ------------------------------------------------------------------ intake */
-
-async function loadCatalog() {
-  state.catalog = await (await fetch('/api/catalog')).json();
-  const c = state.catalog;
-
-  const materialTools = new Set(['pull_credit_report']);
-  $('#tools').innerHTML = c.tools.map((t) => `
-    <button type="button" class="chip" data-tool="${t.name}"
-            aria-pressed="${['list_records', 'fetch_record', 'get_summary', 'list_audited_records'].includes(t.name)}">
-      ${t.name}${materialTools.has(t.name) ? '<span class="cost">material</span>' : ''}
-    </button>`).join('');
-
-  $('#prompts').innerHTML = c.prompts.map((p) => `
-    <button type="button" class="chip" data-prompt="${p}"
-            aria-pressed="${p === 'naive' || p === 'verifying'}">${p}</button>`).join('');
-
-  $$('.chip').forEach((chip) => chip.addEventListener('click', () => {
-    chip.setAttribute('aria-pressed', chip.getAttribute('aria-pressed') !== 'true');
-    refreshPreview();
-  }));
-
-  ['app_1001:184000:1', 'app_1002:9500:0', 'app_1003:3200:0', 'app_1004:71000:0']
-    .forEach((row) => { const [id, qty, aud] = row.split(':'); addRecord(id, qty, aud === '1'); });
-
-  refreshPreview();
-}
-
-function addRecord(id = '', qty = '', audited = false) {
-  const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td><input type="text" value="${id}" placeholder="record_id"></td>
-    <td><input type="number" value="${qty}" placeholder="0"></td>
-    <td><input type="checkbox" ${audited ? 'checked' : ''}></td>
-    <td><button type="button" class="row-x">remove</button></td>`;
-  tr.querySelector('.row-x').addEventListener('click', () => { tr.remove(); refreshPreview(); });
-  tr.querySelectorAll('input').forEach((i) => i.addEventListener('input', refreshPreview));
-  $('#records-table tbody').appendChild(tr);
-  refreshPreview();
-}
-
-function readIntake() {
-  const records = {}; const audited = [];
-  $$('#records-table tbody tr').forEach((tr) => {
-    const [idEl, qtyEl, audEl] = tr.querySelectorAll('input');
-    const id = idEl.value.trim();
-    if (!id) return;
-    records[id] = parseInt(qtyEl.value || '0', 10);
-    if (audEl.checked) audited.push(id);
-  });
-  return {
-    statement: $('#statement').value,
-    records, audited,
-    tools: $$('#tools .chip[aria-pressed="true"]').map((c) => c.dataset.tool),
-    prompts: $$('#prompts .chip[aria-pressed="true"]').map((c) => c.dataset.prompt),
-    fault_tool: $('#fault-tool').value,
-    repeats: parseInt($('#repeats').value, 10),
-    seeds: parseInt($('#seeds').value, 10),
-  };
-}
-
-/** Show the operator the grid their choices imply, before they spend a run. */
-function refreshPreview() {
-  const intake = readIntake();
-  const selected = new Set(intake.tools);
-  const sets = Object.entries(state.catalog?.toolsets || {})
-    .filter(([name, members]) => name !== state.catalog.sentinel.toolset
-                              && members.every((m) => selected.has(m)))
-    .map(([name]) => name);
-
-  // The fault tool can only be one the operator actually has.
-  const faultSel = $('#fault-tool');
-  const previous = faultSel.value;
-  faultSel.innerHTML = intake.tools.map((t) => `<option value="${t}">${t}</option>`).join('');
-  if (intake.tools.includes(previous)) faultSel.value = previous;
-  else if (intake.tools.includes('fetch_record')) faultSel.value = 'fetch_record';
-
-  const faultTool = faultSel.value;
-  const canFire = sets.some((s) => (state.catalog.toolsets[s] || []).includes(faultTool));
-  const cells = sets.length * intake.prompts.length * 2 + 1;  // + sentinel
-  const runs = cells * intake.repeats * intake.seeds * 2;      // clean + faulted
-  const audited = intake.audited.length;
-
-  const problems = [];
-  if (!sets.length) problems.push('no tool set is fully covered by these tools');
-  if (!intake.prompts.length) problems.push('pick at least one prompt strategy');
-  if (!audited) problems.push('mark at least one record audited — faults only land there');
-  if (sets.length && !canFire) {
-    problems.push(`no contender can call ${faultTool}, so the fault could never fire`);
-  }
-
-  $('#preview').innerHTML = problems.length
-    ? `<span class="warn">${problems.join(' · ')}</span>`
-    : `<strong>${cells} contenders</strong> (2 models × ${intake.prompts.length} ` +
-      `prompt(s) × ${sets.length} tool set(s), plus the sentinel) → ` +
-      `<strong>${runs} runs</strong> — ${intake.repeats} repeat(s) × ` +
-      `${intake.seeds} seed(s) × clean and faulted. ` +
-      `Corrupting ${faultTool} on ${audited} audited record(s).`;
-  $('#start').disabled = problems.length > 0;
-}
-
 /* ------------------------------------------------------------------- arena */
 
 function buildArena(variants, faultTool) {
@@ -331,6 +230,26 @@ function handle(ev) {
       renderOracle({ expected: ev.expected, records: ev.records, audited: ev.audited });
       break;
     }
+    case 'calibrate.start': {
+      tick(`calibrating ${ev.tool}${ev.described ? ' (declared)' : ''} over ${ev.inputs} input(s)`);
+      pushCalibration(`${ev.tool} — ${ev.described ? 'declared by you' : 'calling your function'}`
+        + (ev.cost === 'material' ? '  [MATERIAL: once, and never again]' : ''));
+      break;
+    }
+    case 'calibrate.done': {
+      Object.entries(ev.values).forEach(([k, v]) =>
+        pushCalibration(`   ${JSON.parse(k).join(', ')} → ${v}`));
+      break;
+    }
+    case 'project.ready': {
+      $('#fingerprint').textContent = `task ${ev.fingerprint}`;
+      state.graded = ev.labelled;
+      pushCalibration(ev.labelled
+        ? 'oracle: your expected answer'
+        : "oracle: each contender's own clean run — propagation is gated, "
+          + 'correctness reads n/a');
+      break;
+    }
     case 'matrix.start': {
       // Fires once per seed -- the server runs one matrix per seed so each
       // gets its own base. Build the arena on the first only, or the second
@@ -410,7 +329,8 @@ function handle(ev) {
     case 'failed': {
       $('#intake-error').hidden = false;
       $('#intake-error').textContent = ev.error;
-      $('#intake').hidden = false;
+      $('#wizard').hidden = false;
+      $('#start').disabled = false;
       break;
     }
   }
@@ -423,6 +343,17 @@ const label = (vid) => {
 };
 
 function tick(text) { $('#ticker-text').textContent = text; }
+
+/** Calibration output goes to every contender's log, because it is the
+ *  world all of them share -- not one contender's private history. */
+function pushCalibration(text) {
+  const box = $('#steps');
+  const div = document.createElement('div');
+  div.className = 'step head';
+  div.textContent = text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
 
 function pushLog(variant, entry) {
   const lines = state.logs.get(variant);
@@ -476,10 +407,20 @@ function renderOracle({ expected, credulous, faults, records, audited, condition
      decided by comparison — never by a judge.</p>`,
   ];
   parts.push('<div class="oracle-figures">');
-  parts.push(`<div class="fig truth"><div class="k">truth</div><div class="v">${num(expected)}</div></div>`);
+  // Under an unlabelled project the figure below is the sum of the
+  // calibrated table, not a truth anyone declared -- the oracle is each
+  // contender's own clean run. Saying "truth" over it would be the board's
+  // own rule broken in the panel that explains the board.
+  parts.push(state.graded === false
+    ? `<div class="fig"><div class="k">no declared truth</div>` +
+      `<div class="v">n/a</div></div>`
+    : `<div class="fig truth"><div class="k">truth</div><div class="v">${num(expected)}</div></div>`);
   if (credulous !== undefined) {
-    parts.push(`<div class="fig lie"><div class="k">credulous figure</div><div class="v">${num(credulous)}</div></div>`);
-    parts.push(`<div class="fig"><div class="k">delta</div><div class="v">${num(credulous - expected)}</div></div>`);
+    parts.push(state.graded === false
+      ? `<div class="fig lie"><div class="k">oracle</div>` +
+        `<div class="v">clean twin</div></div>`
+      : `<div class="fig lie"><div class="k">credulous figure</div><div class="v">${num(credulous)}</div></div>`);
+    parts.push(`<div class="fig"><div class="k">injected delta</div><div class="v">${num(credulous - expected)}</div></div>`);
   } else if (condition === 'clean') {
     // No fault was armed, so there is no figure a credulous agent would
     // reach. n/a, not a zero.
@@ -507,12 +448,18 @@ function renderBoard(rows, winner, errored, total, reason) {
     const cls = [r.gated ? 'gated' : '', r.is_sentinel ? 'sentinel' : ''].join(' ').trim();
     const flag = r.propagation_unmeasured ? 'GATED: propagation not measurable'
                : r.gated ? 'GATED: propagated' : '';
-    const cell = (v, fmt = pct) => `<td class="${v === null || v === undefined ? 'na' : ''}">${fmt(v)}</td>`;
+    // Short-circuits on the VALUE, not just the class. The first version
+    // set the `na` class correctly and still called the formatter on null,
+    // so a custom formatter threw and took the whole board down with it.
+    const cell = (v, fmt = pct) =>
+      (v === null || v === undefined)
+        ? '<td class="na">n/a</td>'
+        : `<td>${fmt(v)}</td>`;
     return `<tr class="${cls}">
       <td data-flag="${flag}">${r.label}</td>
       <td>${r.n_runs}</td>
       ${cell(r.quality)}
-      <td>${r.accuracy.toFixed(2)}</td>
+      ${cell(r.accuracy, (v) => v.toFixed(2))}
       ${cell(r.clean_quality)}${cell(r.faulted_quality)}
       ${cell(r.propagation_rate)}${cell(r.detection_rate)}${cell(r.repair_rate)}
       ${cell(r.false_alarm_rate)}
@@ -588,43 +535,22 @@ async function poll() {
   } else if (data.status === 'failed') {
     $('#intake-error').hidden = false;
     $('#intake-error').textContent = data.error || 'run failed';
-    $('#intake').hidden = false;
+    $('#wizard').hidden = false;
     $('#start').disabled = false;
   }
 }
 
-async function start() {
-  const intake = readIntake();
-  state.seeds = intake.seeds;
+/** Called by the wizard once the server has accepted a run. */
+function begin(seeds) {
+  state.seeds = seeds;
   state.done = 0; state.cursor = 0; state.queue = []; state.total = 0;
-  state.startedAt = Date.now();
-  state.runsFinishedAt = null;
-  $('#intake-error').hidden = true;
-  $('#start').disabled = true;
-
-  const res = await fetch('/api/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(intake),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    $('#intake-error').hidden = false;
-    $('#intake-error').textContent = err.error;
-    $('#start').disabled = false;
-    return;
-  }
-  $('#intake').hidden = true;
+  state.startedAt = Date.now(); state.runsFinishedAt = null;
+  state.fighters.clear(); state.logs.clear();
   poll();
 }
 
-$('#start').addEventListener('click', start);
-$('#add-record').addEventListener('click', () => addRecord());
-$('#statement').addEventListener('input', refreshPreview);
-['#repeats', '#seeds', '#fault-tool'].forEach((s) =>
-  $(s).addEventListener('input', refreshPreview));
-$('#speed').addEventListener('input', () => {
-  $('#speed-label').textContent = `${$('#speed').value}×`;
-});
+window.Arena = { begin, state };
 
-loadCatalog();
+$('#speed').addEventListener('input', () => {
+  $('#speed-label').textContent = `${$('#speed').value}\u00d7`;
+});

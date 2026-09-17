@@ -337,3 +337,110 @@ table.board tr.empty td { text-align: left; color: var(--ink-faint);
   .intake-grid, .tech-top { grid-template-columns: minmax(0, 1fr); }
   .steps { height: 320px; }
 }
+
+/* --- projects & wizard --------------------------------------------------- */
+
+.proj-head { display: flex; justify-content: space-between; align-items: flex-start;
+             gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.proj-head h2 { text-transform: none; font-size: 1.15rem; color: var(--ink);
+                letter-spacing: -0.01em; margin-bottom: 0.25rem; }
+.proj-head p { max-width: 52ch; }
+.new-project { display: flex; gap: 0.5rem; align-items: center; }
+.new-project input { width: 220px; }
+
+.project-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.project-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  border: 1px solid var(--line); border-radius: 9px; padding: 0.7rem 0.9rem;
+  background: var(--bg-raised);
+}
+.p-name { font-weight: 600; }
+.p-meta { font-family: var(--mono); font-size: 0.74rem; color: var(--ink-faint); }
+.p-actions { display: flex; gap: 0.4rem; }
+
+.steps-nav { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1.5rem;
+             border-bottom: 1px solid var(--line-soft); padding-bottom: 0.9rem; }
+.stepbtn { background: transparent; border: 1px solid var(--line);
+           color: var(--ink-faint); font-size: 0.82rem; }
+.stepbtn b { font-family: var(--mono); color: var(--ink-faint); margin-right: 0.35rem; }
+.stepbtn[aria-current="true"] { border-color: var(--sand); color: var(--gold); }
+.stepbtn[aria-current="true"] b { color: var(--gold); }
+
+/* `.wizard-step`, not `.step`: the technical panel's log lines already own
+   `.step` and set `display: flex; white-space: pre` on it, which flattened
+   every wizard step into a single stretched row. Invisible in the markup,
+   obvious the moment it rendered. */
+.wizard-step h3 { font-size: 1.1rem; margin: 0 0 0.4rem; letter-spacing: -0.01em; }
+.step-intro { max-width: 68ch; margin-bottom: 1.2rem; }
+.wizard-step > .field { margin-bottom: 1.25rem; }
+.wizard-step > .intake-grid { margin: 1.5rem 0 1.25rem; }
+.step-actions { display: flex; gap: 0.6rem; justify-content: flex-end;
+                margin-top: 1.5rem; padding-top: 1.25rem;
+                border-top: 1px solid var(--line-soft); }
+h4.sub { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em;
+         color: var(--ink-dim); margin: 1.75rem 0 0.6rem; }
+
+.tool-sources { display: grid; gap: 1.5rem; align-items: start;
+                grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tool-source { border: 1px solid var(--line); border-radius: 9px; padding: 0.9rem;
+               background: var(--bg-raised); min-width: 0; }
+.tool-source h4 { margin: 0 0 0.7rem; font-size: 0.86rem; }
+.tool-source .field { margin-bottom: 0.7rem; }
+input[type="file"] { font-size: 0.8rem; color: var(--ink-dim); }
+
+.fn-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 0.5rem;
+          align-items: center; padding: 0.5rem 0; border-top: 1px solid var(--line-soft); }
+.fn-row code { color: var(--gold); }
+.fn-doc { font-size: 0.75rem; color: var(--ink-faint); }
+.fn-row select, .fn-row input { width: auto; font-size: 0.76rem; padding: 0.3rem 0.4rem; }
+
+.warn-box { border: 1px solid #52241c; background: rgba(212, 85, 63, 0.08);
+            border-radius: 7px; padding: 0.6rem 0.75rem; font-size: 0.8rem;
+            color: #f0b3a5; margin: 0.6rem 0; }
+
+.tool-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.tool-card { border: 1px solid var(--line); border-radius: 9px; padding: 0.7rem 0.85rem;
+             background: var(--bg-sunk); }
+.t-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.t-name { font-family: var(--mono); color: var(--ink); font-size: 0.86rem; }
+.t-cost { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.06em;
+          border: 1px solid currentColor; border-radius: 3px; padding: 0 0.28rem;
+          color: var(--ink-faint); }
+.t-cost.material { color: var(--blood); }
+.t-src { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-faint);
+         margin-left: auto; }
+.t-desc { font-size: 0.8rem; color: var(--ink-dim); margin-top: 0.3rem; }
+.t-meta { font-size: 0.74rem; color: var(--ink-faint); margin-top: 0.3rem; }
+.t-meta code.ok { color: var(--parry); }
+.t-meta code.missing { color: var(--blood); }
+
+.add-input { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.add-input input { width: 200px; }
+.chip .row-x { padding: 0 0.2rem; margin-left: 0.25rem; }
+
+.model-list { display: grid; gap: 0.5rem; grid-template-columns: repeat(2, minmax(0, 1fr));
+              margin-bottom: 1.5rem; }
+.model-row { display: flex; align-items: center; gap: 0.7rem; cursor: pointer;
+             border: 1px solid var(--line); border-radius: 9px; padding: 0.6rem 0.8rem;
+             background: var(--bg-raised); }
+.model-row input { width: auto; accent-color: var(--sand); }
+.m-alias { font-family: var(--mono); color: var(--ink); }
+.m-id { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-faint); }
+
+.review { border: 1px solid var(--line); border-radius: 9px; padding: 1rem;
+          background: var(--bg-sunk); }
+.review-grid { display: grid; gap: 0.5rem; }
+.review-grid > div { display: grid; grid-template-columns: 110px 1fr; gap: 0.75rem;
+                     align-items: baseline; }
+.review-grid .k { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+                  color: var(--ink-faint); }
+.review-grid .v { font-family: var(--mono); font-size: 0.82rem; }
+.blockers { margin: 0.9rem 0 0; padding-left: 1.1rem; color: var(--blood);
+            font-size: 0.82rem; }
+.ready { color: var(--parry); font-family: var(--mono); font-size: 0.86rem;
+         margin-top: 0.9rem; }
+
+@media (max-width: 900px) {
+  .tool-sources, .model-list { grid-template-columns: minmax(0, 1fr); }
+  .fn-row { grid-template-columns: 1fr; }
+}

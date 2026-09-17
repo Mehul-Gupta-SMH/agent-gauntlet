@@ -95,6 +95,12 @@ class RunContext:
         self.calls: list[dict[str, object]] = []
         self.evidence_available_at: Optional[int] = None
         self._material_seen: set[tuple[str, str]] = set()
+        self.project_inputs: list = []
+        """Argument tuples this project's tools were calibrated over. Empty
+        for the bundled fixtures, whose world is the records table."""
+        self.user_tools: dict[str, object] = {}
+        """Tools the operator brought, by name, each carrying its calibrated
+        value table. Empty for the built-in fixtures."""
         self.run_label: Optional[str] = None
         """Which run these calls belong to, for the event stream. Set by
         the matrix; None outside it, where nothing is listening anyway."""
@@ -163,9 +169,13 @@ def run_context(
     schedule: FaultSchedule,
     allowed_tools: Optional[set[str]] = None,
     audited: Optional[Sequence[str]] = None,
+    user_tools: Optional[dict[str, object]] = None,
+    project_inputs: Optional[Sequence] = None,
 ) -> Iterator[RunContext]:
     """Activate a run's world, fault schedule and tool grant."""
     ctx = RunContext(records, schedule, allowed_tools, audited)
+    ctx.user_tools = dict(user_tools or {})
+    ctx.project_inputs = list(project_inputs or [])
     token = _ACTIVE.set(ctx)
     try:
         yield ctx

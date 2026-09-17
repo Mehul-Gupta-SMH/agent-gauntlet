@@ -23,67 +23,163 @@
   </div>
 </header>
 
-<!-- ---------------------------------------------------------------- intake -->
-<section id="intake" class="panel intake">
-  <div class="intake-head">
-    <h2>Who is competing, and over what?</h2>
-    <p>
-      Describe the agent you want and declare the tools you have. The gauntlet
-      competes every configuration your inventory can actually supply — you
-      cannot enter a contender you have no tools to build.
-    </p>
+<!-- --------------------------------------------------------------- projects -->
+<section id="projects" class="panel">
+  <div class="proj-head">
+    <div>
+      <h2>Projects</h2>
+      <p class="muted">One at a time. The matrix saturates the machine it runs
+      on, and two interleaving would make the timings measure contention
+      rather than the agent.</p>
+    </div>
+    <form id="new-project" class="new-project">
+      <input id="project-name" type="text" placeholder="name this project" required>
+      <button class="primary" type="submit">New project</button>
+    </form>
   </div>
+  <div id="project-list" class="project-list"></div>
+</section>
 
-  <div class="intake-grid">
-    <label class="field span2">
-      <span class="label">What should the agent do?</span>
-      <textarea id="statement" rows="3" placeholder="Report the total exposure across all records. Say explicitly if anything about the data looks wrong."></textarea>
-      <small>Passed verbatim and identically to every contender — one of the fairness invariants.</small>
+<!-- ---------------------------------------------------------------- wizard -->
+<section id="wizard" class="panel wizard" hidden>
+  <nav class="steps-nav" id="steps-nav">
+    <button class="stepbtn" data-step="describe"><b>1</b> Describe</button>
+    <button class="stepbtn" data-step="tools"><b>2</b> Tools</button>
+    <button class="stepbtn" data-step="models"><b>3</b> Models</button>
+    <button class="stepbtn" data-step="ready"><b>4</b> Begin</button>
+  </nav>
+
+  <!-- 1 ------------------------------------------------------------------ -->
+  <div class="wizard-step" data-step="describe">
+    <h3>What agent are you looking for?</h3>
+    <label class="field">
+      <span class="label">The task, in your words</span>
+      <textarea id="statement" rows="4" placeholder="Report the total credit exposure across all applicants. Say explicitly if anything about the data looks wrong."></textarea>
+      <small>Passed verbatim and identically to every contender — one of the
+      fairness invariants. Every configuration gets exactly this and differs
+      only in the factors you set next.</small>
     </label>
+    <div class="step-actions"><button class="primary" data-next="tools">Next: tools</button></div>
+  </div>
 
-    <div class="field span2">
-      <span class="label">Tools you have</span>
-      <div id="tools" class="chips"></div>
-      <small id="tools-note">Tool sets that your selection fully covers become the contenders' tool axis.</small>
+  <!-- 2 ------------------------------------------------------------------ -->
+  <div class="wizard-step" data-step="tools" hidden>
+    <h3>What can it call?</h3>
+    <p class="muted step-intro">
+      Upload the functions you already have, or describe one you want. Either
+      way the gauntlet needs a <strong>truth</strong> to score against, so
+      every tool is <em>calibrated</em> once before the matrix: an uploaded
+      function is called on each input and what it returns becomes the truth;
+      a described tool is the same table, typed in. Calibrating once is also
+      the only version that is safe for an irreversible tool — a 300-run
+      matrix must not put 300 hard inquiries on a real file.
+    </p>
+
+    <div class="tool-sources">
+      <div class="tool-source">
+        <h4>Upload a .py file</h4>
+        <input type="file" id="tool-file" accept=".py">
+        <p id="upload-note" class="muted"></p>
+        <div id="discovered"></div>
+      </div>
+
+      <div class="tool-source">
+        <h4>Or describe one</h4>
+        <label class="field"><span class="label">name</span>
+          <input id="d-name" type="text" placeholder="get_balance"></label>
+        <label class="field"><span class="label">what it does</span>
+          <input id="d-desc" type="text" placeholder="returns the balance for an account"></label>
+        <label class="field"><span class="label">argument name</span>
+          <input id="d-arg" type="text" placeholder="account_id"></label>
+        <label class="field"><span class="label">cost of calling it</span>
+          <select id="d-cost">
+            <option value="negligible">negligible — idempotent, free to re-read</option>
+            <option value="material">material — irreversible or externally visible</option>
+          </select></label>
+        <label class="field"><span class="label">input → output, one per line</span>
+          <textarea id="d-table" rows="4" placeholder="app_1001 = 184000&#10;app_1002 = 9500"></textarea>
+          <small>This is the truth the board is scored against. A described
+          tool has no implementation to calibrate, so you supply it.</small>
+        </label>
+        <button type="button" id="add-described" class="ghost">+ add described tool</button>
+      </div>
     </div>
 
-    <div class="field">
-      <span class="label">Prompt strategies to compete</span>
-      <div id="prompts" class="chips"></div>
+    <h4 class="sub">Tools in this project</h4>
+    <div id="tool-list" class="tool-list"></div>
+
+    <div class="intake-grid">
+      <div class="field">
+        <span class="label">Corrupt which tool?</span>
+        <select id="fault-tool"></select>
+        <small>The harness lies to the agents through this tool, so it knows
+        the truth without a judge. It must be one your contenders can call.</small>
+      </div>
+      <div class="field">
+        <span class="label">The right answer, if you know it</span>
+        <input id="expected" type="number" placeholder="leave blank if unknown">
+        <small>Optional. Without it, propagation is still gated — it is decided
+        against each contender's own clean run — but nothing can be
+        <em>ranked</em> by correctness, and the graded columns read
+        <code>n/a</code>.</small>
+      </div>
+      <div class="field span2">
+        <span class="label">Inputs to calibrate over</span>
+        <div id="inputs-list" class="chips"></div>
+        <div class="add-input">
+          <input id="new-input" type="text" placeholder="app_1001">
+          <button type="button" id="add-input" class="ghost">+ add input</button>
+        </div>
+        <small>The only inputs the gauntlet can serve, because they are the
+        only ones it holds a truth for.</small>
+      </div>
     </div>
 
-    <div class="field">
-      <span class="label">Corrupt which tool?</span>
-      <select id="fault-tool"></select>
-      <small>The harness lies to the agents through this tool, so it knows the truth without a judge.</small>
-    </div>
-
-    <div class="field span2">
-      <span class="label">The world they are measured against</span>
-      <table class="records" id="records-table">
-        <thead><tr><th>record</th><th>true value</th><th>audited</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <button type="button" id="add-record" class="ghost">+ add record</button>
-      <small><strong>audited</strong> = covered by the cross-check, and the only records a fault may land on. A fault outside it contradicts nothing reachable.</small>
-    </div>
-
-    <div class="field">
-      <span class="label">Repeats per cell</span>
-      <input id="repeats" type="number" min="1" max="10" value="2">
-      <small>One run is not a measurement.</small>
-    </div>
-    <div class="field">
-      <span class="label">Seeds</span>
-      <input id="seeds" type="number" min="1" max="10" value="2">
-      <small>Two or more lets the winner be held out (#20).</small>
+    <div class="step-actions">
+      <button data-next="describe">Back</button>
+      <button class="primary" data-next="models">Next: models</button>
     </div>
   </div>
 
-  <div class="intake-actions">
-    <div id="preview" class="preview"></div>
-    <button id="start" class="primary">Send them in</button>
+  <!-- 3 ------------------------------------------------------------------ -->
+  <div class="wizard-step" data-step="models" hidden>
+    <h3>Which models compete?</h3>
+    <p class="muted step-intro">
+      Model is a factor like any other, so the board can attribute to it.
+      Offline runs use scripted policies and no credential — a weaker level
+      miscounts more often, which is the least contrived stand-in available
+      for capability.
+    </p>
+    <div id="model-list" class="model-list"></div>
+
+    <div class="intake-grid">
+      <div class="field span2">
+        <span class="label">Prompt strategies to compete</span>
+        <div id="prompts" class="chips"></div>
+      </div>
+      <label class="field"><span class="label">Repeats per cell</span>
+        <input id="repeats" type="number" min="1" max="10" value="2">
+        <small>One run is not a measurement.</small></label>
+      <label class="field"><span class="label">Seeds</span>
+        <input id="seeds" type="number" min="1" max="10" value="2">
+        <small>Two or more lets the winner be held out (#20).</small></label>
+    </div>
+    <div class="step-actions">
+      <button data-next="tools">Back</button>
+      <button class="primary" data-next="ready">Next: review</button>
+    </div>
   </div>
+
+  <!-- 4 ------------------------------------------------------------------ -->
+  <div class="wizard-step" data-step="ready" hidden>
+    <h3>Before they go in</h3>
+    <div id="review" class="review"></div>
+    <div class="step-actions">
+      <button data-next="models">Back</button>
+      <button id="start" class="primary">Send them in</button>
+    </div>
+  </div>
+
   <p id="intake-error" class="error" hidden></p>
 </section>
 
@@ -188,5 +284,6 @@
 </section>
 
 <script src="arena.js"></script>
+<script src="wizard.js"></script>
 </body>
 </html>

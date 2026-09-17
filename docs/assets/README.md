@@ -73,3 +73,8 @@ Screenshots of `gauntlet ui`, captured from a real offline run — 13
 contenders, 104 runs, fixture-derived intake. Not mockups: the board rows,
 the injected values in the step log, and the oracle's figures are the run's
 own output. The `n/a` cells are real censoring, not placeholders.
+
+## `ui-tools.png`
+
+The wizard's tool step, captured from a real session: two functions uploaded
+from one `.py` file, discovered by parsing it, one marked material.

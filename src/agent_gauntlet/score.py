@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from .faults import FaultSchedule
 from .interpose import RunContext
-from .spec import Scenario, TaskSpec
+from .spec import Oracle, Scenario, TaskSpec
 
 
 class Outcome(str, Enum):
@@ -163,6 +163,15 @@ class Score(BaseModel):
     a perfect 0% propagation for it.
     """
 
+    graded: bool = True
+    """Whether `correct` and `accuracy` mean anything for this run.
+
+    False under `Oracle.BASELINE`: the run was scored against its own clean
+    twin, which decides propagation but says nothing about whether the
+    answer was right. The board censors those columns rather than printing a
+    number that would be read as correctness.
+    """
+
     exposure_possible: bool = True
     """Whether the variant even held the tool the fault was scheduled on.
 
@@ -180,11 +189,30 @@ def score_run(
     schedule: FaultSchedule,
     ctx: RunContext,
     answer: Answer,
+    baseline: Optional[int] = None,
 ) -> Score:
-    """Grade one run against known truth."""
-    expected = scenario.expected_total
-    correct = answer.total is not None and abs(answer.total - expected) <= task.tolerance
-    accuracy = _accuracy(answer.total, expected)
+    """Grade one run against known truth, or against its own clean twin.
+
+    `baseline` is the answer this same variant gave on the clean half of
+    this pair. Under `Oracle.BASELINE` it stands in for the label: the right
+    answer is unknown, but whether the injected delta moved the answer away
+    from where this variant put it *without* the lie is perfectly decidable.
+
+    Accuracy is not redefined to mean agreement with that baseline. It is
+    censored, because "as right as it was before" and "right" are different
+    claims and a board that printed one under the other's heading would be
+    the failure this project exists to catch.
+    """
+    labelled = task.oracle is not Oracle.BASELINE
+    expected = scenario.expected_total if labelled else baseline
+
+    if expected is None:
+        # Nothing to compare against at all: a baseline-oracle clean run, or
+        # a faulted one whose clean twin never answered.
+        correct, accuracy = False, 0.0
+    else:
+        correct = answer.total is not None and abs(answer.total - expected) <= task.tolerance
+        accuracy = _accuracy(answer.total, expected)
 
     # Evidence availability is a property of the *world*, not of the agent's
     # behaviour: did a cross-check exist that could have been consulted?
@@ -216,11 +244,14 @@ def score_run(
             steps=ctx.step,
             detect_latency=None,
             evidence_available=evidence_available,
+            graded=labelled,
         )
 
     could_be_exposed = _exposure_possible(ctx, schedule)
     determinable = (
-        could_be_exposed and _determinable(expected, schedule, task.tolerance)
+        expected is not None
+        and could_be_exposed
+        and _determinable(expected, schedule, task.tolerance)
     )
     propagated = (
         determinable
@@ -262,6 +293,7 @@ def score_run(
         evidence_available=evidence_available,
         propagation_determinable=determinable,
         exposure_possible=could_be_exposed,
+        graded=labelled,
     )
 
 

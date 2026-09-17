@@ -612,6 +612,13 @@ def _print_board(results) -> None:
                 "   n/a" if r.propagation_rate is None
                 else f"{r.propagation_rate:>6.0%}"
             )
+            # Unlabelled runs have no correctness to report. Printing the
+            # graded columns anyway would put a number under a heading that
+            # does not apply to them.
+            qual = "   n/a" if r.quality is None else f"{r.quality:>6.0%}"
+            clean = "    n/a" if r.clean_quality is None else f"{r.clean_quality:>7.0%}"
+            fault = "    n/a" if r.faulted_quality is None else f"{r.faulted_quality:>7.0%}"
+            acc = "   n/a" if r.accuracy is None else f"{r.accuracy:>6.2f}"
             if r.propagation_unmeasured:
                 flag = "  [GATED: propagation not measurable]"
             elif r.gated:
@@ -623,8 +630,8 @@ def _print_board(results) -> None:
             else:
                 flag = ""
             print(
-                f"{r.label:<34}{r.quality:>6.0%}{r.accuracy:>6.2f}"
-                f"{r.clean_quality:>7.0%}{r.faulted_quality:>7.0%}"
+                f"{r.label:<34}{qual}{acc}"
+                f"{clean}{fault}"
                 f"{prop}{det}{rep}{r.false_alarm_rate:>5.0%}"
                 f"{ttd}{cost}{flag}"
             )
@@ -734,6 +741,12 @@ def _pct(value) -> str:
     return "n/a" if value is None else f"{value:.0%}"
 
 
+def _score(value) -> str:
+    """The 0-1 accuracy score, or n/a when the run had no label to be
+    right against."""
+    return "n/a" if value is None else f"{value:.2f}"
+
+
 def _export(results, variants, out: Path, records=None):
     """Report the winner, and report it honestly.
 
@@ -760,7 +773,7 @@ def _export(results, variants, out: Path, records=None):
     print(f"  {champion.variant_id}")
 
     if held is None:
-        print(f"  accuracy={champion.accuracy:.2f}  quality={champion.quality:.0%}  "
+        print(f"  accuracy={_score(champion.accuracy)}  quality={_pct(champion.quality)}  "
               f"false alarms={champion.false_alarm_rate:.0%}  "
               f"propagation={_pct(champion.propagation_rate)}")
         print("\n  NOT VALIDATED -- this score was measured on the same runs that")
@@ -781,7 +794,7 @@ def _export(results, variants, out: Path, records=None):
             print("  replications and is not top on fresh ones, which is what a")
             print("  search fitting noise looks like. Do not ship this config on")
             print("  the strength of this run.")
-        print(f"\n  quality={champion.quality:.0%}  "
+        print(f"\n  quality={_pct(champion.quality)}  "
               f"false alarms={champion.false_alarm_rate:.0%}  "
               f"propagation={_pct(champion.propagation_rate)}")
 
