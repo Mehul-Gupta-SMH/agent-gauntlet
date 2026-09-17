@@ -1,7 +1,7 @@
-# We built an agent leaderboard. It lied to us five times before it told the truth.
+# I built an agent leaderboard. It lied to me five times before it told the truth.
 
 *Introducing [agent-gauntlet](https://github.com/Mehul-Gupta-SMH/agent-gauntlet) —
-and the week we spent discovering our own measurement was broken.*
+and the week I spent discovering my own measurement was broken.*
 
 ---
 
@@ -19,7 +19,7 @@ falsehood. 100%. Every single time.
 
 This agent notices the lie, says so out loud, and then reports the corrupted
 number regardless. Most agent evaluations would score it as a success — it
-detected the fault, after all. Ours did too, for a while. That is the thing this
+detected the fault, after all. Mine did too, for a while. That is the thing this
 post is about.
 
 ## The trick: own the oracle
@@ -76,19 +76,19 @@ audited 3515. A discrepancy of 805, one subtraction away. It flagged the anomaly
 Then it reported 4440 anyway.
 
 **An alarm that does not change the answer is worse than no alarm**, because it
-arrives wearing a credibility signal. Our outcome taxonomy originally filed that
+arrives wearing a credibility signal. My own outcome taxonomy originally filed that
 behaviour under the *best-looking bucket it had*.
 
-## Finding 2: our own leaderboard failed its instrument check
+## Finding 2: my own leaderboard failed its instrument check
 
 Every matrix includes a **sentinel** — a variant deliberately built to be bad. If
 the board cannot rank the known-worst configuration last, the board is not
 measuring anything, and no amount of statistics on top will fix it.
 
-The first live run, our sentinel placed **6th out of 9**. It beat five real
+The first live run, my sentinel placed **6th out of 9**. It beat five real
 configurations.
 
-The cause is worth knowing if you build evals. Our sentinel was degraded by
+The cause is worth knowing if you build evals. The sentinel was degraded by
 *instruction*:
 
 > Read a few records and report roughly what you find. Speed matters far more
@@ -106,14 +106,14 @@ a 47% undercount — and ranks last by 35 accuracy points.
 
 ## Finding 3: every defect looked like a pass
 
-This is the part that changed how we work.
+This is the part that changed how I work.
 
 Five times, this project's own harness produced a **confident, plausible,
 wrong-or-empty result** instead of an error:
 
 1. A diagnostic concluded *"the model produced text but not in the required
    format."* It hadn't — the model followed the contract exactly and computed the
-   right answer. The bug was ours, and we blamed the model for it.
+   right answer. The bug was mine, and the harness blamed the model for it.
 2. The sentinel above: a board that looked fine and ranked a broken config 6th.
 3. A CI probe reported *"the model was unreachable — not a build failure,"*
    exited 0, and went green. The real error was a missing Python import. It had
@@ -135,7 +135,7 @@ every earlier record meant.
 Not one of these crashed. Every one would have shipped a number someone could
 quote.
 
-The fifth was caught by a rule we had written for exactly this: *"not measured"
+The fifth was caught by a rule written for exactly this: *"not measured"
 must never render as a number.* Because no run reported a price, the board
 printed `n/a` rather than `$0.0000`. Had it printed zeros, the cost frontier
 would have treated a paid matrix as free and nobody would have looked twice.
@@ -179,7 +179,7 @@ drags the estimate toward nothing. Somebody reading that table alone would
 conclude the cheap model is nearly as good. On the metric that counts it is 22%
 as good.
 
-## What we are not claiming
+## What I am not claiming
 
 The result is real and narrow, and the difference matters:
 
@@ -187,7 +187,7 @@ The result is real and narrow, and the difference matters:
   Nothing here says the winner generalises to a different job.
 - **One framework.** LangGraph only, though the framework is a searchable axis by
   design.
-- **k=2 repeats.** We know a ranking is stable at two runs per cell. We do not
+- **k=2 repeats.** I know a ranking is stable at two runs per cell. I do not
   know that two is enough in general.
 - **A field of one.** Seven of the eight real configurations propagated a
   falsehood at least once and were gated, leaving exactly one eligible — so the
@@ -214,5 +214,5 @@ MIT · built on [CommonADK](https://github.com/Mehul-Gupta-SMH/CommonADK)
 ---
 
 *If you build agent evaluations: the one question I would ask of any of them,
-including this one, is what it does when the measurement itself is broken. Ours
+including this one, is what it does when the measurement itself is broken. Mine
 failed that question five times, in public, and the record is in the repo.*
