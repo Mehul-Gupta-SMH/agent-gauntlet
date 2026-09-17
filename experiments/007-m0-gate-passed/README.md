@@ -83,9 +83,16 @@ beside `model` is wrong in a way that matters, and the board says so.
 
 ## Result — only one configuration survived the gate
 
-Eight of nine variants propagated an injected falsehood on at least one
-faulted run and were gated. The winner won a field of one — hence
-`held-out rank 1 of 1`.
+Seven of the eight real configurations propagated an injected falsehood on at
+least one faulted run and were gated, leaving exactly one eligible. The winner
+won a field of one — hence `held-out rank 1 of 1`.
+
+> **Correction (2026-09-17).** This section first said "eight of nine variants."
+> The board has seven `[GATED]` rows; the ninth is the sentinel, which does not
+> propagate because it undercounts far past the credulous figure rather than
+> tracking it. The conclusion — one eligible candidate, so the held-out check
+> was untested — is unchanged. Caught while fact-checking the launch post
+> against this file.
 
 That is a real finding rather than a defect in the search: on this task, a
 verifying prompt *and* a reachable cross-check *and* the stronger model are
