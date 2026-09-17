@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import threading
 import traceback
 from dataclasses import dataclass, field
@@ -28,7 +29,8 @@ from tempfile import TemporaryDirectory
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
-from . import architect, board, events, project as projects, runner, usertools
+from . import (architect, board, events, project as projects, runner,
+               secrets, usertools)
 from .interpose import ToolCost
 from .ledger import Ledger
 from .ledger import errors as ledger_errors
@@ -73,6 +75,36 @@ def uploads_allowed() -> bool:
     return BIND_HOST in LOOPBACK
 
 
+SECRETS = secrets.Store()
+"""Credential NAMES this session has seen set, and where each came from.
+
+The values live in `os.environ` and nowhere else. Nothing in this module
+reads one back, so there is no endpoint, log line or serialized payload
+that could carry one out.
+"""
+
+
+def load_env_files() -> list[str]:
+    """Read `.env` into this process at startup, nearest-first."""
+    found: list[str] = []
+    for path in secrets.candidate_files(
+        projects.root(), os.environ.get("GAUNTLET_ENV_FILE")
+    ):
+        names = secrets.load_env_file(path)
+        if names:
+            SECRETS.note_file(names, path)
+            found.append(f"{path} ({len(names)})")
+    return found
+
+
+def credential_names() -> list[str]:
+    """Every credential the bundled model grid could ask for."""
+    names = []
+    for model in DEFAULT_MODELS.values():
+        names.extend(r["name"] for r in architect._env_requirements(model))
+    return sorted(set(names))
+
+
 # --- intake ---------------------------------------------------------------
 
 
@@ -93,6 +125,10 @@ def catalog() -> dict[str, Any]:
         "toolsets": {k: sorted(v) for k, v in architect.TOOLSETS.items()},
         "prompts": sorted(architect.PROMPTS),
         "models": DEFAULT_MODELS,
+        "model_credentials": {
+            alias: next((r["name"] for r in architect._env_requirements(model)), None)
+            for alias, model in DEFAULT_MODELS.items()
+        },
         "sentinel": {"prompt": architect.SENTINEL_PROMPT,
                      "toolset": architect.SENTINEL_TOOLSET},
     }
@@ -509,6 +545,16 @@ class Handler(BaseHTTPRequestHandler):
                 "uploads_allowed": uploads_allowed(),
                 "bind_host": BIND_HOST,
             })
+        if route == "/api/secrets":
+            # Names, presence and where each came from. There is no branch
+            # here, or anywhere else, that returns a value.
+            return self._json(200, {
+                "secrets": SECRETS.status(credential_names()),
+                "env_files": [str(f) for f in secrets.candidate_files(
+                    projects.root(), os.environ.get("GAUNTLET_ENV_FILE"))],
+                "store_env": str(projects.root() / ".env"),
+                "writable": uploads_allowed(),
+            })
         if route == "/api/projects":
             return self._json(200, {"projects": projects.listing(),
                                     "uploads_allowed": uploads_allowed()})
@@ -549,6 +595,36 @@ class Handler(BaseHTTPRequestHandler):
             except RuntimeError as exc:
                 return self._json(409, {"error": str(exc)})
             return self._json(202, {"status": "running"})
+
+        if route.startswith("/api/secrets"):
+            # Same loopback rule as uploads. Accepting a credential from a
+            # non-loopback bind would mean accepting one from whoever can
+            # reach the port.
+            if not uploads_allowed():
+                return self._json(403, {"error": (
+                    f"this server is bound to {BIND_HOST}, not loopback, so it "
+                    "will not accept credentials over the network. Use a .env "
+                    "file or export the variable in the shell that starts it.")})
+            action = route.rsplit("/", 1)[-1]
+            try:
+                if action == "clear":
+                    SECRETS.clear(body.get("name") or "")
+                elif action == "reload":
+                    load_env_files()
+                else:
+                    name = SECRETS.set(body.get("name") or "",
+                                       body.get("value") or "")
+                    if body.get("persist"):
+                        secrets.write_env_file(
+                            projects.root() / ".env", name, body["value"])
+                        SECRETS.note_file([name], projects.root() / ".env")
+            except (secrets.BadSecretName, ValueError) as exc:
+                # The message names the variable, never the value -- an error
+                # string is the easiest thing in a system to end up in a log.
+                return self._json(400, {"error": str(exc)})
+            # The response is the same status any GET would give: presence,
+            # not content.
+            return self._json(200, {"secrets": SECRETS.status(credential_names())})
 
         if route == "/api/projects":
             p = projects.new(body.get("name") or "untitled")
@@ -598,9 +674,13 @@ class Handler(BaseHTTPRequestHandler):
 def serve(host: str = "127.0.0.1", port: int = 8420) -> None:
     global BIND_HOST
     BIND_HOST = host
+    loaded = load_env_files()
     httpd = ThreadingHTTPServer((host, port), Handler)
     print(f"gauntlet ui   http://{host}:{port}")
     print(f"projects      {projects.root()}")
+    if loaded:
+        # Names and counts. Never a value, and never a prefix of one.
+        print(f"env           loaded from {', '.join(loaded)}")
     print("              offline -- scripted policies, no spend")
     if uploads_allowed():
         print("              uploaded tools RUN IN THIS PROCESS, on this machine")

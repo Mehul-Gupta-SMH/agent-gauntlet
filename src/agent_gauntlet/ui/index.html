@@ -172,6 +172,16 @@
         <em>This spends money.</em></span>
       </label>
       <div id="live-fields" hidden>
+        <div class="creds">
+          <h4>Credentials</h4>
+          <p class="muted">Declared by <strong>name</strong> everywhere it
+          matters — the project file, the ledger and the generated projects
+          carry the name and never the value. Set one here and it lives in
+          this server's memory for as long as it runs; nothing reads it back,
+          and no response, log line or URL carries it.</p>
+          <div id="cred-list"></div>
+          <p class="muted" id="env-hint"></p>
+        </div>
         <div class="intake-grid">
           <label class="field"><span class="label">SDK target</span>
             <select id="target">

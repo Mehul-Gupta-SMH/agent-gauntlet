@@ -78,3 +78,9 @@ own output. The `n/a` cells are real censoring, not placeholders.
 
 The wizard's tool step, captured from a real session: two functions uploaded
 from one `.py` file, discovered by parsing it, one marked material.
+
+## `ui-credentials.png`
+
+The credentials panel on the models step, with a key set in-session. The
+value was typed into a password field and is not visible here, in the page's
+HTML, in any response, or on disk — which is the point of the panel.

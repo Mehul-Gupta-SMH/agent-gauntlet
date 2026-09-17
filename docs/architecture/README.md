@@ -118,6 +118,16 @@ harness preferring convenient records — what it trades is a little
 plausibility, since a very large corruption might be caught by disbelief
 rather than by the cross-check.
 
+Credentials have two ways in — a `.env` read at startup, or typed into the
+page and held in process memory — and exactly one way out, which is none.
+`secrets.Store` keeps names and provenance; the values live in `os.environ`
+and are never mirrored into a structure that could be serialized. No
+endpoint returns one, no error message quotes one, and nothing is written to
+disk unless the operator ticks the box. A `.env` is parsed literally: no
+shell expansion, no substitution, no interpolation, because treating a
+credentials file as a program is how a config file becomes an execution
+path.
+
 Credentials travel as **names** and are checked for presence. Nothing in the
 project reads a credential's value, so there is nothing for the project file,
 the ledger or the page to leak. Uploaded code executes in the server process,

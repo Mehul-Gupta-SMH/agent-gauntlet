@@ -102,6 +102,7 @@ function hydrate() {
   q('#live-fields').hidden = p.offline;
   q('#target').value = p.target || 'langgraph';
   q('#budget').value = p.budget_usd ?? '';
+  if (!p.offline) refreshSecrets();
   q('#repeats').value = p.repeats;
   q('#seeds').value = p.seeds;
   q('#expected').value = p.scenarios[0]?.expected ?? '';
@@ -127,7 +128,10 @@ function hydrate() {
       models: qa('[data-model]:checked').map((b) => ({
         alias: b.dataset.model,
         model: W.catalog.models[b.dataset.model],
-        credential: 'ANTHROPIC_API_KEY',
+        // From the catalog, which derives it from the resolved model string.
+        // Hardcoding one provider's variable here meant a grid that grew a
+        // second provider would check the wrong key.
+        credential: W.catalog.model_credentials[b.dataset.model] || null,
       })),
     });
   }));
@@ -307,11 +311,80 @@ function renderFaultTool() {
 }
 q('#fault-tool').addEventListener('change', () => patch({ fault_tool: q('#fault-tool').value }));
 
+/* ------------------------------------------------------------- credentials */
+
+async function refreshSecrets() {
+  const data = await api('/api/secrets');
+  W.secrets = data;
+  q('#cred-list').innerHTML = data.secrets.map((c) => `
+    <div class="cred-row" data-cred-row="${c.name}">
+      <code class="${c.present ? 'ok' : 'missing'}">${c.name}</code>
+      <span class="cred-state">${c.present
+        ? `set · from ${c.source === 'session' ? 'this session' : c.source}`
+        : 'not set'}</span>
+      ${c.present
+        ? `<button type="button" class="row-x" data-clear="${c.name}">forget</button>`
+        : `<input type="password" data-secret="${c.name}"
+                  placeholder="paste value" autocomplete="off"
+                  spellcheck="false">
+           <label class="persist"><input type="checkbox" data-persist="${c.name}">
+             save to .env</label>
+           <button type="button" class="ghost" data-save="${c.name}">set</button>`}
+    </div>`).join('') || '<p class="muted">No credentials needed.</p>';
+
+  q('#env-hint').innerHTML =
+    `Or put them in a <code>.env</code> — looked for at ` +
+    data.env_files.map((f) => `<code>${f}</code>`).join(', ') +
+    `. That route never touches the browser at all, and is the one to prefer. ` +
+    `<button type="button" id="reload-env" class="ghost">reload .env</button>`;
+
+  qa('[data-save]').forEach((b) => b.addEventListener('click', () => saveSecret(b.dataset.save)));
+  qa('[data-secret]').forEach((i) => i.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); saveSecret(i.dataset.secret); }
+  }));
+  qa('[data-clear]').forEach((b) => b.addEventListener('click', async () => {
+    await api('/api/secrets/clear', {
+      method: 'POST', body: JSON.stringify({ name: b.dataset.clear }) });
+    await refreshSecrets();
+    await patch({});            // blockers are recomputed server-side
+  }));
+  const reload = q('#reload-env');
+  if (reload) reload.addEventListener('click', async () => {
+    await api('/api/secrets/reload', { method: 'POST', body: '{}' });
+    await refreshSecrets();
+    await patch({});
+  });
+}
+
+async function saveSecret(name) {
+  const field = q(`[data-secret="${name}"]`);
+  const value = field.value;
+  if (!value) return;
+  // Cleared immediately, and never put anywhere the browser persists:
+  // no localStorage, no URL, no form that could be restored on back.
+  field.value = '';
+  try {
+    await api('/api/secrets', {
+      method: 'POST',
+      body: JSON.stringify({
+        name, value, persist: q(`[data-persist="${name}"]`)?.checked || false,
+      }),
+    });
+  } catch (err) {
+    q('#intake-error').hidden = false;
+    q('#intake-error').textContent = err.message;
+    return;
+  }
+  await refreshSecrets();
+  await patch({});              // re-check blockers with the key now present
+}
+
 /* -------------------------------------------------------------------- live */
 
-q('#live').addEventListener('change', () => {
+q('#live').addEventListener('change', async () => {
   const live = q('#live').checked;
   q('#live-fields').hidden = !live;
+  if (live) await refreshSecrets();
   patch({ offline: !live });
 });
 q('#target').addEventListener('change', () => patch({ target: q('#target').value }));

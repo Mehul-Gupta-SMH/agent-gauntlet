@@ -85,6 +85,25 @@ generated `common/` projects whose `tools.py` exposes your tools through the
 interposer — below the SDK adapter, which is the only place a fault can be
 injected.
 
+Credentials get in one of two ways:
+
+- **A `.env` file**, read at startup from `$GAUNTLET_ENV_FILE`, the working
+  directory, or the project store. The value never touches the browser, and
+  a variable already exported in your shell is never shadowed by it. This is
+  the route to prefer.
+- **Typed into the page**, held in the server's memory for as long as it
+  runs, with an optional "save to `.env`". Accepted only on a loopback bind,
+  for the same reason uploads are.
+
+Either way the value goes in and does not come back: nothing reads it back,
+no response or URL carries it, and the project file, the ledger and the
+generated `common/` folders carry the **name** only. The page can ask
+whether a name is set and where it came from — never what it is. The project
+store also writes a `.gitignore` of `*` over itself, so a store that ends up
+inside a checkout cannot be committed by accident.
+
+![credentials](docs/assets/ui-credentials.png)
+
 Live runs need a **spend ceiling**, and it is a real one: checked against the
 rollups the runs actually returned, after every run. An estimate is not a
 ceiling. When the ceiling is hit the matrix stops, and the runs already paid

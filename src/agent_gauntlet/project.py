@@ -119,6 +119,7 @@ class Project(BaseModel):
         return self.dir / "tools"
 
     def save(self) -> None:
+        ensure_root()
         self.dir.mkdir(parents=True, exist_ok=True)
         self.tools_dir.mkdir(exist_ok=True)
         (self.dir / "project.json").write_text(
@@ -210,6 +211,27 @@ def root() -> Path:
     return Path(os.environ.get("GAUNTLET_HOME") or (Path.home() / ".agent-gauntlet"))
 
 
+def ensure_root() -> Path:
+    """Create the store, with a `.gitignore` that excludes all of it.
+
+    `GAUNTLET_HOME` can point anywhere, including inside a repository, and
+    the store holds uploaded source and possibly a `.env`. Ignoring the
+    whole directory means a store that lands in a checkout cannot be
+    committed by accident -- which is a one-line file against a class of
+    mistake that is very hard to undo once pushed.
+    """
+    path = root()
+    path.mkdir(parents=True, exist_ok=True)
+    marker = path / ".gitignore"
+    if not marker.exists():
+        marker.write_text(
+            "# agent-gauntlet project store: uploaded source, run ledgers and\n"
+            "# possibly a .env. None of it belongs in a repository.\n*\n",
+            encoding="utf-8",
+        )
+    return path
+
+
 def new(name: str) -> Project:
     """Create a project with a unique directory.
 
@@ -217,6 +239,7 @@ def new(name: str) -> Project:
     rather than overwriting -- because a project directory holds uploaded
     source the operator may not have a copy of.
     """
+    ensure_root()
     base = slug(name)
     candidate, n = base, 2
     while (root() / candidate).exists():

@@ -453,3 +453,21 @@ input[type="file"] { font-size: 0.8rem; color: var(--ink-dim); }
 .live-toggle em { color: var(--blood); font-style: normal; }
 #live-fields { margin-top: 0.9rem; }
 #estimate { margin-top: 0.6rem; }
+
+.creds { border: 1px solid var(--line); border-radius: 9px; padding: 0.8rem;
+         background: var(--bg-sunk); margin-bottom: 1rem; }
+.creds h4 { margin: 0 0 0.4rem; font-size: 0.84rem; }
+.creds p { max-width: 70ch; }
+.cred-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+            padding: 0.5rem 0; border-top: 1px solid var(--line-soft); }
+.cred-row code { font-size: 0.8rem; }
+.cred-row code.ok { color: var(--parry); }
+.cred-row code.missing { color: var(--blood); }
+.cred-state { font-size: 0.74rem; color: var(--ink-faint); }
+.cred-row input[type="password"] { width: 240px; font-family: var(--mono);
+                                   font-size: 0.78rem; }
+.persist { display: flex; align-items: center; gap: 0.3rem; font-size: 0.74rem;
+           color: var(--ink-faint); }
+.persist input { width: auto; accent-color: var(--sand); }
+#env-hint { margin-top: 0.7rem; }
+#env-hint code { color: var(--ink-dim); }
