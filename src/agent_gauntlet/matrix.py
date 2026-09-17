@@ -144,6 +144,7 @@ def run_matrix(
                     seed=seed,
                     records=scenario.records,
                     kind=fault_kind,
+                    tool_name=task.fault_tool,
                     evidence_tool="get_summary" if _has_evidence(variant) else None,
                     # Only the audited records may be corrupted. A fault
                     # outside the cross-check's coverage contradicts nothing

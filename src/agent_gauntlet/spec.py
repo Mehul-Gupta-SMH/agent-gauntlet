@@ -105,6 +105,13 @@ class GateCriteria(BaseModel, frozen=True):
     numbers second -- is auditable after the fact."""
 
 
+class GridSpec(BaseModel):
+    """Which prompt strategies and tool sets a task's matrix should span."""
+
+    prompts: Optional[list[str]] = None
+    toolsets: Optional[list[str]] = None
+
+
 class TaskSpec(BaseModel):
     """A task, its scenarios, and the bar it is measured against."""
 
@@ -123,9 +130,29 @@ class TaskSpec(BaseModel):
     tolerance: int = 0
     """Absolute tolerance on the reported total. 0 = exact match required."""
 
+    fault_tool: str = "fetch_record"
+    """Which tool the schedule corrupts.
+
+    Pointing it at a MATERIAL tool is what makes remediation cost
+    measurable: the agent's correction is then a choice between re-calling
+    something irreversible and reconciling against the free sources it
+    already has.
+    """
+
     gate: Optional[GateCriteria] = None
     """Pre-registered gate thresholds. Absent means the gate reports
     numbers without a verdict -- it never invents a bar."""
+
+    grid: Optional[GridSpec] = None
+    """The factor levels this task needs, when the defaults will not do.
+
+    `lending/applicant.yaml` corrupts `pull_credit_report`, which the
+    default tool sets do not grant -- so the default grid produced a full
+    leaderboard in which no variant could ever see the fault. Deliberately
+    *not* part of `fingerprint()`: the grid is the search space, not the
+    bar, and overriding it from a CLI flag must mean the same thing as
+    declaring it here.
+    """
 
     @model_validator(mode="after")
     def _check_scenarios(self) -> TaskSpec:
@@ -172,6 +199,9 @@ class TaskSpec(BaseModel):
                 "scenarios": [_scenario_payload(s) for s in self.scenarios],
                 "acceptable_degradation": self.acceptable_degradation,
                 "tolerance": self.tolerance,
+                # Joins the payload only when set, per the rule above.
+                **({"fault_tool": self.fault_tool}
+                   if self.fault_tool != "fetch_record" else {}),
                 "gate": self.gate.model_dump(mode="json") if self.gate else None,
             },
             sort_keys=True,

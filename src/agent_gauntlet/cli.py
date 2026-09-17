@@ -22,6 +22,8 @@ from .analyze import stability
 from .faults import FaultKind
 from .live import provider_unreachable as _provider_unreachable
 from .ledger import Ledger, write_summary
+from .ledger import errors as ledger_errors
+from .ledger import variant_drift as ledger_drift
 from .matrix import run_matrix
 from .spec import TaskSpec
 
@@ -486,20 +488,30 @@ def _run(args) -> int:
         print("mode        offline (scripted policies, no spend)")
 
     ledger = Ledger(out / "runs.jsonl")
+    carried_over = len(ledger.records())
     seeds = [f"seed{i}" for i in range(max(1, args.seeds))]
+
+    # This invocation's records, not the file's. The ledger is append-only
+    # on purpose, so reusing an --out directory silently folded the previous
+    # run into the board -- including, when the grid had changed, variants
+    # that no longer exist. It showed up as rows for tool sets this task
+    # never generated.
+    records: list = []
     for seed in seeds:
-        run_matrix(
+        records.extend(run_matrix(
             task=task, variants=variants, ledger=ledger, base_seed=seed,
             repeats=args.repeats, fault_kind=FaultKind(args.fault),
             executor=executor, offline=offline,
-        )
-    records = ledger.records()
+        ))
     print(f"runs        {len(records)} across {len(seeds)} seed(s)")
+    if carried_over:
+        print(f"            ({carried_over} earlier run(s) already in "
+              f"{ledger.path.name}, not summarized below)")
 
     # A ledger appended to across a prompt edit holds runs of two different
     # agents under one name. Averaging them reports one number for two
     # configurations, and nothing else in the output would show it (#15).
-    errored = ledger.errors()
+    errored = ledger_errors(records)
     if errored:
         print(f"\nWARNING: {len(errored)} run(s) never produced an answer and are")
         print("excluded from every rate below -- an agent that never got to")
@@ -510,7 +522,7 @@ def _run(args) -> int:
         for reason, count in sorted(seen.items(), key=lambda kv: -kv[1])[:5]:
             print(f"  {count:>4}x  {reason[:96]}")
 
-    drift = ledger.variant_drift()
+    drift = ledger_drift(records)
     if drift:
         print(f"\nWARNING: {len(drift)} variant(s) appear under more than one")
         print("fingerprint -- this ledger mixes configurations that share a name")
@@ -583,7 +595,13 @@ def _print_board(results) -> None:
             # Likewise: an unpriced run is not a free one (#14).
             per_run = r.cost_per_run
             cost = "       n/a" if per_run is None else f"{per_run:>10.4f}"
-            if r.gated:
+            prop = (
+                "   n/a" if r.propagation_rate is None
+                else f"{r.propagation_rate:>6.0%}"
+            )
+            if r.propagation_unmeasured:
+                flag = "  [GATED: propagation not measurable]"
+            elif r.gated:
                 flag = "  [GATED: propagated]"
             elif r.is_sentinel:
                 flag = "  [sentinel]"
@@ -594,7 +612,7 @@ def _print_board(results) -> None:
             print(
                 f"{r.label:<34}{r.quality:>6.0%}{r.accuracy:>6.2f}"
                 f"{r.clean_quality:>7.0%}{r.faulted_quality:>7.0%}"
-                f"{r.propagation_rate:>6.0%}{det}{rep}{r.false_alarm_rate:>5.0%}"
+                f"{prop}{det}{rep}{r.false_alarm_rate:>5.0%}"
                 f"{ttd}{cost}{flag}"
             )
 
@@ -602,6 +620,13 @@ def _print_board(results) -> None:
         print(f"\n  {len(frontier)} configs are on the accuracy/cost frontier -- none")
         print("  dominates the others, so the tradeoff is yours (#11). Ranking")
         print("  on accuracy alone would have hidden that.")
+    harmful = [r for r in results if r.redundant_material_calls]
+    if harmful:
+        print("\n  REDUNDANT MATERIAL CALLS -- an irreversible action taken twice")
+        print("  on the same target. A correct final answer does not undo it.")
+        for r in sorted(harmful, key=lambda r: -r.redundant_material_calls):
+            print(f"    {r.redundant_material_calls:>4}x  {r.label}")
+
     priced = [r for r in results if r.cost_complete]
     if priced:
         print(f"\n  measured spend: ${sum(r.cost_usd for r in priced):.4f} over "
@@ -691,6 +716,11 @@ def _print_gate(records, seeds, task) -> int:
     return 0
 
 
+def _pct(value) -> str:
+    """Percentages that refuse to invent a zero for something unmeasured."""
+    return "n/a" if value is None else f"{value:.0%}"
+
+
 def _export(results, variants, out: Path, records=None):
     """Report the winner, and report it honestly.
 
@@ -719,7 +749,7 @@ def _export(results, variants, out: Path, records=None):
     if held is None:
         print(f"  accuracy={champion.accuracy:.2f}  quality={champion.quality:.0%}  "
               f"false alarms={champion.false_alarm_rate:.0%}  "
-              f"propagation={champion.propagation_rate:.0%}")
+              f"propagation={_pct(champion.propagation_rate)}")
         print("\n  NOT VALIDATED -- this score was measured on the same runs that")
         print("  selected it, so it is optimistically biased (#20). Re-run with")
         print("  --seeds >= 2 to hold replications out of the choice.")
@@ -740,7 +770,7 @@ def _export(results, variants, out: Path, records=None):
             print("  the strength of this run.")
         print(f"\n  quality={champion.quality:.0%}  "
               f"false alarms={champion.false_alarm_rate:.0%}  "
-              f"propagation={champion.propagation_rate:.0%}")
+              f"propagation={_pct(champion.propagation_rate)}")
 
     print(f"  exported to {dest}")
     print(f"  run it:  commonadk validate {dest}")

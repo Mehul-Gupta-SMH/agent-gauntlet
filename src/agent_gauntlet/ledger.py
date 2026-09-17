@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Optional, Union
+from typing import Any, Iterable, Iterator, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -151,22 +151,11 @@ class Ledger:
 
     def errors(self) -> list["RunRecord"]:
         """Runs that never produced an answer. Empty is the happy case."""
-        return [r for r in self if r.error]
+        return errors(self)
 
     def variant_drift(self) -> dict[str, set[str]]:
-        """Variant ids that appear under more than one fingerprint.
-
-        A non-empty result means the ledger mixes runs of configurations
-        that share a name and differ in substance -- aggregating across
-        them would average two different agents together and report it as
-        one. Records predating the field are ignored rather than counted as
-        a distinct version.
-        """
-        seen: dict[str, set[str]] = {}
-        for r in self:
-            if r.variant_fingerprint:
-                seen.setdefault(r.variant_id, set()).add(r.variant_fingerprint)
-        return {vid: fps for vid, fps in seen.items() if len(fps) > 1}
+        """Variant ids that appear under more than one fingerprint."""
+        return variant_drift(self)
 
     def fingerprints(self) -> set[str]:
         """Every task fingerprint present.
@@ -257,3 +246,28 @@ def rescore(record: "RunRecord", task: Any) -> Score:
 def write_summary(path: Union[str, Path], payload: dict[str, Any]) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def errors(records: Iterable["RunRecord"]) -> list["RunRecord"]:
+    """Runs that never produced an answer. Empty is the happy case."""
+    return [r for r in records if r.error]
+
+
+def variant_drift(records: Iterable["RunRecord"]) -> dict[str, set[str]]:
+    """Variant ids that appear under more than one fingerprint.
+
+    A non-empty result means these records mix runs of configurations that
+    share a name and differ in substance -- aggregating across them would
+    average two different agents together and report it as one. Records
+    predating the field are ignored rather than counted as a distinct
+    version.
+
+    Takes any iterable rather than only a `Ledger`, because the file is
+    append-only across invocations and a caller usually wants this question
+    answered about *its own* runs.
+    """
+    seen: dict[str, set[str]] = {}
+    for r in records:
+        if r.variant_fingerprint:
+            seen.setdefault(r.variant_id, set()).add(r.variant_fingerprint)
+    return {vid: fps for vid, fps in seen.items() if len(fps) > 1}
