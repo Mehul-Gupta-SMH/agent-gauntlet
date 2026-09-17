@@ -162,3 +162,21 @@ Every result, with raw output committed alongside it, is in
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Repo metadata
+
+Parked here to be copied into GitHub's **About** box (⚙ next to "About" on the
+repo page, or Settings → General). The agent proxy blocks repository settings
+writes, so this is the source of truth until it is pasted across.
+
+Description:
+
+```
+Search the space of agent configurations under deliberate tool failure, and ship the one that survives — a ranked, cost-aware leaderboard plus the winning config as a runnable project.
+```
+
+Topics:
+
+```
+llm-agents fault-injection chaos-engineering llm-evaluation benchmarking python
+```
