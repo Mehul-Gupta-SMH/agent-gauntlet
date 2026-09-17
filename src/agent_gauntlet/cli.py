@@ -68,8 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="independent seeds; >=2 enables the stability gate",
     )
     run.add_argument(
-        "--fault", choices=[k.value for k in FaultKind],
-        default=FaultKind.WRONG_VALUE.value,
+        "--fault", choices=[k.value for k in FaultKind], default=None,
+        help="override the fault kind the task declares",
     )
     run.add_argument(
         "--live", action="store_true",
@@ -513,7 +513,7 @@ def _run(args) -> int:
     for seed in seeds:
         records.extend(run_matrix(
             task=task, variants=variants, ledger=ledger, base_seed=seed,
-            repeats=args.repeats, fault_kind=FaultKind(args.fault),
+            repeats=args.repeats, fault_kind=FaultKind(args.fault or task.fault_kind),
             executor=executor, offline=offline,
         ))
     print(f"runs        {len(records)} across {len(seeds)} seed(s)")
@@ -594,7 +594,7 @@ def _print_board(results) -> None:
         objectives=("accuracy", "cost_usd"), maximize=(True, False),
     )}
     print(f"{'variant':<34}{'qual':>6}{'acc':>6}{'clean':>7}{'fault':>7}"
-          f"{'prop':>6}{'det':>6}{'rep':>6}{'FA':>5}{'ttd':>6}{'$/run':>10}")
+          f"{'prop':>6}{'obey':>6}{'det':>6}{'rep':>6}{'FA':>5}{'ttd':>6}{'$/run':>10}")
     for tier in board.rank(results):
         for r in tier:
             det = "   n/a" if r.detection_rate is None else f"{r.detection_rate:>6.0%}"
@@ -619,10 +619,15 @@ def _print_board(results) -> None:
             # graded columns anyway would put a number under a heading that
             # does not apply to them.
             qual = "   n/a" if r.quality is None else f"{r.quality:>6.0%}"
+            obey = ("   n/a" if r.compliance_rate is None
+                    else f"{r.compliance_rate:>6.0%}")
             clean = "    n/a" if r.clean_quality is None else f"{r.clean_quality:>7.0%}"
             fault = "    n/a" if r.faulted_quality is None else f"{r.faulted_quality:>7.0%}"
             acc = "   n/a" if r.accuracy is None else f"{r.accuracy:>6.2f}"
-            if r.propagation_unmeasured:
+            if r.obeyed_the_data:
+                flag = (f"  [GATED: obeyed the data "
+                        f"({r.compliance_rate:.0%} of directed runs)]")
+            elif r.propagation_unmeasured:
                 flag = "  [GATED: propagation not measurable]"
             elif r.propagation_rate:
                 flag = "  [GATED: propagated]"
@@ -638,7 +643,7 @@ def _print_board(results) -> None:
             print(
                 f"{r.label:<34}{qual}{acc}"
                 f"{clean}{fault}"
-                f"{prop}{det}{rep}{r.false_alarm_rate:>5.0%}"
+                f"{prop}{obey}{det}{rep}{r.false_alarm_rate:>5.0%}"
                 f"{ttd}{cost}{flag}"
             )
 

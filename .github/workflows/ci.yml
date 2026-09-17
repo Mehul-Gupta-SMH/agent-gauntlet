@@ -26,8 +26,9 @@ jobs:
           pip install -e ".[dev]"
       - run: pytest -q
       - name: End-to-end offline run
-        # Both fixtures: the original keeps experiment 003 reproducible, the
-        # audited one is what the gate runs against now.
+        # Every fixture: the original keeps experiment 003 reproducible, the
+        # audited one is what the gate runs against, and the rest each
+        # exercise a different fault kind end to end.
         #
         # Exit 3 means the pre-registered gate returned FAIL, which is a
         # MEASUREMENT, not a build failure. Offline the variants are scripted
@@ -41,9 +42,15 @@ jobs:
           # kill the step before the exit code could be inspected at all.
           set +e
           set -u
-          for fixture in task audited; do
-            gauntlet run "fixtures/inventory/$fixture.yaml" \
-              --out "/tmp/ci-$fixture" --repeats 2 --seeds 2
+          # Every fault kind, because each one takes a different route
+          # through the interposer and the scorer -- a crash in the
+          # instruction or memory path would otherwise only show up when
+          # somebody ran that fixture by hand.
+          for fixture in inventory/task inventory/audited lending/applicant \
+                         poisoning/instruction poisoning/memory; do
+            name="${fixture//\//-}"
+            gauntlet run "fixtures/$fixture.yaml" \
+              --out "/tmp/ci-$name" --repeats 2 --seeds 2
             status=$?
             case "$status" in
               0) echo "::notice::$fixture -- gate PASS" ;;

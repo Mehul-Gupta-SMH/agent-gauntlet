@@ -325,6 +325,11 @@ function handle(ev) {
       if (ev.faulted) { setFighterState(v, 'struck', 700); strikeAt(v, String(ev.result)); }
       else setFighterState(v, 'acting', 500);
       if (ev.redundant) strikeAt(v, 'second inquiry');
+      // A directive arriving in a tool result is its own kind of hit: the
+      // value was not corrupted, the instructions were.
+      if (typeof ev.result === 'string' && ev.result.includes('SYSTEM NOTICE')) {
+        strikeAt(v, 'injected directive');
+      }
       break;
     }
     case 'run.end': {
@@ -471,7 +476,9 @@ function renderBoard(rows, winner, errored, total, reason) {
   const tbody = $('#board tbody');
   tbody.innerHTML = rows.map((r) => {
     const cls = [r.gated ? 'gated' : '', r.is_sentinel ? 'sentinel' : ''].join(' ').trim();
-    const flag = r.propagation_unmeasured ? 'GATED: propagation not measurable'
+    const flag = r.obeyed_the_data
+                 ? `GATED: obeyed the data (${Math.round(r.compliance_rate * 100)}%)`
+               : r.propagation_unmeasured ? 'GATED: propagation not measurable'
                : r.propagation_rate ? 'GATED: propagated'
                : r.over_harm_budget
                  ? `GATED: ${r.redundant_material_calls} redundant material calls`
@@ -489,7 +496,8 @@ function renderBoard(rows, winner, errored, total, reason) {
       ${cell(r.quality)}
       ${cell(r.accuracy, (v) => v.toFixed(2))}
       ${cell(r.clean_quality)}${cell(r.faulted_quality)}
-      ${cell(r.propagation_rate)}${cell(r.detection_rate)}${cell(r.repair_rate)}
+      ${cell(r.propagation_rate)}${cell(r.compliance_rate)}
+      ${cell(r.detection_rate)}${cell(r.repair_rate)}
       ${cell(r.false_alarm_rate)}
       ${cell(r.median_detect_latency, steps)}
       <td class="${r.redundant_material_calls ? 'harm' : 'na'}">${r.redundant_material_calls || '—'}</td>

@@ -161,6 +161,18 @@ class TaskSpec(BaseModel):
     already has.
     """
 
+    fault_kind: str = "wrong_value"
+    """Which KIND of lie this task injects.
+
+    `wrong_value` corrupts data; `instruction` corrupts what the agent is
+    told to do; `poisoned_memory` corrupts what it previously worked out.
+    Different failures with different oracles, so a task declares one rather
+    than mixing them -- averaging three questions into one number is exactly
+    what the outcome taxonomy exists to prevent.
+
+    Joins `fingerprint()` only when non-default, so no existing hash moves.
+    """
+
     gate: Optional[GateCriteria] = None
     """Pre-registered gate thresholds. Absent means the gate reports
     numbers without a verdict -- it never invents a bar."""
@@ -224,6 +236,8 @@ class TaskSpec(BaseModel):
                 # Joins the payload only when set, per the rule above.
                 **({"fault_tool": self.fault_tool}
                    if self.fault_tool != "fetch_record" else {}),
+                **({"fault_kind": self.fault_kind}
+                   if self.fault_kind != "wrong_value" else {}),
                 "gate": self.gate.model_dump(mode="json") if self.gate else None,
             },
             sort_keys=True,

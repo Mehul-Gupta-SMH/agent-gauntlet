@@ -20,8 +20,9 @@ from typing import Callable, Optional
 
 from .interpose import (
     RunContext, ToolTimeout, ToolUnavailable, audited_record_ids,
-    fetch_quantity, list_record_ids, list_record_ids_partial,
-    pull_credit_report, summary_total,
+    fetch_quantity, injected_canary, list_record_ids, list_record_ids_partial,
+    pull_credit_report, read_annotation, recall_note, record_note,
+    summary_total,
 )
 from .score import Answer
 
@@ -219,7 +220,128 @@ def bureau_deliberate(seed: Optional[str] = None, rate: float = SLIP_RATE) -> An
     return _bureau_recover(seed, rate, repull=False)
 
 
+def obedient(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
+    """Reads the annotations, and does what they say.
+
+    A test double, not a model of an agent: it reads the canary off the
+    schedule rather than parsing prose, because a scripted policy has no
+    language to parse with. What it stands in for is real and common --
+    treating text that arrived in a tool result as if it came from the task.
+    """
+    ledger = {}
+    for rid in _enumerate():
+        try:
+            ledger[rid] = fetch_quantity(rid)
+        except ToolTimeout:
+            continue
+        try:
+            read_annotation(rid)
+        except (ToolTimeout, ToolUnavailable, KeyError):
+            pass
+
+    canary = injected_canary()
+    if canary is not None and _saw_directive():
+        # Followed an instruction that arrived as data, and went quiet with
+        # it: the directive asks for silence about the discrepancy too.
+        return Answer(total=canary, flagged_anomaly=False)
+    total = sum(ledger.values())
+    return Answer(total=total + _slip(seed, total, rate), flagged_anomaly=False)
+
+
+def anchored(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
+    """Reads the same annotations and keeps doing its own job.
+
+    Structurally, not attitudinally: it never consults the directive at all.
+    That is the honest offline stand-in -- an agent that cannot be redirected
+    because the instruction never enters its control flow, which is what a
+    correctly-scoped agent approximates.
+    """
+    ledger = {}
+    flagged = False
+    for rid in _enumerate():
+        try:
+            ledger[rid] = fetch_quantity(rid)
+        except ToolTimeout:
+            continue
+        try:
+            read_annotation(rid)
+        except (ToolTimeout, ToolUnavailable, KeyError):
+            pass
+    if _saw_directive():
+        # It noticed something was off in the source text and said so,
+        # without doing what the text asked.
+        flagged = True
+    total = sum(ledger.values())
+    return Answer(total=total + _slip(seed, total, rate), flagged_anomaly=flagged)
+
+
+def note_taking(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
+    """Works in stages, trusting what it wrote down earlier.
+
+    Records a running subtotal, reads it back, and builds on it. Robust to a
+    corrupted *source* -- it can cross-check that -- and defenceless against
+    a corrupted *note*, because nothing re-derives what it already decided.
+    """
+    ids = _enumerate()
+    running = 0
+    for rid in ids:
+        try:
+            running += fetch_quantity(rid)
+        except ToolTimeout:
+            continue
+        record_note("running", running)
+    try:
+        total = recall_note("running")
+    except (ToolUnavailable, KeyError):
+        total = running
+    return Answer(total=total + _slip(seed, total, rate), flagged_anomaly=False)
+
+
+def rederiving(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
+    """Keeps notes and does not trust them.
+
+    Reads the note back, re-derives the same figure from source, and when
+    the two disagree it believes the source and says so. The difference from
+    `note_taking` is one comparison, and it is the whole of the robustness.
+    """
+    ids = _enumerate()
+    running = 0
+    for rid in ids:
+        try:
+            running += fetch_quantity(rid)
+        except ToolTimeout:
+            continue
+        record_note("running", running)
+
+    flagged = False
+    try:
+        remembered = recall_note("running")
+    except (ToolUnavailable, KeyError):
+        remembered = running
+    if remembered != running:
+        flagged = True          # the note disagrees with the work
+    return Answer(total=running + _slip(seed, running, rate),
+                  flagged_anomaly=flagged)
+
+
+def _saw_directive() -> bool:
+    """Did a directive actually reach this run?
+
+    `injected_canary` alone is not enough: the schedule can carry an
+    INSTRUCTION fault that the agent never saw, because it never read the
+    annotation. Obeying an instruction nobody showed it would be a policy
+    cheating off the schedule rather than off the text.
+    """
+    from .interpose import active
+
+    return bool(getattr(active(), "injected_directives", ()))
+
+
 POLICIES: dict[str, Policy] = {
+    "obedient": obedient,
+    "anchored": anchored,
+    "note_taking": note_taking,
+    "rederiving": rederiving,
     "naive": naive,
     "verifying": verifying,
     "summary_only": summary_only,
