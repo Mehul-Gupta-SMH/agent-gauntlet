@@ -5,6 +5,40 @@
 [Actions run 35149486157](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/runs/35149486157)
 · raw board in [`console.txt`](console.txt)
 
+> ### Correction, 2026-09-18
+>
+> Added when `stats.py` (#33, #34) gave this repo a resolution limit for the
+> first time. Nothing below is deleted; the numbers stood without an error
+> bar because there was no machinery to compute one, and hiding that now
+> would be worse than having lacked it then.
+>
+> **324 runs across 9 variants is 36 per contender — a minimum detectable
+> difference of 33%.** A per-factor *level* pools four variants (144 runs),
+> so its threshold is **16.5%**.
+>
+> | claim | gap | threshold | verdict |
+> |---|---|---|---|
+> | sentinel 0% vs next-worst 50% | 50 pts | 33% | **holds** |
+> | repair 100% vs 0% | 100 pts | 33% | **holds** |
+> | repair 22% vs 100% across the model axis | 78 pts | 33% | **holds** |
+> | prompt spread 50% → 65% | 15 pts | 16.5% | **inside the noise** |
+> | toolset spread 50% → 65% | 15 pts | 16.5% | **inside the noise** |
+> | model spread 53% → 62% | 10 pts | 16.5% | **inside the noise** |
+>
+> So: **every headline finding survives, and the entire per-factor spread
+> table does not.** Treat the three spread numbers below as unmeasured, not
+> as small.
+>
+> This sharpens rather than softens the #22 argument. The section below
+> notes that the one-at-a-time table reports the model axis as worth 10
+> points where the real interaction is 78. It is now also true that those
+> 10 points were never distinguishable from zero — so the marginal table
+> was not merely understating the effect, it was reporting noise.
+>
+> The gate verdict itself is untouched: median tau and top-1 stability are
+> rank-correlation statistics over seed pairs, not rate comparisons, so the
+> proportion threshold above does not apply to them.
+
 ## Question
 
 **Does a ranking of agent configurations survive a change of random seed?**
@@ -67,10 +101,14 @@ until this board they were the same number.
 Experiment 003 measured a model spread of **0%**. Here:
 
 ```
-prompt   spread = 15%   naive 50%  -> verifying 65%
-toolset  spread = 15%   records 50% -> records+summary 65%
-model    spread = 10%   cheap 53%  -> smart 62%
+prompt   spread = 15%   naive 50%  -> verifying 65%     <- inside the noise
+toolset  spread = 15%   records 50% -> records+summary 65%   <- inside the noise
+model    spread = 10%   cheap 53%  -> smart 62%         <- inside the noise
 ```
+
+*(All three fall under the 16.5% threshold for a per-factor level at this
+run size — see the correction at the top. They are printed here as recorded,
+and none of them is evidence.)*
 
 But hold prompt and toolset fixed at `verifying · records+summary` and the
 model axis moves repair from **22% to 100%** — a 78-point gap on the

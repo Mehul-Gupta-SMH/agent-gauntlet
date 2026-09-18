@@ -169,10 +169,11 @@ cheap verifying records+summary      61%  0.90   100%    22%   91%  100%   22%  
 cheap naive    records+summary       50%  0.89   100%     0%  100%  100%    0%   0%     7   [GATED]
 cheap naive    records-partial        0%  0.51     0%     0%    0%   n/a   n/a   0%   n/a   [sentinel]
 
-prompt   spread = 15%   naive 50%  -> verifying 65%
-toolset  spread = 15%   records 50% -> records+summary 65%
-model    spread = 10%   cheap 53%  -> smart 62%
+prompt   spread = 15%   naive 50%  -> verifying 65%     [inside the noise]
+toolset  spread = 15%   records 50% -> records+summary 65%  [inside the noise]
+model    spread = 10%   cheap 53%  -> smart 62%         [inside the noise]
 
+resolution: 36 runs per contender -> 33%; per-factor level 144 -> 16.5%
 median tau = 0.845   top-1 stability = 100%
 GATE: PASS -- the ranking held across seeds at the bar set in advance.
 
@@ -182,6 +183,13 @@ winner: model-smart__prompt-verifying__toolset-records+summary
 ```
 
 </details>
+
+Three of those spread figures are annotated `[inside the noise]`. At this run
+size a per-factor level can only distinguish differences above 16.5%, and all
+three fall under it — so they are unmeasured rather than small. The headline
+findings do clear the bar: the sentinel ranks last by 50 points, and repair
+moves 22% → 100% across the model axis, against a 33% threshold. See the
+[dated correction](experiments/007-m0-gate-passed/) for the full audit.
 
 Columns worth reading twice:
 
