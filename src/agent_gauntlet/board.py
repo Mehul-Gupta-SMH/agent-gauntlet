@@ -25,6 +25,7 @@ from typing import Iterable, Optional, Sequence, Union
 from pydantic import BaseModel, Field
 
 from .ledger import RunRecord
+from .stats import Interval, bootstrap, wilson
 from .spec import VariantSpec
 
 
@@ -175,6 +176,15 @@ class VariantResult(BaseModel):
 
     n_directives: int = 0
 
+    intervals: dict[str, "Interval"] = Field(default_factory=dict)
+    """Confidence intervals, keyed by the metric they qualify.
+
+    A separate map rather than a field per rate: the metrics keep changing,
+    and a parallel `*_ci` for each would drift out of step with the value it
+    is meant to qualify. Absent keys mean the metric had no denominator --
+    the same censoring the values themselves get.
+    """
+
     harm_budget: Optional[int] = None
     """The operator's ceiling on redundant material calls, when declared.
 
@@ -229,6 +239,40 @@ class VariantResult(BaseModel):
         runs that dropped out, so it is zero when there were none to drop.
         """
         return self.propagation_rate is None and self.n_propagation_undecidable > 0
+
+
+def _intervals(*, runs, clean, faulted, decidable, repairable,
+               with_evidence, directed, graded) -> dict[str, "Interval"]:
+    """One interval per rate, over the same denominator the rate used.
+
+    Built from the identical subsets `summarize` averages over -- a width
+    computed on a different denominator than its value would be worse than
+    no width, because it would look like it belonged.
+    """
+    out: dict[str, Interval] = {}
+
+    def binary(key: str, subset, attr: str) -> None:
+        if not subset:
+            return          # no denominator: the value is n/a, so is the width
+        got = wilson(sum(1 for r in subset if getattr(r.score, attr)), len(subset))
+        if got is not None:
+            out[key] = got
+
+    if graded:
+        binary("quality", runs, "correct")
+        binary("clean_quality", clean, "correct")
+        binary("faulted_quality", faulted, "correct")
+        acc = bootstrap([float(r.score.accuracy) for r in runs],
+                        seed=f"acc:{runs[0].variant_id}" if runs else "acc")
+        if acc is not None:
+            out["accuracy"] = acc
+
+    binary("propagation_rate", decidable, "propagated")
+    binary("detection_rate", with_evidence, "detected")
+    binary("repair_rate", repairable, "repaired")
+    binary("false_alarm_rate", clean, "false_alarm")
+    binary("compliance_rate", directed, "complied")
+    return out
 
 
 def summarize(
@@ -311,6 +355,12 @@ def summarize(
                 ),
                 n_errored=len(errored),
                 harm_budget=harm_budget,
+                intervals=_intervals(
+                    runs=runs, clean=clean, faulted=faulted,
+                    decidable=decidable, repairable=repairable,
+                    with_evidence=with_evidence, directed=directed,
+                    graded=graded,
+                ),
                 n_propagation_undecidable=len(applicable) - len(decidable),
                 compliance_rate=(
                     mean(float(r.score.complied) for r in directed)

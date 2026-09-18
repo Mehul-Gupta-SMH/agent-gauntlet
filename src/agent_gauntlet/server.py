@@ -35,6 +35,7 @@ from .interpose import ToolCost
 from .ledger import Ledger
 from .ledger import errors as ledger_errors
 from .matrix import run_matrix
+from .stats import detectable_difference
 from .spec import GridSpec, Scenario, TaskSpec
 
 UI_DIR = Path(__file__).resolve().parent / "ui"
@@ -223,6 +224,7 @@ def _row(r: board.VariantResult) -> dict[str, Any]:
         "over_harm_budget": r.over_harm_budget,
         "harm_budget": r.harm_budget,
         "n_propagation_undecidable": r.n_propagation_undecidable,
+        "intervals": {k: v.model_dump() for k, v in r.intervals.items()},
         "is_sentinel": r.is_sentinel,
     }
 
@@ -345,6 +347,15 @@ def _project_worker(session: Session, p: projects.Project) -> None:
             errored=len(ledger_errors(records)),
             total=len(records),
             graded=graded,
+            # What this many runs could have seen. Sent with the board so
+            # the page cannot render a ranking without it.
+            resolution={
+                "n": min((r.n_runs for r in results if not r.is_sentinel and r.n_runs),
+                         default=0),
+                "mde": detectable_difference(
+                    min((r.n_runs for r in results
+                         if not r.is_sentinel and r.n_runs), default=0)),
+            },
             # Without a label there is a gate but no leaderboard, and saying
             # so beats printing a ranking of numbers that do not mean what
             # the column heading says.

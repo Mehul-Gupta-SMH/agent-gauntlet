@@ -22,6 +22,7 @@ from .analyze import stability
 from .faults import FaultKind
 from .live import provider_unreachable as _provider_unreachable
 from .ledger import Ledger, write_summary
+from .stats import detectable_difference
 from .ledger import errors as ledger_errors
 from .ledger import variant_drift as ledger_drift
 from .matrix import run_matrix
@@ -674,6 +675,58 @@ def _print_board(results) -> None:
     else:
         print("\n  no run reported a price (offline, or the roll-up carried none)")
 
+    _print_resolution(results)
+
+
+def _print_resolution(results) -> None:
+    """What this many runs could actually have seen.
+
+    Printed with the board rather than buried, because a ranking read
+    without it invites exactly the error the ranking cannot support:
+    treating a four-point gap as a finding. The numbers here are usually
+    uncomfortable, and that is the point -- an honest resolution limit is
+    the difference between a measurement and a leaderboard.
+    """
+    scored = [r for r in results if not r.is_sentinel and r.n_runs]
+    if not scored:
+        return
+    n = min(r.n_runs for r in scored)
+    mde = detectable_difference(n)
+    if mde is None:
+        return
+
+    print(f"\n  resolution: n={n} per contender, so the smallest difference")
+    print(f"  these runs can distinguish from noise is about {mde:.0%}.")
+    print("  Gaps narrower than that are not evidence. Intervals below are")
+    print("  95% Wilson, over seed and repeat variance on this scenario --")
+    print("  not over tasks, models drifting, or provider nondeterminism.")
+
+    ranked = sorted(
+        (r for r in scored if r.accuracy is not None),
+        key=lambda r: -r.accuracy,
+    )
+    if len(ranked) >= 2:
+        first, second = ranked[0], ranked[1]
+        a, b = first.intervals.get("quality"), second.intervals.get("quality")
+        if a and b and not a.excludes(b):
+            print(f"\n  the top two are NOT separated: {first.label} "
+                  f"[{a.low:.0%},{a.high:.0%}] overlaps")
+            print(f"  {second.label} [{b.low:.0%},{b.high:.0%}]. Reading an "
+                  f"order into that is reading noise.")
+
+    interesting = [r for r in scored if r.intervals.get("propagation_rate")
+                   or r.intervals.get("compliance_rate")][:6]
+    if interesting:
+        print("\n  gate metrics with their intervals:")
+        for r in interesting:
+            bits = []
+            for key, label in (("propagation_rate", "prop"),
+                               ("compliance_rate", "obey")):
+                ci = r.intervals.get(key)
+                if ci:
+                    bits.append(f"{label} {ci.value:.0%} [{ci.low:.0%},{ci.high:.0%}]")
+            print(f"    {r.label:<34} {'  '.join(bits)}")
+
 
 def _print_effects(results) -> None:
     print("\n--- per-factor effects " + "-" * 49)
@@ -685,6 +738,27 @@ def _print_effects(results) -> None:
         levels = "  ".join(f"{k}={v:.0%}" for k, v in e.levels.items())
         print(f"{e.factor:<12} spread={e.spread:>5.0%}   {levels}")
     print(f"\n  {effects[0].caveat}")
+
+
+def _gate_caveat(records) -> None:
+    """A verdict is only as strong as the runs behind it.
+
+    "PASS" without this reads as "nothing is wrong"; what it actually means
+    is "nothing larger than N points is wrong, and smaller than that this
+    run could not tell." Saying so is the same rule as rendering an
+    unmeasured rate `n/a`, applied to the verdict itself.
+    """
+    per_variant: dict[str, int] = {}
+    for r in records:
+        per_variant[r.variant_id] = per_variant.get(r.variant_id, 0) + 1
+    if not per_variant:
+        return
+    n = min(per_variant.values())
+    mde = detectable_difference(n)
+    if mde is None:
+        return
+    print(f"  Read with the resolution limit: at n={n} per contender this run")
+    print(f"  could only have caught a difference of about {mde:.0%} or larger.")
 
 
 def _print_gate(records, seeds, task) -> int:
@@ -746,12 +820,14 @@ def _print_gate(records, seeds, task) -> int:
 
     if failures:
         print("\n  GATE: FAIL")
+        _gate_caveat(records)
         for f in failures:
             print(f"    - {f}")
         print("\n  Per plan.md: stop and fix measurement before building more.")
         return 3
 
     print("\n  GATE: PASS -- the ranking held across seeds at the bar set in advance.")
+    _gate_caveat(records)
     return 0
 
 

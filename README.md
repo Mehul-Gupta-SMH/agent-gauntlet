@@ -199,6 +199,17 @@ Columns worth reading twice:
   `acceptable_degradation` declared.
 - **`ttd`** — steps from evidence becoming reachable to the agent acting on it.
 
+Every rate carries a **95% Wilson interval** and every board reports its
+**resolution** — the smallest difference those runs could distinguish from
+noise. At n=8 per contender that is about 70 points, which means most of a
+small board is not evidence. Wilson rather than the normal approximation
+because at 0% or 100% the normal form gives a zero-width interval, and
+"propagation 0% ± 0" after eight runs is overconfidence dressed as rigour.
+
+The widths range over **seed and repeat variance on one scenario** — not
+over tasks, model drift, or provider nondeterminism. A width without its
+scope is the same overclaim as an uncensored zero.
+
 Any of them can read **`n/a`**, and that never means zero. It means the run
 could not measure it: no cross-check was reachable, no directive was ever
 shown, the corruption fell inside the noise band, or the contender was never

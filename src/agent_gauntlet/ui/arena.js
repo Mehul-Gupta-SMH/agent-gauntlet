@@ -352,7 +352,8 @@ function handle(ev) {
       break;
     }
     case 'board': {
-      renderBoard(ev.rows, ev.winner, ev.errored, ev.total, ev.winner_reason);
+      renderBoard(ev.rows, ev.winner, ev.errored, ev.total, ev.winner_reason,
+                  ev.resolution);
       tick(`done — ${ev.total} runs scored`);
       break;
     }
@@ -472,7 +473,7 @@ function renderOracle({ expected, credulous, faults, records, audited, condition
   el.innerHTML = parts.join('');
 }
 
-function renderBoard(rows, winner, errored, total, reason) {
+function renderBoard(rows, winner, errored, total, reason, resolution) {
   const tbody = $('#board tbody');
   tbody.innerHTML = rows.map((r) => {
     const cls = [r.gated ? 'gated' : '', r.is_sentinel ? 'sentinel' : ''].join(' ').trim();
@@ -486,23 +487,44 @@ function renderBoard(rows, winner, errored, total, reason) {
     // Short-circuits on the VALUE, not just the class. The first version
     // set the `na` class correctly and still called the formatter on null,
     // so a custom formatter threw and took the whole board down with it.
-    const cell = (v, fmt = pct) =>
+    // The interval rides in the title, so the table stays readable at
+    // thirteen columns while the number stays qualified on hover.
+    const ci = (key) => {
+      const i = r.intervals && r.intervals[key];
+      return i ? ` title="95% CI ${Math.round(i.low * 100)}%–${Math.round(i.high * 100)}% over n=${i.n}"` : '';
+    };
+    const cell = (v, fmt = pct, key = null) =>
       (v === null || v === undefined)
         ? '<td class="na">n/a</td>'
-        : `<td>${fmt(v)}</td>`;
+        : `<td${key ? ci(key) : ''}>${fmt(v)}</td>`;
     return `<tr class="${cls}">
       <td data-flag="${flag}">${r.label}</td>
       <td>${r.n_runs}</td>
-      ${cell(r.quality)}
+      ${cell(r.quality, pct, 'quality')}
       ${cell(r.accuracy, (v) => v.toFixed(2))}
       ${cell(r.clean_quality)}${cell(r.faulted_quality)}
-      ${cell(r.propagation_rate)}${cell(r.compliance_rate)}
+      ${cell(r.propagation_rate, pct, 'propagation_rate')}${cell(r.compliance_rate, pct, 'compliance_rate')}
       ${cell(r.detection_rate)}${cell(r.repair_rate)}
       ${cell(r.false_alarm_rate)}
       ${cell(r.median_detect_latency, steps)}
       <td class="${r.redundant_material_calls ? 'harm' : 'na'}">${r.redundant_material_calls || '—'}</td>
     </tr>`;
   }).join('');
+
+  // The resolution limit goes in before the ranking is read, not after.
+  // A board without it invites the one error it cannot support: treating a
+  // few points of difference as a finding.
+  const res = $('#resolution');
+  if (resolution && resolution.mde) {
+    res.hidden = false;
+    res.innerHTML =
+      `<strong>Resolution:</strong> n=${resolution.n} per contender, so the ` +
+      `smallest difference these runs can distinguish from noise is about ` +
+      `<strong>${Math.round(resolution.mde * 100)}%</strong>. Gaps narrower ` +
+      `than that are not evidence. Intervals are 95% Wilson over seed and ` +
+      `repeat variance on this scenario — not over tasks, model drift, or ` +
+      `provider nondeterminism.`;
+  }
 
   const w = $('#winner');
   w.hidden = false;

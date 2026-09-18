@@ -29,13 +29,14 @@ flowchart TD
     LIVE["<b>live</b> · 290<br/>executor · parsing · classification"]
     LEDGER["<b>ledger</b> · 273<br/>RunRecord · rescore"]
     ANALYZE["<b>analyze</b> · 172<br/>kendall_tau · stability"]
+    STATS["<b>stats</b> · 154<br/>wilson · bootstrap · MDE"]
 
     CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER
     SERVER --> PROJECT & RUNNER & SECRETS & EVENTS & BOARD
     RUNNER --> MATRIX & USERT & PROJECT & ARCH
     PROJECT --> USERT
     USERT --> INTER
-    BOARD --> LEDGER & ANALYZE
+    BOARD --> LEDGER & ANALYZE & STATS
     MATRIX --> LEDGER & SCORE & LIVE & OFFLINE & INTER & FAULTS & EVENTS
     LEDGER --> SCORE & FAULTS & SPEC
     LIVE --> SCORE & SPEC
@@ -338,6 +339,8 @@ test_project     uploads, calibration, unlabelled grading, budget ceiling,
                  the concurrent-edit race
 test_secrets     .env parsed as data, and the value never coming back out
 test_ui          the event stream, intake validation, censoring on the wire
+test_stats       interval behaviour at 0% and 100%, detectable effect
+test_docs        the documentation's checkable claims
 ```
 
 Many are regression tests built from real defects. The comments naming those

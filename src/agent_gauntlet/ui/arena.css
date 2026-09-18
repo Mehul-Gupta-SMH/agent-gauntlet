@@ -477,3 +477,9 @@ input[type="file"] { font-size: 0.8rem; color: var(--ink-dim); }
 .scratch > span { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.86rem; }
 .scratch input { width: auto; accent-color: var(--sand); }
 #kind-note { margin-top: 0.35rem; }
+
+.resolution { border: 1px solid var(--line); border-left: 3px solid var(--sand);
+              border-radius: 7px; padding: 0.6rem 0.8rem; margin: 0.8rem 0 0;
+              font-size: 0.8rem; color: var(--ink-dim); max-width: 78ch;
+              line-height: 1.55; }
+.resolution strong { color: var(--ink); }
