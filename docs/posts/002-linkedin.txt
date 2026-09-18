@@ -1,0 +1,45 @@
+I added error bars to my agent evaluation tool. The first thing they did was delete half my own published results.
+
+Here is the table I posted three days ago, from a real run of 324 live agents:
+
+  prompt   spread = 15%
+  toolset  spread = 15%
+  model    spread = 10%
+
+Three clean findings about what makes an agent robust. I wrote them up. I put them in the README.
+
+Then I computed what that run could actually resolve.
+
+324 runs sounds like a lot. Across 9 configurations it is 36 runs each, and a per-factor comparison pools four of them — 144 runs. At that size the smallest difference distinguishable from noise is 16.5%.
+
+Every number in that table is under 16.5%.
+
+Not small. Not weak. Unmeasured. I had been reporting the width of my own noise and calling it a result.
+
+The bigger findings survived. A deliberately-broken configuration ranked last by 50 points. Repair moved 22% → 100% across the model axis — 78 points. Those clear the bar comfortably.
+
+The attribution table did not. I annotated it in place with the date and the arithmetic rather than quietly deleting it, because a correction you can't see isn't one.
+
+Here's the detail I'd want if I were building this: I used a Wilson interval instead of the normal approximation, and the reason is the whole problem in miniature.
+
+At a rate of 0%, the normal approximation gives you an interval of zero width.
+
+Your board prints "propagation 0% ± 0" after eight runs. Certainty, from almost no evidence, formatted as rigour. Wilson says [0%, 32%] — which is the truth.
+
+Then the part that changed what I think this tool is for.
+
+I ran the numbers on a leaderboard. To separate nine configurations you have to resolve the gaps *between* them, and you don't get to choose how close together they are. Seeing a 10-point difference needs 393 runs per configuration. At live prices that is not a product.
+
+But regression testing is a different question with different arithmetic.
+
+There you compare one configuration against its own past. And you get to pick the threshold: "tell me if robustness drops by 20 points." That needs 99 runs. It's affordable, and it's the question people actually have — someone edits a prompt six weeks from now, and nothing in any existing test suite notices, because the prompt still produces plausible output.
+
+An agent's robustness is a property that can silently regress. I don't think ranking agents is the valuable thing. I think noticing when one of them quietly got worse is.
+
+I only know that because the error bars told me my own leaderboard was thinner than I thought.
+
+If your eval has never contradicted you, it isn't measuring you.
+
+github.com/Mehul-Gupta-SMH/agent-gauntlet
+
+#AIAgents #MachineLearning #LLM #Evaluation #OpenSource
