@@ -39,6 +39,7 @@ def home(tmp_path, monkeypatch):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(server, "SECRETS", secrets.Store())
     monkeypatch.setattr(server, "BIND_HOST", "127.0.0.1")
+    monkeypatch.setattr(server, "CODE_EXECUTION_ASSERTED", True)
     return tmp_path
 
 
@@ -206,7 +207,12 @@ def test_the_project_store_ignores_itself_in_git(home):
 
 def test_credentials_are_refused_over_a_network_bind(home, monkeypatch):
     """Accepting a credential from a non-loopback bind means accepting one
-    from whoever can reach the port."""
+    from whoever can reach the port.
+
+    The bind is necessary and not sufficient: the operator must also have
+    asserted that nobody else can reach the port, which `home` does here
+    and `test_reachability.py` pins on its own.
+    """
     monkeypatch.setattr(server, "BIND_HOST", "0.0.0.0")
     assert not server.uploads_allowed()
     monkeypatch.setattr(server, "BIND_HOST", "127.0.0.1")

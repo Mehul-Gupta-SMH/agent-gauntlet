@@ -66,14 +66,72 @@ SESSION = Session()
 
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 BIND_HOST = "127.0.0.1"
-"""Set by `serve`. Uploading a Python file means running it in this process,
-so that endpoint is available only when the server is bound to loopback --
-it has to stay "the operator running their own code on their own machine"
-and never become anyone else running it on theirs."""
+"""Set by `serve`."""
+
+CODE_EXECUTION_ASSERTED = False
+"""Set by `serve` from an explicit flag. Default off, deliberately.
+
+Uploading a Python file means importing and calling it in this process.
+This used to be gated on the bind address alone, which asked the wrong
+question: the property that matters is *can a stranger reach this*, and a
+bind address only answers *what interface did I listen on*.
+
+Those come apart exactly where it hurts. `ngrok http 8420`, `cloudflared
+tunnel --url http://localhost:8420`, a forwarded port in an editor, an SSH
+`-R` -- every one of them forwards to loopback. The bind stays 127.0.0.1,
+the old guard stayed open, and anyone with the URL had arbitrary code
+execution on the operator's machine. Tunnelling a local server is also the
+single most common way somebody shows a demo, so the guard was weakest in
+the situation it most needed to hold.
+
+Reachability is not knowable from inside the process, so it is no longer
+inferred. The operator asserts it with `--allow-code-execution`, and the
+bind check remains as a second condition rather than the only one.
+"""
+
+FORWARDED_HEADERS = ("x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
+                     "forwarded", "cf-connecting-ip", "x-real-ip")
+"""Headers a proxy or tunnel usually adds.
+
+Belt and braces, never the primary control: they are attacker-controlled
+and trivially omitted, so their presence is evidence and their absence is
+not. Refusing when one appears costs an operator behind a legitimate
+reverse proxy nothing they cannot re-enable deliberately, and catches the
+accidental tunnel, which is the realistic case.
+"""
 
 
 def uploads_allowed() -> bool:
-    return BIND_HOST in LOOPBACK
+    """Both conditions, not either.
+
+    The flag says the operator accepts that uploads run code here. The bind
+    check says nobody else is obviously listening. Neither alone is enough:
+    a flag on a public bind would be an operator handing out a shell, and a
+    loopback bind without the flag is the tunnel case.
+    """
+    return CODE_EXECUTION_ASSERTED and BIND_HOST in LOOPBACK
+
+
+def refusal_reason() -> str:
+    """Why uploads are off, naming the condition that actually failed.
+
+    Two conditions gate them, and an operator who is told the wrong one
+    goes looking in the wrong place -- the old message named the bind
+    address even when the bind was fine and the flag was missing.
+    """
+    if BIND_HOST not in LOOPBACK:
+        return (f"this server is bound to {BIND_HOST}, not loopback, so "
+                "whoever can reach the port could run code here")
+    return ("this server was started without --allow-code-execution, so it "
+            "will not run uploaded code or take credentials over the wire")
+
+
+def looks_proxied(headers) -> Optional[str]:
+    """The name of a forwarding header, if the request carries one."""
+    for name in FORWARDED_HEADERS:
+        if headers.get(name):
+            return name
+    return None
 
 
 SECRETS = secrets.Store()
@@ -534,8 +592,8 @@ def store_upload(p: projects.Project, filename: str, source: str) -> dict[str, A
     """
     if not uploads_allowed():
         raise PermissionError(
-            f"uploads are disabled because this server is bound to {BIND_HOST}, "
-            "not loopback. Uploading a file means executing it here."
+            f"uploads are disabled: {refusal_reason()}. Uploading a file "
+            "means importing and calling it in this process."
         )
     name = projects.slug(Path(filename).stem, "tool") + ".py"
     try:
@@ -610,8 +668,13 @@ class Handler(BaseHTTPRequestHandler):
                 "writable": uploads_allowed(),
             })
         if route == "/api/projects":
-            return self._json(200, {"projects": projects.listing(),
-                                    "uploads_allowed": uploads_allowed()})
+            # The reason rides along only when there is one, so the page
+            # cannot print a refusal while uploads are on.
+            payload = {"projects": projects.listing(),
+                       "uploads_allowed": uploads_allowed()}
+            if not uploads_allowed():
+                payload["uploads_refusal"] = refusal_reason()
+            return self._json(200, payload)
         if route.startswith("/api/projects/"):
             try:
                 p = projects.Project.load(route.split("/")[3])
@@ -650,15 +713,27 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(409, {"error": str(exc)})
             return self._json(202, {"status": "running"})
 
+        if route.startswith("/api/secrets") or route.endswith("/upload"):
+            # Checked per request, not at startup: a tunnel can be attached
+            # to an already-running server, and the bind address will not
+            # change when it is.
+            proxied = looks_proxied(self.headers)
+            if proxied:
+                return self._json(403, {"error": (
+                    f"this request arrived with a {proxied} header, so it came "
+                    "through a proxy or tunnel. Uploading code and entering "
+                    "credentials are refused on anything but a direct local "
+                    "connection -- a tunnel to loopback is still a public URL.")})
+
         if route.startswith("/api/secrets"):
-            # Same loopback rule as uploads. Accepting a credential from a
-            # non-loopback bind would mean accepting one from whoever can
-            # reach the port.
+            # Same rule as uploads, for the same reason: a credential
+            # posted to this process is only as private as the set of
+            # people who can reach the port.
             if not uploads_allowed():
                 return self._json(403, {"error": (
-                    f"this server is bound to {BIND_HOST}, not loopback, so it "
-                    "will not accept credentials over the network. Use a .env "
-                    "file or export the variable in the shell that starts it.")})
+                    f"credentials are not accepted here: {refusal_reason()}. "
+                    "Use a .env file or export the variable in the shell that "
+                    "starts the server.")})
             action = route.rsplit("/", 1)[-1]
             try:
                 if action == "clear":
@@ -727,9 +802,11 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, path.read_bytes(), ctype or "application/octet-stream")
 
 
-def serve(host: str = "127.0.0.1", port: int = 8420) -> None:
-    global BIND_HOST
+def serve(host: str = "127.0.0.1", port: int = 8420,
+          allow_code_execution: bool = False) -> None:
+    global BIND_HOST, CODE_EXECUTION_ASSERTED
     BIND_HOST = host
+    CODE_EXECUTION_ASSERTED = bool(allow_code_execution)
     loaded = load_env_files()
     httpd = ThreadingHTTPServer((host, port), Handler)
     print(f"gauntlet ui   http://{host}:{port}")
@@ -739,9 +816,16 @@ def serve(host: str = "127.0.0.1", port: int = 8420) -> None:
         print(f"env           loaded from {', '.join(loaded)}")
     print("              offline -- scripted policies, no spend")
     if uploads_allowed():
-        print("              uploaded tools RUN IN THIS PROCESS, on this machine")
-    else:
+        print("              tool upload ON -- uploaded code RUNS IN THIS")
+        print("              PROCESS with everything it has, including any")
+        print("              provider keys in the environment. Do not expose")
+        print("              this port, and do not tunnel to it.")
+    elif CODE_EXECUTION_ASSERTED:
         print(f"              tool upload DISABLED: bound to {host}, not loopback")
+    else:
+        print("              tool upload OFF (default). Pass")
+        print("              --allow-code-execution to enable it, which asserts")
+        print("              that nobody else can reach this port.")
     print("              ctrl-c to stop")
     try:
         httpd.serve_forever()

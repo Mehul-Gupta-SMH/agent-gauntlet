@@ -340,6 +340,8 @@ test_poisoning   injected directives, poisoned notes, the canary oracle
 test_project     uploads, calibration, unlabelled grading, budget ceiling,
                  the concurrent-edit race
 test_secrets     .env parsed as data, and the value never coming back out
+test_reachability  both conditions on code execution, and the tunnel that
+                 defeated the old one
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

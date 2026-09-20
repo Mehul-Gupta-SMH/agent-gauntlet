@@ -81,10 +81,12 @@ the project is refused rather than averaged.
 a tool needs; the harness checks they are present and stops there. No value is
 read, stored in the project, written to the ledger, or sent to the page.
 
-**Uploaded code runs in the server process**, so uploads are accepted only when
-the server is bound to loopback. Functions are listed by *parsing* the file, so
-you choose one before anything in it has executed — and anything that will run
-on import is reported as a warning first.
+**Uploaded code runs in the server process**, so uploads are off unless you
+start the UI with `--allow-code-execution` *and* it is bound to loopback. The
+flag exists because a loopback bind is not a statement about who can reach
+you: a tunnel forwards to loopback too. Functions are listed by *parsing* the
+file, so you choose one before anything in it has executed — and anything that
+will run on import is reported as a warning first.
 
 ### Running live
 
@@ -100,8 +102,8 @@ Credentials get in one of two ways:
   a variable already exported in your shell is never shadowed by it. This is
   the route to prefer.
 - **Typed into the page**, held in the server's memory for as long as it
-  runs, with an optional "save to `.env`". Accepted only on a loopback bind,
-  for the same reason uploads are.
+  runs, with an optional "save to `.env`". Accepted under the same two
+  conditions as uploads, for the same reason.
 
 Either way the value goes in and does not come back: nothing reads it back,
 no response or URL carries it, and the project file, the ledger and the
@@ -348,13 +350,15 @@ Every result, with raw output committed alongside it, is in
 - **Code is NOT sandboxed today, and this line used to claim it was.** An
   uploaded tool is imported and called in the server process, with everything
   that process has — including the environment variables holding your provider
-  keys. Uploads refuse on a non-loopback bind, functions are listed by *parsing*
-  the file so you choose one before anything runs, and import-time side effects
-  are reported first. None of that is isolation. The honest framing is *you run
-  your own code on your own machine*: fine for a local tool, untenable for
-  anything shared, and [#38](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/38)
-  shows the loopback guard is weaker than it looks behind a tunnel. Real
-  isolation is [#12](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/12).
+  keys. Uploads are off by default and need both `--allow-code-execution` and a
+  loopback bind, any request carrying a forwarding header is refused, functions
+  are listed by *parsing* the file so you choose one before anything runs, and
+  import-time side effects are reported first. None of that is isolation. The
+  honest framing is *you run your own code on your own machine*: fine for a
+  local tool, untenable for anything shared. The guard used to key on the bind
+  alone, which a tunnel defeats
+  ([#38](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/38)); real
+  isolation is still [#12](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/12).
 - **The harness is a suspect too, and it fails green.** Every defect this project
   has found in itself presented as a *pass*, never an error — a diagnostic that
   blamed the model for a harness bug, a sentinel a capable model ignored, a CI

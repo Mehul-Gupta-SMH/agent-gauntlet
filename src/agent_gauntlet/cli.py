@@ -144,6 +144,14 @@ def build_parser() -> argparse.ArgumentParser:
     ui.add_argument("--host", default="127.0.0.1",
                     help="bind address (default: loopback only)")
     ui.add_argument("--port", type=int, default=8420)
+    ui.add_argument(
+        "--allow-code-execution", action="store_true",
+        help="permit tool upload and credential entry. Uploaded code is "
+             "imported and called IN THIS PROCESS with access to everything "
+             "it has, including provider keys. Off by default: a loopback "
+             "bind no longer implies privacy, because a tunnel forwards to "
+             "loopback too.",
+    )
     return p
 
 
@@ -160,7 +168,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.command == "ui":
         from .server import serve
 
-        serve(host=args.host, port=args.port)
+        serve(host=args.host, port=args.port,
+              allow_code_execution=args.allow_code_execution)
         return 0
     return 1
 

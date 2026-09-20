@@ -61,6 +61,14 @@ prompt and is *not* proven to harden anything.
 reads a value back. `.env` is parsed literally — no expansion, no
 substitution.
 
+**6b. There is no sandbox, so reachability is asserted, not inferred.**
+An uploaded tool is imported and called *in the server process*, with the
+provider keys in its environment. That is allowed only when the operator
+passed `--allow-code-execution` **and** the bind is loopback, and any single
+request carrying a forwarding header is refused. The bind alone was the old
+guard, and a tunnel forwards to loopback — never re-derive permission from a
+property the process can observe about itself.
+
 **7. The harness fails green.** Every defect this project has found in
 itself presented as a *pass*: a sentinel a model ignored, a CI probe that
 went green having called no model, a full leaderboard over a matrix where
@@ -81,7 +89,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 302 tests, ~8s
+.venv/bin/python -m pytest -q                       # 335 tests, ~11s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli ui --port 8420

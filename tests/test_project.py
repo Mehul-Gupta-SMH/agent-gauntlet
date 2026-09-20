@@ -48,6 +48,11 @@ print("this runs on import")
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("GAUNTLET_HOME", str(tmp_path / "projects"))
+    # An operator on their own machine, which is the only configuration in
+    # which uploads are allowed at all. The conditions that produce that
+    # state are pinned in `test_reachability.py`.
+    monkeypatch.setattr(server, "BIND_HOST", "127.0.0.1")
+    monkeypatch.setattr(server, "CODE_EXECUTION_ASSERTED", True)
     return tmp_path
 
 
@@ -262,10 +267,14 @@ def test_the_fault_lands_on_the_operators_own_tool(project):
 def test_uploads_are_refused_when_not_bound_to_loopback(project, monkeypatch):
     """Uploading a file means executing it in this process. That can be the
     operator running their own code on their own machine; it must never
-    become anyone else running it on theirs."""
+    become anyone else running it on theirs.
+
+    The bind is one of two conditions -- the operator's own assertion is the
+    other, and the pair is `test_reachability.py`.
+    """
     monkeypatch.setattr(server, "BIND_HOST", "0.0.0.0")
     assert not server.uploads_allowed()
-    with pytest.raises(PermissionError, match="loopback"):
+    with pytest.raises(PermissionError, match="0.0.0.0"):
         server.store_upload(project, "x.py", "def f():\n    return 1\n")
 
     monkeypatch.setattr(server, "BIND_HOST", "127.0.0.1")

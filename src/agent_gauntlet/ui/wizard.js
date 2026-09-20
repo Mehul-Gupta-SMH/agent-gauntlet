@@ -29,7 +29,7 @@ async function api(path, opts = {}) {
 /* ---------------------------------------------------------------- projects */
 
 async function refreshProjects() {
-  const { projects, uploads_allowed } = await api('/api/projects');
+  const { projects, uploads_allowed, uploads_refusal } = await api('/api/projects');
   q('#project-list').innerHTML = projects.length ? projects.map((p) => `
     <div class="project-row">
       <div>
@@ -52,9 +52,12 @@ async function refreshProjects() {
   }));
 
   if (!uploads_allowed) {
+    // The server says which of the two conditions failed; the page does
+    // not guess, because guessing is how it came to claim "not bound to
+    // loopback" on a server that was bound to loopback.
     q('#upload-note').textContent =
-      'Tool upload is disabled: this server is not bound to loopback. ' +
-      'Uploading a file means executing it in the server process.';
+      `Tool upload is disabled: ${uploads_refusal}. Uploading a file ` +
+      'means importing and calling it in the server process.';
   }
 }
 

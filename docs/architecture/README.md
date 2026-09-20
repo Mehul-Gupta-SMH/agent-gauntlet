@@ -138,7 +138,10 @@ path.
 Credentials travel as **names** and are checked for presence. Nothing in the
 project reads a credential's value, so there is nothing for the project file,
 the ledger or the page to leak. Uploaded code executes in the server process,
-so uploads are refused unless the bind address is loopback.
+so uploads are refused unless the operator asserted that nobody else can
+reach the port (`--allow-code-execution`) *and* the bind address is loopback
+— reachability is asserted rather than inferred, because a tunnel forwards
+to loopback too.
 
 Three constraints hold it to the rest of the project:
 
