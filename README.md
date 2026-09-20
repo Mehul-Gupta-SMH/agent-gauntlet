@@ -337,8 +337,16 @@ Every result, with raw output committed alongside it, is in
 - **This is expensive.** Variants × scenarios × repeats × (clean + faulted) ×
   seeds is multiplicative. Budget ceilings and cheap-check escalation are
   load-bearing parts of the design, not optimizations.
-- **Generated code runs sandboxed. Always.** LLM-written tools executing against
-  real credentials is the obvious way for a project like this to hurt someone.
+- **Code is NOT sandboxed today, and this line used to claim it was.** An
+  uploaded tool is imported and called in the server process, with everything
+  that process has — including the environment variables holding your provider
+  keys. Uploads refuse on a non-loopback bind, functions are listed by *parsing*
+  the file so you choose one before anything runs, and import-time side effects
+  are reported first. None of that is isolation. The honest framing is *you run
+  your own code on your own machine*: fine for a local tool, untenable for
+  anything shared, and [#38](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/38)
+  shows the loopback guard is weaker than it looks behind a tunnel. Real
+  isolation is [#12](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/12).
 - **The harness is a suspect too, and it fails green.** Every defect this project
   has found in itself presented as a *pass*, never an error — a diagnostic that
   blamed the model for a harness bug, a sentinel a capable model ignored, a CI
