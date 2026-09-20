@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Optional, Sequence
 
-from . import architect, board
+from . import architect, board, replay
 from .analyze import stability
 from .faults import FaultKind
 from .live import provider_unreachable as _provider_unreachable
@@ -85,6 +86,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--target", default="claude",
         help="CommonADK SDK target for --live (default: claude)",
+    )
+    run.add_argument(
+        "--replay", type=Path, default=None, metavar="PATH",
+        help="also record this run's event stream to a JSON file the arena "
+             "page can replay without a server. Captured from the run that "
+             "actually happens -- there is no way to write one without "
+             "running the matrix",
     )
     probe = sub.add_parser(
         "probe",
@@ -552,12 +560,31 @@ def _run(args) -> int:
     # that no longer exist. It showed up as rows for tool sets this task
     # never generated.
     records: list = []
-    for seed in seeds:
-        records.extend(run_matrix(
-            task=task, variants=variants, ledger=ledger, base_seed=seed,
-            repeats=args.repeats, fault_kind=FaultKind(args.fault or task.fault_kind),
-            executor=executor, offline=offline,
-        ))
+    with ExitStack() as stack:
+        # Attached only when asked. With nothing listening, `events.emit` is
+        # an attribute lookup and a return, so an ordinary run is untouched
+        # by the existence of this feature.
+        log = stack.enter_context(replay.capture()) if args.replay else None
+        if log is not None:
+            log.emit("intake.accepted", **replay.intake_event(
+                task, variants, seeds=len(seeds), repeats=args.repeats))
+        for seed in seeds:
+            records.extend(run_matrix(
+                task=task, variants=variants, ledger=ledger, base_seed=seed,
+                repeats=args.repeats,
+                fault_kind=FaultKind(args.fault or task.fault_kind),
+                executor=executor, offline=offline,
+            ))
+        if log is not None:
+            log.emit("board", **replay.board_event(records, seeds=len(seeds)))
+            written = replay.write(args.replay, replay.document(
+                log,
+                title=task.id,
+                note=_replay_note(task, records, seeds, args, offline),
+                source=_replay_source(args),
+            ))
+            print(f"replay      {written} "
+                  f"({len(log.since(0))} events, captured live)")
     print(f"runs        {len(records)} across {len(seeds)} seed(s)")
     if carried_over:
         print(f"            ({carried_over} earlier run(s) already in "
@@ -620,6 +647,35 @@ def _run(args) -> int:
     )
     print(f"\nwrote       {out/'runs.jsonl'}, {out/'summary.json'}")
     return rc
+
+
+def _replay_note(task, records, seeds, args, offline: bool) -> str:
+    """The caption the page shows above a recording.
+
+    A replay is evidence put in front of someone who cannot re-run it, so
+    it carries how it was produced -- and, for an offline capture, says
+    plainly that it is scripted policies rather than models. A demo that
+    let a viewer assume they were watching Sonnet would be the same sin as
+    a mocked screenshot.
+    """
+    how = ("scripted offline policies -- no model was called and nothing "
+           "was spent" if offline else
+           f"live models via target={args.target}")
+    return (f"{len(records)} real runs over {len(seeds)} seed(s), "
+            f"{args.repeats} repeat(s) per cell, {how}. "
+            f"Task fingerprint {task.fingerprint()}.")
+
+
+def _replay_source(args) -> str:
+    """The command that produced it, so the claim is checkable."""
+    parts = ["gauntlet", "run", str(args.task),
+             f"--repeats {args.repeats}", f"--seeds {args.seeds}"]
+    if args.fault:
+        parts.append(f"--fault {args.fault}")
+    if args.live:
+        parts.append(f"--live --target {args.target}")
+    parts.append(f"--replay {args.replay}")
+    return " ".join(parts)
 
 
 def _print_board(results) -> None:

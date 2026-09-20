@@ -9,16 +9,17 @@ Dependencies point downward; nothing below imports anything above it.
 ```mermaid
 flowchart TD
     subgraph ui["UI layer — a view, not a second pipeline"]
-        SERVER["<b>server</b> · 740<br/>stdlib http · wizard · arena"]
+        SERVER["<b>server</b> · 724<br/>stdlib http · wizard · arena"]
         RUNNER["<b>runner</b> · 637<br/>project → TaskSpec · policies"]
         USERT["<b>usertools</b> · 305<br/>discover · calibrate · serve"]
         PROJECT["<b>project</b> · 298<br/>Project · blockers"]
         SECRETS["<b>secrets</b> · 203<br/>.env · Store"]
         EVENTS["<b>events</b> · 102<br/>EventLog"]
+        REPLAY["<b>replay</b> · 212<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1015<br/>argparse · board rendering · probe · ui"]
-    BOARD["<b>board</b> · 643<br/>summarize · rank · pareto · held-out"]
+    CLI["<b>cli</b> · 1080<br/>argparse · board rendering · probe · ui"]
+    BOARD["<b>board</b> · 693<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 529<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 454<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 446<br/>RunContext · tool surface · notes"]
@@ -32,9 +33,10 @@ flowchart TD
     CERT["<b>certify</b> · 393<br/>Certificate · compare · 3 verdicts"]
     STATS["<b>stats</b> · 154<br/>wilson · bootstrap · MDE"]
 
-    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT
+    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY
     CERT --> BOARD & STATS
-    SERVER --> PROJECT & RUNNER & SECRETS & EVENTS & BOARD
+    SERVER --> PROJECT & RUNNER & SECRETS & EVENTS & BOARD & REPLAY
+    REPLAY --> BOARD & EVENTS & STATS
     RUNNER --> MATRIX & USERT & PROJECT & ARCH
     PROJECT --> USERT
     USERT --> INTER
@@ -54,8 +56,17 @@ flowchart TD
 
 `events` sits at the bottom with `faults` and `spec`: `interpose` and
 `matrix` emit into it unconditionally, and with no log attached that is an
-attribute lookup and a return. The UI layer is the only thing that ever
-attaches one, so the CLI and the tests pay nothing for it.
+attribute lookup and a return. Only the UI layer and `gauntlet run
+--replay` ever attach one, so an ordinary CLI run and the tests pay nothing
+for it.
+
+`replay` is the single composer of everything the page is handed that is
+not a raw harness event — the board row, the intake envelope, the final
+board frame. `server` and the recorder both call it, which is what makes
+the published demo at `docs/demo/` the same page as the live one rather
+than a second renderer free to drift. It is also why the demo cannot show
+a column the product does not have, or censor a missing measurement
+differently.
 
 ## 2. Data model
 
@@ -342,6 +353,8 @@ test_project     uploads, calibration, unlabelled grading, budget ceiling,
 test_secrets     .env parsed as data, and the value never coming back out
 test_reachability  both conditions on code execution, and the tunnel that
                  defeated the old one
+test_replay      captured-not-reconstructed, one composer, the published
+                 demo's provenance
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

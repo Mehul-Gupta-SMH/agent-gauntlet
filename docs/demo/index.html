@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-gauntlet — a recorded run</title>
+<link rel="stylesheet" href="arena.css">
+<link rel="stylesheet" href="demo.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%E2%9F%A0%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">⟠</span>
+    <div>
+      <h1>agent-gauntlet</h1>
+      <p>Every avatar is a real variant. Every strike is a real injected fault.</p>
+    </div>
+  </div>
+  <div class="topbar-state">
+    <span id="status-pill" class="pill idle">idle</span>
+    <span id="fingerprint" class="fingerprint"></span>
+  </div>
+</header>
+
+<!-- ------------------------------------------------------------ recording -->
+<section class="panel recording">
+  <h2>A recorded run</h2>
+  <p class="muted">This page has no server behind it. Every event below was
+  captured from a real matrix by <code>gauntlet run --replay</code> and is
+  replayed here in the order it happened — the same arena the local UI
+  draws, reading a file instead of a poll. Nothing on this page is mocked,
+  and nothing here can call a model or spend anything.</p>
+  <div id="recordings" class="recordings"></div>
+  <p id="recording-blurb" class="blurb"></p>
+  <p id="recording-note" class="muted small"></p>
+  <p class="muted small">Produced by:
+    <code id="recording-source"></code></p>
+  <p class="muted small">Want to run your own, against your own tools and
+  real models? <a href="https://github.com/Mehul-Gupta-SMH/agent-gauntlet">The
+  repo</a> — <code>pip install -e . &amp;&amp; gauntlet ui</code>.</p>
+</section>
+
+<!-- ---------------------------------------------------------------- arena -->
+<section id="stage" class="stage" hidden>
+  <div class="arena-wrap">
+    <svg class="arena" id="arena" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid meet"
+         role="img" aria-labelledby="arena-title">
+      <title id="arena-title">Contenders arranged around the arena floor</title>
+      <defs>
+        <radialGradient id="sand" cx="50%" cy="46%" r="62%">
+          <stop offset="0%"  stop-color="#3a2f22"/>
+          <stop offset="70%" stop-color="#2a2119"/>
+          <stop offset="100%" stop-color="#1d1711"/>
+        </radialGradient>
+        <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#ffcf6b" stop-opacity=".55"/>
+          <stop offset="100%" stop-color="#ffcf6b" stop-opacity="0"/>
+        </radialGradient>
+        <filter id="soft"><feGaussianBlur stdDeviation="9"/></filter>
+      </defs>
+
+      <g id="structure"></g>
+      <g id="floor-marks"></g>
+      <g id="strikes"></g>
+      <g id="fighters"></g>
+    </svg>
+
+    <div class="arena-legend">
+      <span><i class="dot act"></i> acting</span>
+      <span><i class="dot hit"></i> struck — a faulted value reached it</span>
+      <span><i class="dot parry"></i> parried — right answer anyway</span>
+      <span><i class="dot fall"></i> fell — the lie reached its answer</span>
+      <span><i class="dot dark"></i> unarmed — cannot call the corrupted tool</span>
+    </div>
+  </div>
+
+  <div class="ticker" id="ticker">
+    <div class="ticker-main">
+      <span class="ticker-label">now</span>
+      <span id="ticker-text">waiting for the first run…</span>
+    </div>
+    <div class="ticker-right">
+      <label class="speed">
+        replay
+        <input id="speed" type="range" min="1" max="8" step="1" value="4">
+        <span id="speed-label">4×</span>
+      </label>
+      <span id="progress" class="progress">0 / 0</span>
+    </div>
+  </div>
+  <p class="replay-note">
+    The matrix finishes far faster than anyone can watch. Events are real and in
+    order; only the <em>pacing</em> is a view. <span id="wallclock"></span>
+  </p>
+</section>
+
+<!-- ------------------------------------------------------------ technical -->
+<section id="technical" class="technical" hidden>
+  <div class="tech-top">
+    <div class="tech-col">
+      <h2>What each contender is actually doing</h2>
+      <div class="tabs" id="agent-tabs"></div>
+      <div class="steps" id="steps"></div>
+    </div>
+
+    <div class="tech-col">
+      <h2>The oracle</h2>
+      <div class="oracle" id="oracle">
+        <p class="muted">The harness injected the fault, so it knows both the
+        truth and the figure a credulous agent would report. Propagation is
+        decided by comparison — never by a judge.</p>
+      </div>
+      <div id="winner" class="winner" hidden></div>
+    </div>
+  </div>
+
+  <div class="tech-board">
+    <h2>Board</h2>
+    <div class="board-wrap">
+      <table class="board" id="board">
+        <thead><tr>
+          <th>contender</th><th>runs</th><th>qual</th><th>acc</th><th>clean</th>
+          <th>fault</th><th>prop</th><th>obey</th><th>det</th><th>rep</th>
+          <th>FA</th><th>ttd</th><th>harm</th>
+        </tr></thead>
+        <tbody><tr class="empty"><td colspan="13">
+          Scored when the matrix finishes — the board aggregates runs, and a
+          partial one would rank on a denominator that is still moving.
+        </td></tr></tbody>
+      </table>
+      <p id="resolution" class="resolution" hidden></p>
+      <p class="muted board-note">
+        <code>n/a</code> means <em>not measured</em>, and never <code>0</code>.
+        A contender that could not call the corrupted tool has no propagation
+        rate — and is gated rather than waved through, because the bar is
+        <em>shown not to propagate</em>. <strong>obey</strong> is how often a
+        contender did what a <em>tool result</em> told it to — its own
+        category, because taking orders from data is a failure of what an
+        agent is for, not of how carefully it counts. <strong>harm</strong>
+        counts
+        irreversible actions repeated on the same target; a correct final
+        answer does not undo one.
+      </p>
+    </div>
+  </div>
+</section>
+
+<script src="arena.js"></script>
+<script src="demo.js"></script>
+</body>
+</html>

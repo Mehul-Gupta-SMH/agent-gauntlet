@@ -89,12 +89,18 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 335 tests, ~11s
+.venv/bin/python -m pytest -q                       # 352 tests, ~12s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli ui --port 8420
 node --check src/agent_gauntlet/ui/*.js             # the page has no server-side signal
+python tools/build_demo.py                          # republish docs/demo after a UI edit
+python tools/build_demo.py --check                  # what the test asserts
 ```
+
+A UI change is not finished until `docs/demo/` is rebuilt: it ships
+`arena.js` and `arena.css` byte for byte, and `test_replay.py` fails when
+the published page and the product disagree.
 
 Verify UI changes **in a browser**. Five rendering bugs in this repo were
 invisible in source and obvious on render.

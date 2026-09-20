@@ -14,6 +14,10 @@ configuration as a runnable project.
 [![ci](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/workflows/ci.yml/badge.svg)](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/workflows/ci.yml)
 [![live-probe](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/workflows/live-probe.yml/badge.svg)](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/actions/workflows/live-probe.yml)
 
+**[Watch a real run →](https://mehul-gupta-smh.github.io/agent-gauntlet/demo/)**
+No install, no server, nothing to sign up for: a matrix that actually ran,
+replayed from its own recorded event stream.
+
 ---
 
 ## Quickstart
@@ -44,6 +48,13 @@ small to have seen the drop it was checking for — so a pass would have meant
 nothing. Most tooling in this shape prints a green tick there.
 
 ## Watch it run
+
+There is a **[recorded run you can watch right now](https://mehul-gupta-smh.github.io/agent-gauntlet/demo/)**
+— two of them, in fact: one where a tool lies about a number, and one where the
+agent's own note comes back altered. It is the same arena page the tool serves
+locally, reading a captured event file instead of polling a server, so nothing
+on it is mocked and nothing on it can spend money. Capture your own with
+`gauntlet run <task> --replay run.json`.
 
 `gauntlet ui` serves a local page and walks one project through four steps:
 

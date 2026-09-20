@@ -29,7 +29,7 @@ from tempfile import TemporaryDirectory
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
-from . import (architect, board, events, project as projects, runner,
+from . import (architect, board, events, project as projects, replay, runner,
                secrets, usertools)
 from .interpose import ToolCost
 from .ledger import Ledger
@@ -248,43 +248,9 @@ def task_from_intake(intake: dict[str, Any]) -> TaskSpec:
 # --- the run --------------------------------------------------------------
 
 
-def _row(r: board.VariantResult) -> dict[str, Any]:
-    """One board row, censored exactly as the CLI censors it.
-
-    `None` travels to the page as `null` and renders as `n/a`. The page has
-    no rule for turning a missing measurement into a zero, because it is
-    never given the chance to.
-    """
-    return {
-        "variant_id": r.variant_id,
-        "label": r.label,
-        "factors": r.factors,
-        "n_runs": r.n_runs,
-        "graded": r.graded,
-        "quality": r.quality,
-        "accuracy": r.accuracy,
-        "clean_quality": r.clean_quality,
-        "faulted_quality": r.faulted_quality,
-        "propagation_rate": r.propagation_rate,
-        "propagation_unmeasured": r.propagation_unmeasured,
-        "compliance_rate": r.compliance_rate,
-        "n_directives": r.n_directives,
-        "obeyed_the_data": r.obeyed_the_data,
-        "detection_rate": r.detection_rate,
-        "repair_rate": r.repair_rate,
-        "false_alarm_rate": r.false_alarm_rate,
-        "median_detect_latency": r.median_detect_latency,
-        "material_calls": r.material_calls,
-        "redundant_material_calls": r.redundant_material_calls,
-        "n_errored": r.n_errored,
-        "cost_per_run": r.cost_per_run,
-        "gated": r.gated,
-        "over_harm_budget": r.over_harm_budget,
-        "harm_budget": r.harm_budget,
-        "n_propagation_undecidable": r.n_propagation_undecidable,
-        "intervals": {k: v.model_dump() for k, v in r.intervals.items()},
-        "is_sentinel": r.is_sentinel,
-    }
+_row = replay.row
+"""The page's board row. Composed in `replay` so the recorded demo and the
+live server cannot disagree about which columns exist or how they censor."""
 
 
 def _worker(session: Session, intake: dict[str, Any]) -> None:
@@ -297,22 +263,8 @@ def _worker(session: Session, intake: dict[str, Any]) -> None:
             variants = architect.generate(
                 out_dir=Path(tmp) / "variants", task=task, models=DEFAULT_MODELS,
             )
-            session.log.emit(
-                "intake.accepted",
-                task=task.id,
-                statement=task.statement,
-                fingerprint=task.fingerprint(),
-                toolsets=task.grid.toolsets,
-                prompts=task.grid.prompts,
-                records=task.scenarios[0].records,
-                audited=task.scenarios[0].audited_ids,
-                expected=task.scenarios[0].expected_total,
-                seeds=seeds,
-                repeats=repeats,
-                # The whole plan up front, so the progress counter never
-                # shows a total that grows as seeds arrive.
-                total_runs=len(variants) * len(task.scenarios) * repeats * seeds * 2,
-            )
+            session.log.emit("intake.accepted", **replay.intake_event(
+                task, variants, seeds=seeds, repeats=repeats))
             ledger = Ledger(Path(tmp) / "runs.jsonl")
             records: list = []
             for i in range(seeds):
@@ -321,36 +273,7 @@ def _worker(session: Session, intake: dict[str, Any]) -> None:
                     base_seed=f"seed{i}", repeats=repeats, offline=True,
                 ))
 
-            results = board.summarize(records)
-            held = board.held_out_winner(records)
-            session.log.emit(
-                "board",
-                rows=[_row(r) for r in results],
-                errored=len(ledger_errors(records)),
-                total=len(records),
-                # The selection score is never the reported score (#20).
-                # If the split could not be formed, the page is told so
-                # rather than being handed the optimistic number.
-                # Why there is no winner matters: a tie is a real answer
-                # (#11), while one seed simply cannot be split. Telling the
-                # page "run more seeds" for a tie would be advice that does
-                # not fix anything.
-                winner_reason=(
-                    None if held is not None
-                    else "one seed -- nothing to hold the winner out on"
-                    if len({r.base_seed for r in records}) < 2
-                    else "The selection half is tied at the top, and a tie is "
-                         "a real answer rather than a winner."
-                ),
-                winner=None if held is None else {
-                    "variant_id": held.variant_id,
-                    "selection_score": held.selection_score,
-                    "holdout_score": held.holdout_score,
-                    "held_up": held.held_up,
-                    "holdout_rank": held.holdout_rank,
-                    "n_candidates": held.n_candidates,
-                },
-            )
+            session.log.emit("board", **replay.board_event(records, seeds=seeds))
         with session.lock:
             session.status = "done"
     except Exception as exc:  # surfaced to the page, not swallowed
@@ -397,46 +320,12 @@ def _project_worker(session: Session, p: projects.Project) -> None:
             session.log.emit("spend", usd=budget.spent_usd, runs=budget.runs,
                              limit=budget.limit_usd)
         results = board.summarize(records, harm_budget=0)
-        held = board.held_out_winner(records)
-        graded = all(r.graded for r in results)
-        session.log.emit(
-            "board",
-            rows=[_row(r) for r in results],
-            errored=len(ledger_errors(records)),
-            total=len(records),
-            graded=graded,
-            # What this many runs could have seen. Sent with the board so
-            # the page cannot render a ranking without it.
-            resolution={
-                "n": min((r.n_runs for r in results if not r.is_sentinel and r.n_runs),
-                         default=0),
-                "mde": detectable_difference(
-                    min((r.n_runs for r in results
-                         if not r.is_sentinel and r.n_runs), default=0)),
-            },
-            # Without a label there is a gate but no leaderboard, and saying
-            # so beats printing a ranking of numbers that do not mean what
-            # the column heading says.
-            winner_reason=(
-                None if held is not None
-                else "This project has no expected answer, so propagation is "
-                     "gated but nothing can be ranked by correctness. Add the "
-                     "right answer for a scenario to get a leaderboard."
-                if not graded
-                else "one seed -- nothing to hold the winner out on"
-                if p.seeds < 2
-                else "The selection half is tied at the top, and a tie is a "
-                     "real answer rather than a winner."
-            ),
-            winner=None if held is None else {
-                "variant_id": held.variant_id,
-                "selection_score": held.selection_score,
-                "holdout_score": held.holdout_score,
-                "held_up": held.held_up,
-                "holdout_rank": held.holdout_rank,
-                "n_candidates": held.n_candidates,
-            },
-        )
+        session.log.emit("board", **replay.board_event(
+            records, seeds=p.seeds, harm_budget=0,
+            # Without a label there is a gate but no leaderboard, and
+            # saying so beats printing a ranking of numbers that do not
+            # mean what the column heading says.
+            graded=all(r.graded for r in results)))
         p.stage = "done"
         p.save()
         with session.lock:
