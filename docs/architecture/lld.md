@@ -17,7 +17,7 @@ flowchart TD
         EVENTS["<b>events</b> · 102<br/>EventLog"]
     end
 
-    CLI["<b>cli</b> · 826<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 1015<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 643<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 529<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 454<br/>Outcome · score_run"]
@@ -29,9 +29,11 @@ flowchart TD
     LIVE["<b>live</b> · 290<br/>executor · parsing · classification"]
     LEDGER["<b>ledger</b> · 273<br/>RunRecord · rescore"]
     ANALYZE["<b>analyze</b> · 172<br/>kendall_tau · stability"]
+    CERT["<b>certify</b> · 393<br/>Certificate · compare · 3 verdicts"]
     STATS["<b>stats</b> · 154<br/>wilson · bootstrap · MDE"]
 
-    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER
+    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT
+    CERT --> BOARD & STATS
     SERVER --> PROJECT & RUNNER & SECRETS & EVENTS & BOARD
     RUNNER --> MATRIX & USERT & PROJECT & ARCH
     PROJECT --> USERT
@@ -341,6 +343,7 @@ test_secrets     .env parsed as data, and the value never coming back out
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims
+test_certify     the three verdicts, and catching a real degradation
 ```
 
 Many are regression tests built from real defects. The comments naming those

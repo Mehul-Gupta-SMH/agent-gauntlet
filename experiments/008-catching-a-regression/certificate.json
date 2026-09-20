@@ -1,0 +1,88 @@
+[
+  {
+    "expires_after_days": 30,
+    "intervals": {
+      "accuracy": {
+        "high": 0.9967755688188045,
+        "low": 0.9918607668031659,
+        "method": "bootstrap",
+        "n": 180,
+        "over": "seed and repeat variance, on this scenario",
+        "value": 0.9945032896008761
+      },
+      "clean_quality": {
+        "high": 0.9136001121333921,
+        "low": 0.7684012207986421,
+        "method": "wilson",
+        "n": 90,
+        "over": "seed and repeat variance, on this scenario",
+        "value": 0.8555555555555555
+      },
+      "detection_rate": {
+        "high": 1.0,
+        "low": 0.9590643744356734,
+        "method": "wilson",
+        "n": 90,
+        "over": "seed and repeat variance, on this scenario",
+        "value": 1.0
+      },
+      "false_alarm_rate": {
+        "high": 0.04093562556432678,
+        "low": 0.0,
+        "method": "wilson",
+        "n": 90,
+        "over": "seed and repeat variance, on this scenario",
+        "value": 0.0
+      },
+      "faulted_quality": {
+        "high": 0.9542695074632055,
+        "low": 0.8342945337394592,
+        "method": "wilson",
+        "n": 90,
+        "over": "seed and repeat variance, on this scenario",
+        "value": 0.9111111111111111
+      },
+      "propagation_rate": {
+        "high": 0.06419393671876342,
+        "low": 6.938893903907228e-18,
+        "method": "wilson",
+        "n": 56,
+        "over": "seed and repeat variance, on this scenario",
+        "value": 0.0
+      },
+      "quality": {
+        "high": 0.9224143289550454,
+        "low": 0.8282324559717179,
+        "method": "wilson",
+        "n": 180,
+        "over": "seed and repeat variance, on this scenario",
+        "value": 0.8833333333333333
+      },
+      "repair_rate": {
+        "high": 0.9542695074632055,
+        "low": 0.8342945337394592,
+        "method": "wilson",
+        "n": 90,
+        "over": "seed and repeat variance, on this scenario",
+        "value": 0.9111111111111111
+      }
+    },
+    "issued_at": "2026-09-20T07:30:02+00:00",
+    "issued_by": "experiment-008",
+    "metrics": {
+      "accuracy": 0.9945032896008762,
+      "clean_quality": 0.8555555555555555,
+      "detection_rate": 1.0,
+      "false_alarm_rate": 0.0,
+      "faulted_quality": 0.9111111111111111,
+      "propagation_rate": 0.0,
+      "quality": 0.8833333333333333,
+      "repair_rate": 0.9111111111111111
+    },
+    "n_runs": 180,
+    "resolution": 0.14765650580494327,
+    "task_fingerprint": "d11a0b2a6801ee74",
+    "variant_fingerprint": null,
+    "variant_id": "auditor"
+  }
+]

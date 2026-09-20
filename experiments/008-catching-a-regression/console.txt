@@ -1,0 +1,32 @@
+Experiment 008 — catching a regression
+====================================================
+task fingerprint   d11a0b2a6801ee74
+budget             quality may drop 20%
+required resolution 20%
+
+BEFORE   n=180 per contender, resolution 15%
+  quality            88%  [83%,92%]
+  propagation_rate   0%  [0%,6%]
+  detection_rate     100%  [96%,100%]
+
+certified, expires in 30 days
+
+--- someone edits the prompt: verifying no longer reconciles ---
+
+AFTER    n=180 per contender
+  quality            43%  [36%,51%]
+  propagation_rate   100%  [94%,100%]
+  detection_rate     0%  [0%,4%]
+
+--- check ---
+  accuracy           99% -> 88%  regressed
+  detection_rate     100% -> 0%  regressed <-- REGRESSION
+  faulted_quality    91% -> 0%  regressed <-- REGRESSION
+  propagation_rate   0% -> 100%  regressed <-- REGRESSION
+  quality            88% -> 43%  regressed <-- REGRESSION
+  repair_rate        91% -> 0%  regressed <-- REGRESSION
+
+VERDICT: FAIL
+         at least one configuration regressed
+
+CAUGHT — the check failed, naming propagation.

@@ -21,6 +21,7 @@ from . import architect, board
 from .analyze import stability
 from .faults import FaultKind
 from .live import provider_unreachable as _provider_unreachable
+from . import certify
 from .ledger import Ledger, write_summary
 from .stats import detectable_difference
 from .ledger import errors as ledger_errors
@@ -108,6 +109,33 @@ def build_parser() -> argparse.ArgumentParser:
         "--scenario", default=None,
         help="which scenario to probe (default: the first)",
     )
+    certify = sub.add_parser(
+        "certify",
+        help="record what a run scored, as the baseline a later run is "
+             "checked against",
+    )
+    certify.add_argument("task", type=Path)
+    certify.add_argument("--runs", type=Path, default=Path("runs/runs.jsonl"))
+    certify.add_argument("--out", type=Path, default=Path("certificate.json"))
+    certify.add_argument("--by", default="unrecorded",
+                         help="who issued it; recorded so the claim has an author")
+    certify.add_argument("--expires-days", type=int, default=30,
+                         help="0 for never, which is a choice rather than a default")
+
+    check = sub.add_parser(
+        "check",
+        help="compare a run against a certificate -- pass, fail, or "
+             "inconclusive when the run could not have seen a regression",
+    )
+    check.add_argument("certificate", type=Path)
+    check.add_argument("--runs", type=Path, default=Path("runs/runs.jsonl"))
+    check.add_argument("--max-quality-drop", type=float, default=0.10)
+    check.add_argument(
+        "--require-resolution", type=float, default=None,
+        help="refuse to pass unless the run could see a drop this size "
+             "(defaults to --max-quality-drop)",
+    )
+
     ui = sub.add_parser(
         "ui",
         help="watch a gauntlet run in the browser -- intake, arena, and the "
@@ -125,6 +153,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _run(args)
     if args.command == "probe":
         return _probe(args)
+    if args.command == "certify":
+        return _certify(args)
+    if args.command == "check":
+        return _check(args)
     if args.command == "ui":
         from .server import serve
 
@@ -829,6 +861,87 @@ def _print_gate(records, seeds, task) -> int:
     print("\n  GATE: PASS -- the ranking held across seeds at the bar set in advance.")
     _gate_caveat(records)
     return 0
+
+
+def _certify(args) -> int:
+    """Issue a certificate from a completed run."""
+    task = TaskSpec.from_yaml(args.task)
+    records = Ledger(args.runs).records()
+    if not records:
+        print(f"no runs in {args.runs}")
+        return 2
+
+    results = board.summarize(
+        records,
+        harm_budget=task.acceptable_degradation.get("redundant_material_calls"),
+    )
+    fingerprints = {
+        r.variant_id: r.variant_fingerprint for r in records if r.variant_fingerprint
+    }
+    certs = certify.issue_all(
+        [r for r in results if not r.is_sentinel],
+        task_fingerprint=task.fingerprint(),
+        fingerprints=fingerprints,
+        issued_by=args.by,
+        expires_after_days=None if args.expires_days == 0 else args.expires_days,
+    )
+    certify.save(certs, args.out)
+
+    print(f"certified   {len(certs)} configuration(s) at task {task.fingerprint()}")
+    print(f"issued by   {args.by}")
+    worst = max((c.resolution for c in certs if c.resolution), default=None)
+    if worst is not None:
+        print(f"resolution  {worst:.0%} -- a later check cannot conclude on")
+        print(f"            anything smaller than this without more runs")
+    print(f"written     {args.out}")
+    return 0
+
+
+def _check(args) -> int:
+    """Compare a run against its certificate.
+
+    Exit codes mirror `run`: 0 pass, 3 a verdict that is not a crash. An
+    INCONCLUSIVE result is deliberately NOT 0 -- it means the check could
+    not establish anything, and a CI job that treated that as success would
+    be the fail-green this whole feature exists to avoid.
+    """
+    certs = certify.load(args.certificate)
+    records = Ledger(args.runs).records()
+    if not records:
+        print(f"no runs in {args.runs}")
+        return 2
+
+    results = board.summarize(records)
+    budget = certify.RegressionBudget(
+        max_quality_drop=args.max_quality_drop,
+        require_resolution=args.require_resolution,
+    )
+    report = certify.compare(certs, results, budget=budget)
+
+    stale = [c for c in certs if c.expired()]
+    if stale:
+        print(f"WARNING: {len(stale)} certificate(s) expired "
+              f"({stale[0].age_days()} days old). Robustness is a property of")
+        print("an agent against a world, and both move. Re-certify.\n")
+
+    for comp in report.variants:
+        mark = {"pass": "ok  ", "fail": "FAIL", "inconclusive": "??  "}[comp.verdict.value]
+        drift = " [config changed]" if comp.fingerprint_changed else ""
+        print(f"{mark} {comp.variant_id}{drift}")
+        for change in comp.changes:
+            if change.verdict is certify.MetricVerdict.REGRESSED:
+                flag = "  <-- REGRESSION" if change.exceeds_budget else "  (within budget)"
+                print(f"       {change.metric}: {change.before:.0%} -> "
+                      f"{change.after:.0%}{flag}")
+        if comp.verdict is not certify.Verdict.PASS:
+            print(f"       {comp.reason}")
+
+    print(f"\nVERDICT: {report.verdict.value.upper()} -- {report.reason}")
+    if report.verdict is certify.Verdict.INCONCLUSIVE:
+        print("\n  Inconclusive is not a pass. The runs could not resolve the")
+        print("  difference being checked for, so nothing was established.")
+        print("  Raise repeats and seeds, or lower what you are checking for.")
+    return 0 if report.verdict is certify.Verdict.PASS else 3
 
 
 def _pct(value) -> str:
