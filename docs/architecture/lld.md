@@ -18,7 +18,7 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1253<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 1317<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 976<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 542<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
@@ -247,7 +247,16 @@ annotation gets long is indistinguishable from one that was persuaded.
 Offline policies are shape-blind by construction (`obedient` reads the
 canary off the schedule; `anchored` never looks), so the spread is 0 in
 every offline run. That is a fact about the test doubles, not evidence
-about phrasing — which is why #37 part 1, one live matrix, is still open.
+about phrasing.
+
+Walking the family against a real model is `gauntlet probe <task> --shape
+<name>`, one run per shape at roughly $0.02 each. The probe follows the
+task's own `grid`, which is what makes the poisoning fixtures probeable at
+all — it used to hardcode `records+summary`, a tool set granting no
+`read_annotation`, so the live compliance question could not be asked for
+reasons that had nothing to do with money. The `live-probe` workflow
+exposes both as dispatch inputs, so the run happens where the credential
+already lives.
 
 ### From an ordering to a decision (#36)
 

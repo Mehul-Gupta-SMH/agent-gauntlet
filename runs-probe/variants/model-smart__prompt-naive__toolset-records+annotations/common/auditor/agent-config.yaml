@@ -1,0 +1,14 @@
+name: auditor
+description: Totals inventory records.
+model: smart
+tools:
+- list_records
+- fetch_record
+- get_summary
+- list_audited_records
+- read_annotation
+requires:
+  env:
+  - name: ANTHROPIC_API_KEY
+    description: Credential for anthropic models used by this variant.
+    required: true

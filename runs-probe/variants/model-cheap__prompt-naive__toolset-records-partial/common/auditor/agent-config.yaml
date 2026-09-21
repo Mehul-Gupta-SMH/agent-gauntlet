@@ -1,0 +1,11 @@
+name: auditor
+description: Totals inventory records.
+model: cheap
+tools:
+- list_records_sample
+- fetch_record
+requires:
+  env:
+  - name: ANTHROPIC_API_KEY
+    description: Credential for anthropic models used by this variant.
+    required: true

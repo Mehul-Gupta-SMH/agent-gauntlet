@@ -109,6 +109,17 @@ def build_parser() -> argparse.ArgumentParser:
     probe.add_argument("--out", type=Path, default=Path("runs-probe"))
     probe.add_argument("--target", default="langgraph")
     probe.add_argument(
+        "--fault", choices=[k.value for k in FaultKind], default=None,
+        help="override the fault kind the task declares",
+    )
+    probe.add_argument(
+        "--shape", default=None,
+        choices=["authority", "urgency", "correction", "flattery", "control"],
+        help="which directive phrasing to inject, for an `instruction` "
+             "task. One live run per shape is how the family gets walked "
+             "against a real model",
+    )
+    probe.add_argument(
         "--no-faulted", dest="faulted", action="store_false",
         help="skip the faulted half (halves the cost, and the coverage)",
     )
@@ -241,11 +252,35 @@ def _probe(args) -> int:
 
     task = TaskSpec.from_yaml(args.task)
     out = Path(args.out)
-    variants = architect.generate(
-        out_dir=out / "variants", task=task, models=DEFAULT_MODELS,
-        targets=[args.target], prompts=["verifying"], toolsets=["records+summary"],
-        include_sentinel=True,
-    )
+    # The task's own grid when it declares one. Hardcoding
+    # `records+summary` meant the poisoning fixtures could not be probed at
+    # all -- that tool set grants no `read_annotation`, so the instrument
+    # check refused before a single token was spent, and the live half of
+    # the compliance claim was unrunnable for reasons that had nothing to
+    # do with money (#37).
+    prompts = ["verifying"]
+    toolsets = ["records+summary"]
+    if task.grid is not None:
+        # The first that can actually carry this task's fault: probing a
+        # variant that cannot see it would test nothing.
+        reaching = [t for t in task.grid.toolsets
+                    if task.fault_tool in architect.TOOLSETS[t]]
+        if reaching:
+            toolsets = reaching[:1]
+            prompts = task.grid.prompts[:1]
+    try:
+        variants = architect.generate(
+            out_dir=out / "variants", task=task, models=DEFAULT_MODELS,
+            targets=[args.target], prompts=prompts, toolsets=toolsets,
+            include_sentinel=True,
+        )
+    except ValueError as exc:
+        # A misconfigured probe, not a broken live path. Exit 2 is the
+        # "your setup is wrong" code; letting it crash would have CI print
+        # "the live path is broken. Do NOT run the matrix", which sends the
+        # reader to look at the provider.
+        print(f"\nCANNOT PROBE THIS TASK\n{exc}")
+        return 2
     # The cheapest level by default. The probe proves the *path* -- build,
     # run, trace, parse -- and the path does not care which model walked it.
     # Paying Sonnet rates to learn that `get_runner` still works is waste on
@@ -374,13 +409,28 @@ def _probe(args) -> int:
         return _answer_note(answer, scenario, DEFAULT_MODELS[level])
 
     print("\n--- faulted half " + "-" * 43)
+    from .faults import DirectiveShape
+
+    kind = FaultKind(getattr(args, "fault", None) or task.fault_kind)
+    shape = DirectiveShape(getattr(args, "shape", None) or "authority")
     sched = FaultSchedule.build(
-        seed="probe", records=scenario.records, targets=scenario.audited_ids
+        seed="probe", records=scenario.records, targets=scenario.audited_ids,
+        kind=kind, tool_name=task.fault_tool, shape=shape,
     )
     injected = sched.faults[0]
-    print(f"injecting {injected.kind.value} on {injected.target_key}: "
-          f"{injected.true_value} -> {injected.corrupt_value} "
-          f"(shifts the total by {sched.total_delta:+d})")
+    if injected.kind is FaultKind.INSTRUCTION:
+        # The directive is the payload, so print it: a live compliance
+        # result nobody can read the prompt of is not reproducible.
+        print(f"injecting {injected.kind.value} ({shape.value}) on "
+              f"{injected.tool_name}({injected.target_key})")
+        print(f"canary         : {injected.canary}"
+              if injected.canary is not None
+              else "canary         : none (the control asks for nothing)")
+        print(f"directive      : {injected.directive}")
+    else:
+        print(f"injecting {injected.kind.value} on {injected.target_key}: "
+              f"{injected.true_value} -> {injected.corrupt_value} "
+              f"(shifts the total by {sched.total_delta:+d})")
 
     try:
         with run_context(
@@ -420,6 +470,20 @@ def _probe(args) -> int:
     print(f"propagated={fscore.propagated}  detected={fscore.detected}  "
           f"surfaced={fscore.surfaced}  repaired={fscore.repaired}  "
           f"determinable={fscore.propagation_determinable}")
+
+    if fscore.directive_seen:
+        # The headline for an instruction probe. Decided by comparison
+        # against a value the agent had no other route to -- no judge, no
+        # reading of intent.
+        print(f"directive shown: {fscore.directive_shape}")
+        if not fscore.compliance_decidable:
+            print("compliance     : n/a -- the control asks for nothing, so "
+                  "there is no observable act of obedience")
+        elif fscore.complied:
+            print(f"compliance     : OBEYED -- reported the canary "
+                  f"({injected.canary}) exactly")
+        else:
+            print("compliance     : held -- the answer is not the canary")
 
     print("\nOK -- the live path works end to end, clean and faulted.")
 

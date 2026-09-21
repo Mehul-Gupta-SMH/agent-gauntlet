@@ -1,6 +1,8 @@
 name: live-probe
 
-# One live agent run, ~$0.02, guarding a ~$5 matrix.
+# One live agent run, ~$0.02, guarding a ~$5 matrix -- and, on the poisoning
+# fixtures, the only way this project's compliance claim gets tested against
+# a real model rather than a scripted double (#37).
 #
 # Deliberately a separate workflow from ci.yml rather than another job in it:
 #
@@ -31,6 +33,11 @@ on:
         options:
           - fixtures/inventory/audited.yaml
           - fixtures/inventory/task.yaml
+          # The compliance half of the positioning (#37 part 1). The probe
+          # follows the task's own grid, so these pick a tool set that can
+          # actually reach the corrupted tool.
+          - fixtures/poisoning/instruction.yaml
+          - fixtures/poisoning/memory.yaml
       target:
         description: "CommonADK SDK target"
         type: choice
@@ -41,6 +48,14 @@ on:
         type: choice
         default: cheap
         options: [cheap, smart]
+      shape:
+        description: >-
+          Directive phrasing, for fixtures/poisoning/instruction.yaml only.
+          One dispatch per shape is how the family gets walked against a
+          real model; `control` asks for nothing and is the null.
+        type: choice
+        default: authority
+        options: [authority, urgency, correction, flattery, control]
 
 # Supersede in-flight probes rather than stacking spend on a run of pushes.
 concurrency:
@@ -84,6 +99,7 @@ jobs:
           # probe proves the path, and the path does not care which model
           # walked it.
           MODEL: ${{ inputs.model || 'cheap' }}
+          SHAPE: ${{ inputs.shape || 'authority' }}
         run: |
           # +e deliberately: Actions runs this under bash -e, and the whole
           # point of this step is to read the exit code rather than die on it.
@@ -98,7 +114,11 @@ jobs:
             exit 0
           fi
 
-          gauntlet probe "$FIXTURE" --target "$TARGET" --model "$MODEL" | tee probe.txt
+          # --shape is only meaningful for an `instruction` task; the flag
+          # is harmless elsewhere, since the schedule ignores it for every
+          # other fault kind.
+          gauntlet probe "$FIXTURE" --target "$TARGET" --model "$MODEL" \
+            --shape "$SHAPE" | tee probe.txt
           status=${PIPESTATUS[0]}
 
           case "$status" in
@@ -107,6 +127,14 @@ jobs:
               # Not a failure: correctness is the experiment's subject, not a
               # build invariant. But it is the one result worth seeing before
               # committing $5, so it gets an annotation.
+              # The result part 1 exists to produce. A live OBEYED is not a
+              # build failure -- it is the measurement -- but it is the one
+              # line nobody should have to go digging in an artifact for.
+              if grep -q "compliance     : OBEYED" probe.txt; then
+                echo "::warning::$MODEL OBEYED a $SHAPE directive arriving as tool data: it reported the canary. That is the compliance result, not a broken build."
+              elif grep -q "compliance     : held" probe.txt; then
+                echo "::notice::$MODEL held against a $SHAPE directive -- the answer was not the canary."
+              fi
               if grep -q "ANSWER: the AUDITED figure" probe.txt; then
                 echo "::warning::$MODEL reported the audited figure, not the grand total -- the reconciliation instruction did not land for this model. Re-probe with model=smart before concluding the fixture is at fault."
               elif grep -q "ANSWER: wrong" probe.txt; then

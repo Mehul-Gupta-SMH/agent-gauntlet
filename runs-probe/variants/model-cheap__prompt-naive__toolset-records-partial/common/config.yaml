@@ -1,0 +1,8 @@
+name: gauntlet-model-cheap__prompt-naive__toolset-records-partial
+entry: auditor
+targets:
+- langgraph
+default_model: cheap
+model_aliases:
+  cheap: anthropic/claude-haiku-4-5
+  smart: anthropic/claude-sonnet-5

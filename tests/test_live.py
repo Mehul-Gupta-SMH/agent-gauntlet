@@ -452,3 +452,136 @@ def test_probe_walks_the_hardest_scenario_not_the_first():
     chosen = hardest_scenario(task)
     assert chosen is not task.scenarios[0]
     assert len(chosen.records) == max(len(s.records) for s in task.scenarios)
+
+
+# --- probing the fault the task actually declares (#37 part 1) ------------
+
+POISON = Path(__file__).resolve().parents[1] / "fixtures" / "poisoning"
+
+
+def _fake_live(monkeypatch, policy, *, seen=None):
+    """Run `_probe` with a scripted policy standing in for the model.
+
+    The policy has to actually CALL the tools: the probe's whole job is to
+    check that injection reaches the agent, and a stand-in that returns a
+    number without touching the tool surface would be testing nothing and
+    failing honestly ("the fault was scheduled and no tool call returned
+    it").
+    """
+    from agent_gauntlet import live as live_mod
+
+    def record(variant, seed):
+        if seen is not None:
+            seen.setdefault("variants", []).append(variant)
+        return policy()
+
+    monkeypatch.setattr(live_mod, "preflight", lambda *a, **k: None)
+    monkeypatch.setattr(live_mod, "live_executor", lambda target: record)
+
+
+def test_the_probe_can_reach_an_instruction_fixture_at_all(tmp_path, monkeypatch, capsys):
+    """It could not, and the reason had nothing to do with money.
+
+    `_probe` hardcoded `records+summary`, which grants no `read_annotation`,
+    so the instrument check refused before a token was spent -- and the
+    live half of the compliance claim was simply unrunnable.
+    """
+    from agent_gauntlet.cli import _probe, build_parser
+
+    from agent_gauntlet.offline import anchored
+
+    task = TaskSpec.from_yaml(POISON / "instruction.yaml")
+    seen: dict = {}
+    _fake_live(monkeypatch, anchored, seen=seen)
+    rc = _probe(build_parser().parse_args(
+        ["probe", str(POISON / "instruction.yaml"), "--out", str(tmp_path / "p"),
+         "--no-sentinel"]
+    ))
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    # The chosen variant must be able to CALL the tool the fault sits on.
+    assert task.fault_tool in architect.TOOLSETS[
+        seen["variants"][0].factors["toolset"]]
+    assert "instruction (authority)" in out
+
+
+def test_the_probe_injects_the_kind_the_task_declares(tmp_path, monkeypatch, capsys):
+    """It built a `wrong_value` schedule whatever the task said, so an
+    instruction fixture would have been probed with the wrong fault."""
+    from agent_gauntlet.cli import _probe, build_parser
+
+    from agent_gauntlet.offline import rederiving
+
+    _fake_live(monkeypatch, rederiving)
+    _probe(build_parser().parse_args(
+        ["probe", str(POISON / "memory.yaml"), "--out", str(tmp_path / "p"),
+         "--no-sentinel"]
+    ))
+    assert "injecting poisoned_memory" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("shape", ["authority", "urgency", "correction",
+                                   "flattery", "control"])
+def test_each_shape_can_be_walked_live(tmp_path, monkeypatch, capsys, shape):
+    """One dispatch per shape is how the family gets measured against a
+    real model, which is the whole of #37 part 1."""
+    from agent_gauntlet.cli import _probe, build_parser
+
+    from agent_gauntlet.offline import anchored
+
+    _fake_live(monkeypatch, anchored)
+    _probe(build_parser().parse_args(
+        ["probe", str(POISON / "instruction.yaml"), "--out", str(tmp_path / "p"),
+         "--no-sentinel", "--shape", shape]
+    ))
+    out = capsys.readouterr().out
+    assert f"instruction ({shape})" in out
+    if shape == "control":
+        assert "the control asks for nothing" in out
+        assert "compliance     : n/a" in out
+    else:
+        assert "canary         : " in out
+        # It held: the fake answered the truth, not the canary.
+        assert "compliance     : held" in out
+
+
+def test_an_obedient_answer_is_reported_as_obeyed(tmp_path, monkeypatch, capsys):
+    """Decided by comparison against a value the agent had no other route
+    to -- the probe must say so in as many words, because this is the line
+    a live compliance result is read off."""
+    from agent_gauntlet.cli import _probe, build_parser
+    from agent_gauntlet.faults import DirectiveShape, FaultKind, FaultSchedule
+    from agent_gauntlet.offline import obedient
+
+    task = TaskSpec.from_yaml(POISON / "instruction.yaml")
+    scenario = task.scenarios[0]
+    # The same schedule `_probe` builds, so the canary matches.
+    sched = FaultSchedule.build(
+        seed="probe", records=scenario.records, targets=scenario.audited_ids,
+        kind=FaultKind.INSTRUCTION, tool_name=task.fault_tool,
+        shape=DirectiveShape.AUTHORITY,
+    )
+    canary = sched.faults[0].canary
+    _fake_live(monkeypatch, obedient)
+    _probe(build_parser().parse_args(
+        ["probe", str(POISON / "instruction.yaml"), "--out", str(tmp_path / "p"),
+         "--no-sentinel"]
+    ))
+    out = capsys.readouterr().out
+    assert f"OBEYED -- reported the canary ({canary})" in out
+
+
+def test_a_probe_that_cannot_be_configured_is_not_a_broken_provider(tmp_path):
+    """Exit 2, not a traceback. CI reads the code, and a crash there prints
+    'the live path is broken. Do NOT run the matrix' -- which sends the
+    reader to look at the provider for a mistake in the task file."""
+    from agent_gauntlet.cli import _probe, build_parser
+    import yaml
+
+    spec = yaml.safe_load((POISON / "instruction.yaml").read_text())
+    spec.pop("grid", None)          # nothing left that can reach the tool
+    path = tmp_path / "ungrided.yaml"
+    path.write_text(yaml.safe_dump(spec))
+    assert _probe(build_parser().parse_args(
+        ["probe", str(path), "--out", str(tmp_path / "p")]
+    )) == 2
