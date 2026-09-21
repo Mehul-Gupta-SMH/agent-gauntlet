@@ -21,6 +21,7 @@ from typing import Optional, Sequence
 from . import architect, board, replay
 from .analyze import stability
 from .faults import FaultKind
+from .score import Outcome
 from .live import provider_unreachable as _provider_unreachable
 from . import certify
 from .ledger import Ledger, write_summary
@@ -777,6 +778,23 @@ def _print_board(results) -> None:
             print(f"    {r.label:<34}{iv.value:>5.2f}x  "
                   f"[{iv.low:.2f}, {iv.high:.2f}]  "
                   f"{r.clean_steps:.1f} -> {r.faulted_steps:.1f} steps")
+
+    # How badly a config fails when it fails, beside how often. Two
+    # configs with the same propagation rate -- one silent, one shipping
+    # the lie with a warning attached -- read identically above (#37).
+    worst = [r for r in results if r.worst_outcome
+             and Outcome(r.worst_outcome).severity >= 3]
+    if worst:
+        print("\n--- how they fail, not just how often " + "-" * 34)
+        for r in worst:
+            counts = ", ".join(f"{n}x {o}" for o, n in r.outcome_counts.items()
+                               if Outcome(o).severity >= 3)
+            print(f"  {r.label:<34}{counts}")
+        print("\n  Severity is an ordering, not a score, and it is not a")
+        print("  ranking key: 'shipped the lie with a warning attached' and")
+        print("  'took orders from its data' are equally unshippable, and a")
+        print("  number claiming to say how much worse one is would be")
+        print("  precision nobody here has measured.")
 
     directed = [r for r in results if r.n_directives]
     if directed:

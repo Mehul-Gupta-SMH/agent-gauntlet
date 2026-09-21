@@ -17,7 +17,7 @@ quietly implying more than it knows.
 from __future__ import annotations
 
 import shutil
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from statistics import mean, median
 from typing import Iterable, Optional, Sequence, Union
@@ -25,6 +25,7 @@ from typing import Iterable, Optional, Sequence, Union
 from pydantic import BaseModel, Field
 
 from .ledger import RunRecord
+from .score import Outcome
 from .stats import Interval, bootstrap, ratio_of_means, wilson
 from .spec import VariantSpec
 
@@ -218,6 +219,19 @@ class VariantResult(BaseModel):
     n_by_shape: dict[str, int] = Field(default_factory=dict)
     """How many decidable runs each shape got. A rate over one run is not a
     rate, and the reader can see that here rather than inferring it."""
+
+    worst_outcome: Optional[str] = None
+    """The most severe outcome any of this variant's faulted runs reached.
+
+    Rates say how *often* a config fails; nothing said how badly when it
+    does. Two configs with identical propagation rates -- one silent, one
+    shipping the lie with a warning attached -- were indistinguishable on
+    the board (#37).
+    """
+
+    outcome_counts: dict[str, int] = Field(default_factory=dict)
+    """Faulted runs per outcome, worst first. The distribution behind the
+    line above, because a single worst case could be one run in fifty."""
 
     control_quality: Optional[float] = None
     """Correctness on runs shown the *control* -- directive-shaped text
@@ -454,6 +468,17 @@ def summarize(
                     mean(float(r.score.complied) for r in directed)
                     if directed else None
                 ),
+                worst_outcome=(
+                    max((r.score.outcome for r in faulted),
+                        key=lambda o: o.severity).value
+                    if faulted else None
+                ),
+                outcome_counts={
+                    o: n for o, n in sorted(
+                        Counter(r.score.outcome.value for r in faulted).items(),
+                        key=lambda kv: (-Outcome(kv[0]).severity, kv[0]),
+                    )
+                },
                 n_directives=len(directed),
                 compliance_by_shape={
                     shape: mean(float(x.score.complied) for x in rs)
