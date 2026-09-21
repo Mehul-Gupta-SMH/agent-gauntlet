@@ -91,6 +91,11 @@ not put 300 hard inquiries on a real credit file. Determinism is **checked**,
 not assumed — a function that disagrees with itself has no stable truth, and
 the project is refused rather than averaged.
 
+Your function runs in a **child process with no credentials in its
+environment**, killed if it does not finish. It is the only place your code
+runs at all, and the server never imports it. See the caveats below for what
+that is and is not.
+
 **Credentials are names, never values.** You declare the environment variables
 a tool needs; the harness checks they are present and stops there. No value is
 read, stored in the project, written to the ledger, or sent to the page.
@@ -383,17 +388,21 @@ Every result, with raw output committed alongside it, is in
   seeds is multiplicative. Budget ceilings and cheap-check escalation are
   load-bearing parts of the design, not optimizations.
 - **Code is NOT sandboxed today, and this line used to claim it was.** An
-  uploaded tool is imported and called in the server process, with everything
-  that process has — including the environment variables holding your provider
-  keys. Uploads are off by default and need both `--allow-code-execution` and a
-  loopback bind, any request carrying a forwarding header is refused, functions
-  are listed by *parsing* the file so you choose one before anything runs, and
-  import-time side effects are reported first. None of that is isolation. The
-  honest framing is *you run your own code on your own machine*: fine for a
-  local tool, untenable for anything shared. The guard used to key on the bind
-  alone, which a tunnel defeats
+  uploaded tool now runs in a **child process with no credentials in its
+  environment** and a wall clock, so it cannot read your provider keys and
+  cannot loop forever against a paid API — and the server never imports it.
+  That is a process boundary, not isolation: no seccomp, no namespace, no
+  filesystem or network restriction. A tool can still open sockets, read what
+  you can read, and write to an absolute path. Uploads are also off by default
+  and need both `--allow-code-execution` and a loopback bind, any request
+  carrying a forwarding header is refused, functions are listed by *parsing*
+  the file so you choose one before anything runs, and import-time side effects
+  are reported first. The honest framing stays *you run your own code on your
+  own machine*: fine for a local tool, untenable for anything shared. The bind
+  guard alone was defeated by a tunnel
   ([#38](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/38)); real
-  isolation is still [#12](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/12).
+  isolation — container or WASM — is still
+  [#12](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/12).
 - **The harness is a suspect too, and it fails green.** Every defect this project
   has found in itself presented as a *pass*, never an error — a diagnostic that
   blamed the model for a harness bug, a sentinel a capable model ignored, a CI

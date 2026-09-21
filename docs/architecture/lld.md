@@ -11,9 +11,10 @@ flowchart TD
     subgraph ui["UI layer — a view, not a second pipeline"]
         SERVER["<b>server</b> · 724<br/>stdlib http · wizard · arena"]
         RUNNER["<b>runner</b> · 637<br/>project → TaskSpec · policies"]
-        USERT["<b>usertools</b> · 305<br/>discover · calibrate · serve"]
+        USERT["<b>usertools</b> · 385<br/>discover · calibrate · serve"]
         PROJECT["<b>project</b> · 309<br/>Project · blockers"]
         SECRETS["<b>secrets</b> · 203<br/>.env · Store"]
+        CALIB["<b>_calibrate</b> · 88<br/>the child process"]
         EVENTS["<b>events</b> · 102<br/>EventLog"]
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
@@ -39,7 +40,8 @@ flowchart TD
     REPLAY --> BOARD & EVENTS & STATS
     RUNNER --> MATRIX & USERT & PROJECT & ARCH
     PROJECT --> USERT
-    USERT --> INTER
+    USERT --> INTER & CALIB
+    CALIB --> USERT
     BOARD --> LEDGER & ANALYZE & STATS
     MATRIX --> LEDGER & SCORE & LIVE & OFFLINE & INTER & FAULTS & EVENTS
     LEDGER --> SCORE & FAULTS & SPEC
@@ -294,6 +296,31 @@ number. On `inventory/task.yaml` the prompt axis is worth ~3 points with a
 bare tool set and ~47 with a cross-check; the marginal 22% describes
 neither. Full Shapley attribution remains #22.
 
+### Where the operator's own code runs (#12)
+
+Calibration is the only place code the operator wrote executes, and it now
+executes in a **child process** (`_calibrate`), started with an environment
+built from `usertools.ENV_ALLOWLIST` and killed at
+`CALIBRATION_TIMEOUT`. Three things follow:
+
+- the tool cannot read the operator's provider keys — by allowlist, since a
+  denylist protects only the variables somebody remembered to name;
+- a tool that loops is killed rather than left running against a paid API;
+- `usertools.load` runs only in the child, so the server process never
+  imports an uploaded file at all.
+
+The result crosses on a **file**, not stdout: the bundled fixture prints at
+import time, and a result channel a tool can spoil by being chatty is not
+one. A return value that will not serialize is refused rather than coerced.
+
+This is a process boundary and **not a sandbox** — no seccomp, no
+namespace, no filesystem or network restriction. `cwd` is a scratch
+directory so relative writes land somewhere disposable; an absolute path
+goes wherever the user could write anyway, and
+`test_this_is_a_process_boundary_and_not_a_sandbox` pins that as a fact
+rather than leaving the docs to imply otherwise. Real isolation — container
+or WASM — is the rest of #12.
+
 ### Severity: how badly, not just how often
 
 `Outcome.severity` orders the taxonomy 0-4. Rates say how *often* a config
@@ -492,6 +519,8 @@ test_replay      captured-not-reconstructed, one composer, the published
                  demo's provenance
 test_injection_sites  the registry against the code, and every pairing that
                  cannot fire being refused
+test_isolation   calibration in a child process, and the honest limit of a
+                 process boundary
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

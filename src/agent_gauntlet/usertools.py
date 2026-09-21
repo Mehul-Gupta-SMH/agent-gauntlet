@@ -30,8 +30,11 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Callable, Optional
 
 from pydantic import BaseModel, Field, model_validator
@@ -212,12 +215,37 @@ class CalibrationError(RuntimeError):
     pass
 
 
+CALIBRATION_TIMEOUT = 60.0
+"""Wall clock for one tool's whole calibration, in seconds.
+
+A tool that loops is a cost incident when it is calling a paid API, and
+the ceiling belongs in the contract rather than in a linter (#12). Generous
+because calibration is once per input before the matrix, not per run: eight
+calls, not seventy-two.
+"""
+
+ENV_ALLOWLIST = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "TEMP", "TMP",
+                 "SYSTEMROOT", "COMSPEC", "PATHEXT")
+"""What the child is allowed to see.
+
+An allowlist, not a denylist: a denylist protects the variables somebody
+remembered to name, and the whole point is that the operator's provider
+keys -- whatever they are called -- are not in that process.
+"""
+
+
+def child_env() -> dict[str, str]:
+    """The environment calibration runs in. No credentials, by construction."""
+    return {k: v for k, v in os.environ.items() if k in ENV_ALLOWLIST}
+
+
 def calibrate(
     tool: UserTool,
     inputs: list[list[Any]],
     *,
     project_dir: Path,
     repeats: int = 2,
+    timeout: float = CALIBRATION_TIMEOUT,
 ) -> dict[str, Any]:
     """Call an uploaded tool once per input and record what it returns.
 
@@ -225,33 +253,85 @@ def calibrate(
     agree with itself has no truth for the board to be scored against, and
     the run is refused rather than averaged -- the disagreement would
     otherwise be attributed to whichever agent happened to see it.
+
+    Runs in a **separate process** with an environment built from an
+    allowlist, so the operator's code never sees the operator's
+    credentials, and the server never imports it (#12). A process boundary
+    is not a sandbox and this docstring will not pretend otherwise -- see
+    `_calibrate` for exactly what it does and does not buy.
     """
     if tool.described:
         return dict(tool.table)
 
-    fn = load(project_dir / "tools" / tool.module, tool.function)
-    table: dict[str, Any] = {}
-    for args in inputs:
-        key = key_for(args)
-        seen = []
-        for _ in range(max(1, repeats)):
-            try:
-                seen.append(fn(*args))
-            except Exception as exc:
-                raise CalibrationError(
-                    f"{tool.name}({', '.join(map(repr, args))}) raised "
-                    f"{type(exc).__name__}: {exc}"
-                ) from exc
-        if any(v != seen[0] for v in seen[1:]):
-            raise CalibrationError(
-                f"{tool.name}({', '.join(map(repr, args))}) is not deterministic: "
-                f"returned {seen[0]!r} then {seen[1]!r}. The gauntlet grades by "
-                f"comparing a faulted run against a known truth, and a tool that "
-                f"disagrees with itself has none -- its noise would be scored as "
-                f"the agent's."
+    module_path = project_dir / "tools" / tool.module
+    spec = {
+        "module_path": str(module_path.resolve()),
+        "function": tool.function,
+        "inputs": inputs,
+        "repeats": max(1, repeats),
+    }
+    with TemporaryDirectory() as scratch:
+        result_path = Path(scratch) / "result.json"
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-m", "agent_gauntlet._calibrate",
+                 str(result_path)],
+                input=json.dumps(spec),
+                text=True, capture_output=True, timeout=timeout,
+                env=child_env(),
+                # Relative writes land in a directory that is about to be
+                # deleted. A nudge, not a guarantee: nothing here stops an
+                # absolute path, and claiming otherwise would be the kind
+                # of reassuring-looking falsehood this project exists to
+                # catch.
+                cwd=scratch,
             )
-        table[key] = seen[0]
-    return table
+        except subprocess.TimeoutExpired:
+            raise CalibrationError(
+                f"{tool.name} did not finish calibrating within {timeout:.0f}s "
+                f"and was killed. A tool that loops is a cost incident when it "
+                f"is calling a paid API, so the run is refused rather than "
+                f"left running."
+            ) from None
+
+        if not result_path.exists():
+            raise CalibrationError(
+                f"calibrating {tool.name} produced no result "
+                f"(exit {proc.returncode}). The process died before it could "
+                f"report -- a hard crash, a `sys.exit`, or an `os._exit` in "
+                f"the tool or its imports."
+                + _tail(proc.stderr)
+            )
+        outcome = json.loads(result_path.read_text(encoding="utf-8"))
+
+    if outcome.get("ok"):
+        return outcome["table"]
+
+    kind = outcome.get("kind")
+    call = f"{tool.name}({', '.join(map(repr, outcome.get('args', [])))})"
+    if kind == "nondeterministic":
+        raise CalibrationError(
+            f"{call} is not deterministic: returned {outcome['first']} then "
+            f"{outcome['second']}. The gauntlet grades by comparing a faulted "
+            f"run against a known truth, and a tool that disagrees with itself "
+            f"has none -- its noise would be scored as the agent's."
+        )
+    if kind == "unserializable":
+        raise CalibrationError(
+            f"{call} returned a {outcome['returned']}, which cannot be a "
+            f"calibrated truth: the board compares numbers, and a value that "
+            f"cannot cross a process boundary cannot be one."
+        )
+    raise CalibrationError(
+        f"{tool.name} raised while calibrating: {outcome.get('error')}"
+        + _tail(proc.stderr)
+    )
+
+
+def _tail(text: str, lines: int = 8) -> str:
+    """The end of the child's stderr, when there is any."""
+    kept = [ln for ln in (text or "").strip().splitlines() if ln][-lines:]
+    return ("\n\nits output:\n  " + "\n  ".join(kept)) if kept else ""
 
 
 # --- the run-time surface -------------------------------------------------

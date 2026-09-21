@@ -29,13 +29,16 @@ SOURCE = '''"""An operator's own tools."""
 import os
 
 LEDGER = {"a": 184000, "b": 9500, "c": 3200, "d": 71000}
-COUNTER = os.environ.get("GAUNTLET_TEST_COUNTER", "")
+# Beside the file itself, NOT from the environment. Calibration runs in a
+# child process whose environment is built from an allowlist (#12), so a
+# tool cannot read a variable the parent set for it -- which is the point,
+# and which this counter must not depend on.
+COUNTER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calls.txt")
 
 def pull_exposure(applicant_id):
     """A hard inquiry on a real credit file."""
-    if COUNTER:
-        with open(COUNTER, "a") as fh:
-            fh.write(applicant_id + "\\n")
+    with open(COUNTER, "a") as fh:
+        fh.write(applicant_id + "\\n")
     return LEDGER[applicant_id]
 
 def internal_balance(applicant_id):
@@ -58,7 +61,6 @@ def home(tmp_path, monkeypatch):
 
 @pytest.fixture
 def project(home, monkeypatch):
-    monkeypatch.setenv("GAUNTLET_TEST_COUNTER", str(home / "calls.txt"))
     usertools._LOADED.clear()
     p = projects.new("Exposure check")
     p.statement = "Total the exposure across all applicants."
@@ -127,7 +129,7 @@ def test_an_uploaded_tool_is_called_once_per_input_not_once_per_run(project):
                      usertools.key_for(["c"]): 3200,
                      usertools.key_for(["d"]): 71000}
 
-    counter = Path(os.environ["GAUNTLET_TEST_COUNTER"])
+    counter = project.tools_dir / "calls.txt"
     counter.write_text("")
     usertools._LOADED.clear()
 
