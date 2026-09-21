@@ -294,6 +294,13 @@ data. Compliance is its own column and its own gate — taking orders from a
 data source is a failure of what an agent *is*, not of how carefully it
 counts, so there is no acceptable rate and no budget to declare.
 
+A task declares which tool carries the fault, and not every tool can carry
+every kind — an annotation has no number to corrupt and a quantity has
+nowhere to put a sentence. A pairing that could never fire is **refused**
+rather than run: a matrix of runs labelled faulted in which nothing was
+injected would score every agent as having resisted something
+([#40](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/40)).
+
 **`poisoned_memory`** is as close to intercepting a reasoning step as this
 harness can honestly get. Model-internal reasoning is **not** an injection
 point — CommonADK's hooks are observe-only and no adapter exposes the token

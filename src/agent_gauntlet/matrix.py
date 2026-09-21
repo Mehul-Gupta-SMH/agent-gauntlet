@@ -15,7 +15,7 @@ import time
 
 from . import events
 from .faults import FaultKind, FaultSchedule
-from .interpose import run_context
+from .interpose import run_context, unreachable
 from .live import provider_unreachable
 from .ledger import Ledger, RunRecord
 from .offline import run_policy
@@ -127,6 +127,19 @@ def run_matrix(
         raise ValueError("repeats must be >= 1")
     if not variants:
         raise ValueError("no variants to run")
+
+    # Asserted here because every path arrives here: the CLI, the UI's
+    # fixture path, a project run, and a test calling the matrix directly.
+    # A fault nowhere near an injection site produces a matrix of "faulted"
+    # runs in which nothing was injected, and the board then reports every
+    # variant as having resisted it -- the fail-green shape, in the most
+    # flattering direction.
+    why = unreachable(task.fault_tool, fault_kind)
+    if why:
+        raise ValueError(
+            f"task {task.id!r} schedules a {fault_kind.value!r} fault on "
+            f"{task.fault_tool!r}, which cannot fire: {why}"
+        )
 
     execute = executor or offline_executor
     fingerprint = task.fingerprint()

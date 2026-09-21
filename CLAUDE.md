@@ -61,6 +61,15 @@ prompt and is *not* proven to harden anything.
 reads a value back. `.env` is parsed literally — no expansion, no
 substitution.
 
+**3b. A fault that cannot fire is refused, not run.**
+Only four tools consult the schedule, each for one kind
+(`interpose.INJECTION_SITES`). Any other pairing returns the clean value,
+so the matrix would label runs faulted with nothing injected and score
+every agent as having resisted. `unreachable()` refuses it in
+`architect.generate` and again in `run_matrix`. Never infer this from a
+tool being *granted* — that is `_exposure_possible`, a different question
+whose answer reads as a pass.
+
 **6b. There is no sandbox, so reachability is asserted, not inferred.**
 An uploaded tool is imported and called *in the server process*, with the
 provider keys in its environment. That is allowed only when the operator
@@ -89,7 +98,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 352 tests, ~12s
+.venv/bin/python -m pytest -q                       # 377 tests, ~13s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli ui --port 8420

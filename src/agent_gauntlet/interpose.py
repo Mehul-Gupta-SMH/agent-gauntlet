@@ -203,6 +203,80 @@ def active() -> RunContext:
     return ctx
 
 
+# --- where a fault can actually land --------------------------------------
+
+BUILTIN_TOOLS = frozenset({
+    "list_records", "list_records_sample", "list_audited_records",
+    "fetch_record", "get_summary", "read_annotation",
+    "record_note", "recall_note", "pull_credit_report",
+})
+"""Every tool this module serves."""
+
+INJECTION_SITES: dict[str, frozenset[FaultKind]] = {
+    "fetch_record": frozenset({FaultKind.WRONG_VALUE, FaultKind.TIMEOUT}),
+    "pull_credit_report": frozenset({FaultKind.WRONG_VALUE, FaultKind.TIMEOUT}),
+    "read_annotation": frozenset({FaultKind.INSTRUCTION}),
+    "recall_note": frozenset({FaultKind.POISONED_MEMORY}),
+}
+"""Which tool can carry which lie -- the registry, not a description of one.
+
+Each site below consults the schedule for exactly the kinds listed here and
+returns the clean value for anything else. That is right: an annotation has
+no number to corrupt, and a quantity has nowhere to put a sentence. What
+was wrong was leaving the pairing implicit, because a task is free to name
+any tool and any kind, and a mismatch then produced a *silent no-op* -- a
+matrix of "faulted" runs in which nothing was ever injected, scored and
+ranked as though every agent had resisted something.
+
+Kept beside the sites themselves so the two cannot drift; `test_faults.py`
+asserts each entry against the behaviour of the function.
+"""
+
+USER_TOOL_KINDS = frozenset({
+    FaultKind.WRONG_VALUE, FaultKind.TIMEOUT, FaultKind.INSTRUCTION,
+})
+"""What an operator's own calibrated tool can carry (`usertools.serve`).
+
+Not `POISONED_MEMORY`: poisoning the agent's own note is `recall_note`'s
+job, and the scratchpad is the harness's tool rather than the operator's.
+"""
+
+
+def unreachable(tool: str, kind: FaultKind) -> Optional[str]:
+    """Why a fault of `kind` in `tool` could never fire -- or None if it can.
+
+    Reachability asserted from a registry rather than inferred from a tool
+    being *granted*: `_exposure_possible` answers "could this variant have
+    called it", which is a different question and reads as a pass when the
+    answer to this one is no.
+    """
+    kinds = INJECTION_SITES.get(tool)
+    if kinds is not None:
+        if kind in kinds:
+            return None
+        return (
+            f"{tool!r} is an injection site for "
+            f"{sorted(k.value for k in kinds)}, not {kind.value!r}. It would "
+            f"return its clean value and the run would be scored as a faulted "
+            f"run in which nothing was injected."
+        )
+    if tool in BUILTIN_TOOLS:
+        return (
+            f"{tool!r} has no injection site: it never consults the fault "
+            f"schedule, so no fault placed there can ever fire. Injectable "
+            f"tools are {sorted(INJECTION_SITES)}."
+        )
+    # Not a name this module serves, so it is an operator's own calibrated
+    # tool. Those are faulted in `usertools.serve`.
+    if kind in USER_TOOL_KINDS:
+        return None
+    return (
+        f"an uploaded tool cannot carry a {kind.value!r} fault "
+        f"(only {sorted(k.value for k in USER_TOOL_KINDS)}); "
+        f"{FaultKind.POISONED_MEMORY.value!r} belongs to 'recall_note'."
+    )
+
+
 # --- the tool-facing surface a variant's tools.py calls -------------------
 
 

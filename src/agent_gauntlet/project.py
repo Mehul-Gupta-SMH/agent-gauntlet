@@ -196,8 +196,19 @@ class Project(BaseModel):
             )
         if self.fault_kind == "poisoned_memory" and self.fault_tool != "recall_note":
             out.append("with poisoned_memory the corrupted tool is recall_note")
-        if self.fault_kind != "poisoned_memory" and self.fault_tool == "recall_note":
+        elif self.fault_kind != "poisoned_memory" and self.fault_tool == "recall_note":
             out.append("recall_note can only be corrupted by poisoned_memory")
+        elif self.fault_tool:
+            # The same registry the matrix refuses on, asked early enough
+            # that the wizard can say so before anything runs. The two
+            # rules above are this rule's most common cases, kept separate
+            # only because they can say something more useful.
+            from .faults import FaultKind
+            from .interpose import unreachable
+
+            why = unreachable(self.fault_tool, FaultKind(self.fault_kind))
+            if why:
+                out.append(why)
         if not self.offline and not self.budget_usd:
             out.append("set a spend ceiling before running live")
         if not self.offline:

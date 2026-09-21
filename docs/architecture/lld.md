@@ -12,7 +12,7 @@ flowchart TD
         SERVER["<b>server</b> · 724<br/>stdlib http · wizard · arena"]
         RUNNER["<b>runner</b> · 637<br/>project → TaskSpec · policies"]
         USERT["<b>usertools</b> · 305<br/>discover · calibrate · serve"]
-        PROJECT["<b>project</b> · 298<br/>Project · blockers"]
+        PROJECT["<b>project</b> · 309<br/>Project · blockers"]
         SECRETS["<b>secrets</b> · 203<br/>.env · Store"]
         EVENTS["<b>events</b> · 102<br/>EventLog"]
         REPLAY["<b>replay</b> · 212<br/>row · board_event · capture"]
@@ -20,11 +20,11 @@ flowchart TD
 
     CLI["<b>cli</b> · 1080<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 693<br/>summarize · rank · pareto · held-out"]
-    ARCH["<b>architect</b> · 529<br/>PROMPTS · TOOLSETS · generate"]
+    ARCH["<b>architect</b> · 542<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 454<br/>Outcome · score_run"]
-    INTER["<b>interpose</b> · 446<br/>RunContext · tool surface · notes"]
+    INTER["<b>interpose</b> · 520<br/>RunContext · tool surface · notes"]
     OFFLINE["<b>offline</b> · 375<br/>scripted policies"]
-    MATRIX["<b>matrix</b> · 365<br/>run_matrix · _attempt · budget"]
+    MATRIX["<b>matrix</b> · 378<br/>run_matrix · _attempt · budget"]
     FAULTS["<b>faults</b> · 312<br/>FaultKind · FaultSchedule"]
     SPEC["<b>spec</b> · 308<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 290<br/>executor · parsing · classification"]
@@ -198,6 +198,30 @@ evidence that it would refuse, so its compliance rate is `None`, never `0`.
 `OBEYED_THE_DATA` outranks every other outcome: a config that can be told
 what to do by its own data does not have a quality problem.
 
+### Where a fault can land
+
+`fault_tool` and `fault_kind` are free text on a task, and only four builtin
+tools consult the schedule — each for one kind. Every other tool, and every
+other pairing, returns its clean value, which is correct: an annotation has
+no number to corrupt and a quantity has nowhere to put a sentence.
+
+| tool | carries |
+|---|---|
+| `fetch_record` | `wrong_value`, `timeout` |
+| `pull_credit_report` | `wrong_value`, `timeout` |
+| `read_annotation` | `instruction` |
+| `recall_note` | `poisoned_memory` |
+| an uploaded tool (`usertools.serve`) | `wrong_value`, `timeout`, `instruction` |
+
+`interpose.INJECTION_SITES` is that table, and `unreachable()` refuses
+anything outside it — in `architect.generate` (early and friendly) and again
+in `run_matrix` (the choke point every path goes through). Leaving the
+pairing implicit produced a matrix of runs *labelled faulted in which
+nothing was injected*, scored and ranked as though every agent had resisted
+(#40). Reachability is asserted from the registry, never inferred from a
+tool being granted — `_exposure_possible` answers a different question and
+its answer reads as a pass.
+
 | fault kind | the oracle | the column |
 |---|---|---|
 | `wrong_value` | truth vs the credulous figure, by band | `prop` |
@@ -355,6 +379,8 @@ test_reachability  both conditions on code execution, and the tunnel that
                  defeated the old one
 test_replay      captured-not-reconstructed, one composer, the published
                  demo's provenance
+test_injection_sites  the registry against the code, and every pairing that
+                 cannot fire being refused
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

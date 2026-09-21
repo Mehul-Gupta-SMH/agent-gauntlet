@@ -21,6 +21,8 @@ from typing import Iterable, Mapping, Optional, Union
 
 import yaml
 
+from . import interpose
+from .faults import FaultKind
 from .spec import TaskSpec, VariantSpec
 
 AGENT_NAME = "auditor"
@@ -392,6 +394,17 @@ def generate(
     # is effectively clean and the matrix still prints a full leaderboard
     # with a winner. That is the fail-green shape this project keeps
     # finding in itself, so it is an error rather than a warning.
+    # Two questions, and the grid check below only answers the second:
+    # is there anywhere for this fault to LAND, and can any variant reach
+    # the tool it lands in. Both fail the same way when unasked -- a full
+    # leaderboard over a matrix where nothing was ever injected.
+    why = interpose.unreachable(task.fault_tool, FaultKind(task.fault_kind))
+    if why:
+        raise ValueError(
+            f"task {task.id!r} schedules a {task.fault_kind!r} fault on "
+            f"{task.fault_tool!r}, which cannot fire: {why}"
+        )
+
     if not any(task.fault_tool in TOOLSETS[t] for t in toolset_names):
         raise ValueError(
             f"task {task.id!r} corrupts {task.fault_tool!r}, but no toolset in "
