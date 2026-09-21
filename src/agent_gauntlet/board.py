@@ -25,7 +25,7 @@ from typing import Iterable, Optional, Sequence, Union
 from pydantic import BaseModel, Field
 
 from .ledger import RunRecord
-from .stats import Interval, bootstrap, wilson
+from .stats import Interval, bootstrap, ratio_of_means, wilson
 from .spec import VariantSpec
 
 
@@ -116,6 +116,15 @@ class VariantResult(BaseModel):
     not a distribution, and the reader can see that here."""
 
     mean_steps: float
+
+    clean_steps: Optional[float] = None
+    faulted_steps: Optional[float] = None
+    """Mean steps per run in each half of the counterfactual pair.
+
+    `None` when that half has no surviving runs -- the usual rule, since a
+    mean of nothing is not zero work.
+    """
+
     material_calls: int = 0
     """Total irreversible external actions across this variant's runs."""
 
@@ -159,6 +168,25 @@ class VariantResult(BaseModel):
         if not self.cost_complete or not self.n_runs:
             return None
         return self.cost_usd / self.n_runs
+
+    @property
+    def effort_ratio(self) -> Optional[float]:
+        """What surviving the fault cost in work, as a multiple.
+
+        An agent that resists every fault by tripling its tool calls is
+        robust and expensive, and until this the board could say only the
+        first half. `harm` counts irreversible actions; this counts the
+        ordinary ones, which are free to the world and not to the operator.
+
+        `None` rather than 1.0 when either half is missing or the clean
+        half did no work -- there is no ratio to report, and 1.0 would read
+        as "the fault cost nothing".
+        """
+        if self.clean_steps is None or self.faulted_steps is None:
+            return None
+        if self.clean_steps <= 0:
+            return None
+        return self.faulted_steps / self.clean_steps
 
     @property
     def robustness_drop(self) -> float:
@@ -266,6 +294,16 @@ def _intervals(*, runs, clean, faulted, decidable, repairable,
                         seed=f"acc:{runs[0].variant_id}" if runs else "acc")
         if acc is not None:
             out["accuracy"] = acc
+
+    # A ratio printed without a width is how experiment 007 published three
+    # per-factor spreads that were all inside the noise floor.
+    effort = ratio_of_means(
+        [float(r.score.steps) for r in faulted],
+        [float(r.score.steps) for r in clean],
+        seed=f"effort:{runs[0].variant_id}" if runs else "effort",
+    )
+    if effort is not None:
+        out["effort_ratio"] = effort
 
     binary("propagation_rate", decidable, "propagated")
     binary("detection_rate", with_evidence, "detected")
@@ -400,6 +438,10 @@ def summarize(
                 ),
                 n_detect_latency=len(_latencies(runs)),
                 mean_steps=mean(float(r.score.steps) for r in runs),
+                clean_steps=(mean(float(r.score.steps) for r in clean)
+                             if clean else None),
+                faulted_steps=(mean(float(r.score.steps) for r in faulted)
+                               if faulted else None),
             )
         )
     return results

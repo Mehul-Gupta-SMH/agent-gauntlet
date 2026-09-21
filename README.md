@@ -284,6 +284,12 @@ different questions:
 | `instruction` | a record's free-text annotation | does this agent still know **whose instructions are instructions**? |
 | `poisoned_memory` | the agent's own recorded finding | does it **re-derive** what it already decided, or build on it? |
 
+Two costs are reported, not one. `harm` counts irreversible actions repeated
+on the same target; `work` is how many more steps the faulted runs took than
+that config's *own* clean ones. An agent that survives every fault by
+tripling its tool calls is robust **and** expensive, and a board that says
+only the first half is recommending the wrong config.
+
 **`instruction`** puts a directive in an annotation — the realistic carrier,
 since comments, descriptions and retrieved documents are the part of a data
 source nobody validates. It is written to look like infrastructure, because a

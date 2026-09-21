@@ -15,11 +15,11 @@ flowchart TD
         PROJECT["<b>project</b> · 309<br/>Project · blockers"]
         SECRETS["<b>secrets</b> · 203<br/>.env · Store"]
         EVENTS["<b>events</b> · 102<br/>EventLog"]
-        REPLAY["<b>replay</b> · 212<br/>row · board_event · capture"]
+        REPLAY["<b>replay</b> · 215<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1080<br/>argparse · board rendering · probe · ui"]
-    BOARD["<b>board</b> · 693<br/>summarize · rank · pareto · held-out"]
+    CLI["<b>cli</b> · 1101<br/>argparse · board rendering · probe · ui"]
+    BOARD["<b>board</b> · 735<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 542<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 454<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 520<br/>RunContext · tool surface · notes"]
@@ -31,7 +31,7 @@ flowchart TD
     LEDGER["<b>ledger</b> · 273<br/>RunRecord · rescore"]
     ANALYZE["<b>analyze</b> · 172<br/>kendall_tau · stability"]
     CERT["<b>certify</b> · 393<br/>Certificate · compare · 3 verdicts"]
-    STATS["<b>stats</b> · 154<br/>wilson · bootstrap · MDE"]
+    STATS["<b>stats</b> · 204<br/>wilson · bootstrap · MDE"]
 
     CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY
     CERT --> BOARD & STATS
@@ -221,6 +221,21 @@ nothing was injected*, scored and ranked as though every agent had resisted
 (#40). Reachability is asserted from the registry, never inferred from a
 tool being granted — `_exposure_possible` answers a different question and
 its answer reads as a pass.
+
+### Effort, beside harm
+
+`harm` counts irreversible actions repeated on the same target. `work` is
+the other half of what a correction costs: the mean steps of a variant's
+faulted runs over its *own* clean ones. An agent that survives every fault
+by tripling its tool calls is robust and expensive, and the board could
+previously say only the first (#37).
+
+Against its own twin, never the grid's average — a verbose config is not
+degrading by being verbose. `None` rather than `1.0` when either half is
+missing, and the width comes from `stats.ratio_of_means`, a bootstrap over
+both halves independently: a ratio above one whose interval spans one is
+not evidence that anything got dearer, and the CLI calls out only the rows
+where it does not.
 
 | fault kind | the oracle | the column |
 |---|---|---|

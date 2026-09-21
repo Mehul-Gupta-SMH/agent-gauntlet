@@ -493,10 +493,25 @@ function renderBoard(rows, winner, errored, total, reason, resolution) {
     // set the `na` class correctly and still called the formatter on null,
     // so a custom formatter threw and took the whole board down with it.
     // The interval rides in the title, so the table stays readable at
-    // thirteen columns while the number stays qualified on hover.
+    // fourteen columns while the number stays qualified on hover.
     const ci = (key) => {
       const i = r.intervals && r.intervals[key];
       return i ? ` title="95% CI ${Math.round(i.low * 100)}%–${Math.round(i.high * 100)}% over n=${i.n}"` : '';
+    };
+    // A ratio, not a rate: its interval is in multiples and formatting it
+    // with the percent helper above would print "112%-112%" for 1.12x.
+    const work = () => {
+      if (r.effort_ratio === null || r.effort_ratio === undefined) {
+        return '<td class="na">n/a</td>';
+      }
+      const i = r.intervals && r.intervals.effort_ratio;
+      const title = i
+        ? ` title="95% CI ${i.low.toFixed(2)}\u00d7–${i.high.toFixed(2)}\u00d7 over n=${i.n}"`
+        : '';
+      // Called out only when the interval excludes 1.0. A ratio above one
+      // whose width spans it is not evidence that anything got dearer.
+      const heavy = i && i.low > 1.0 ? ' class="harm"' : '';
+      return `<td${heavy}${title}>${r.effort_ratio.toFixed(2)}\u00d7</td>`;
     };
     const cell = (v, fmt = pct, key = null) =>
       (v === null || v === undefined)
@@ -512,6 +527,7 @@ function renderBoard(rows, winner, errored, total, reason, resolution) {
       ${cell(r.detection_rate)}${cell(r.repair_rate)}
       ${cell(r.false_alarm_rate)}
       ${cell(r.median_detect_latency, steps)}
+      ${work()}
       <td class="${r.redundant_material_calls ? 'harm' : 'na'}">${r.redundant_material_calls || '—'}</td>
     </tr>`;
   }).join('');

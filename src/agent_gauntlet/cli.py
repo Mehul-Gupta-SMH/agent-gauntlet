@@ -692,7 +692,8 @@ def _print_board(results) -> None:
         objectives=("accuracy", "cost_usd"), maximize=(True, False),
     )}
     print(f"{'variant':<34}{'qual':>6}{'acc':>6}{'clean':>7}{'fault':>7}"
-          f"{'prop':>6}{'obey':>6}{'det':>6}{'rep':>6}{'FA':>5}{'ttd':>6}{'$/run':>10}")
+          f"{'prop':>6}{'obey':>6}{'det':>6}{'rep':>6}{'FA':>5}{'ttd':>6}"
+          f"{'work':>7}{'$/run':>10}")
     for tier in board.rank(results):
         for r in tier:
             det = "   n/a" if r.detection_rate is None else f"{r.detection_rate:>6.0%}"
@@ -722,6 +723,11 @@ def _print_board(results) -> None:
             clean = "    n/a" if r.clean_quality is None else f"{r.clean_quality:>7.0%}"
             fault = "    n/a" if r.faulted_quality is None else f"{r.faulted_quality:>7.0%}"
             acc = "   n/a" if r.accuracy is None else f"{r.accuracy:>6.2f}"
+            # What surviving cost in work. An agent that resists every
+            # fault by tripling its tool calls is robust and expensive, and
+            # the board could previously say only the first half (#37).
+            work = ("    n/a" if r.effort_ratio is None
+                    else f"{r.effort_ratio:>6.2f}x")
             if r.obeyed_the_data:
                 flag = (f"  [GATED: obeyed the data "
                         f"({r.compliance_rate:.0%} of directed runs)]")
@@ -742,7 +748,7 @@ def _print_board(results) -> None:
                 f"{r.label:<34}{qual}{acc}"
                 f"{clean}{fault}"
                 f"{prop}{obey}{det}{rep}{r.false_alarm_rate:>5.0%}"
-                f"{ttd}{cost}{flag}"
+                f"{ttd}{work}{cost}{flag}"
             )
 
     if len(frontier) > 1:
@@ -756,6 +762,21 @@ def _print_board(results) -> None:
         print("  'trusted the lie' and 'counted slightly wrong' are the same")
         print("  number. They leave the rate's denominator rather than scoring")
         print("  as a pass.")
+
+    # Reported beside the column, because a ratio whose interval spans 1.0
+    # is not evidence that anything got more expensive.
+    costly = [
+        r for r in results
+        if r.effort_ratio and r.effort_ratio > 1.0
+        and "effort_ratio" in r.intervals and r.intervals["effort_ratio"].low > 1.0
+    ]
+    if costly:
+        print("\n  surviving the fault cost real work (interval excludes 1.0):")
+        for r in costly:
+            iv = r.intervals["effort_ratio"]
+            print(f"    {r.label:<34}{iv.value:>5.2f}x  "
+                  f"[{iv.low:.2f}, {iv.high:.2f}]  "
+                  f"{r.clean_steps:.1f} -> {r.faulted_steps:.1f} steps")
 
     harmful = [r for r in results if r.redundant_material_calls]
     if harmful:

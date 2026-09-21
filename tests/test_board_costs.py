@@ -141,3 +141,93 @@ def test_the_label_falls_back_to_the_id_when_there_are_no_factors():
     rec = _record("bare", "s0")
     rec.factors = {}
     assert board.summarize([rec])[0].label == "bare"
+
+
+# --- effort: what surviving the fault cost in work (#37) ------------------
+
+
+def _pair(variant, seed, *, condition, steps):
+    """One run with a chosen step count, in a chosen half of the pair."""
+    return RunRecord(
+        run_id=f"{variant}{seed}{condition}", task_id="t", task_fingerprint="f",
+        variant_id=variant, factors={"model": "cheap", "prompt": "naive"},
+        scenario_id="s", repeat=0, seed=seed, condition=condition,
+        schedule=FaultSchedule.clean(seed),
+        score=Score(
+            correct=True, accuracy=1.0, outcome=Outcome.UNDETECTED_HARMLESS,
+            propagated=False, detected=False, surfaced=False,
+            false_alarm=False, steps=steps, evidence_available=True,
+        ),
+    )
+
+
+def test_a_variant_that_survives_by_working_harder_is_visible():
+    """An agent that resists every fault by tripling its tool calls is
+    robust AND expensive. Before this the board could say only the first
+    half: `harm` counts irreversible actions, and ordinary ones -- free to
+    the world, not to the operator -- were invisible.
+    """
+    runs = ([_pair("v", f"s{i}", condition="clean", steps=4) for i in range(3)]
+            + [_pair("v", f"s{i}", condition="faulted", steps=12) for i in range(3)])
+    row = board.summarize(runs)[0]
+    assert row.clean_steps == 4.0
+    assert row.faulted_steps == 12.0
+    assert row.effort_ratio == 3.0
+
+
+def test_the_ratio_is_against_the_variants_own_clean_twin():
+    """Not against the grid's average. A verbose config is not degrading
+    just by being verbose -- the counterfactual pair exists precisely so
+    each variant is compared with itself."""
+    runs = []
+    for vid, clean_steps in (("chatty", 20), ("terse", 4)):
+        runs += [_pair(vid, f"s{i}", condition="clean", steps=clean_steps)
+                 for i in range(3)]
+        runs += [_pair(vid, f"s{i}", condition="faulted", steps=clean_steps)
+                 for i in range(3)]
+    rows = {r.variant_id: r for r in board.summarize(runs)}
+    assert rows["chatty"].effort_ratio == 1.0
+    assert rows["terse"].effort_ratio == 1.0
+
+
+def test_a_missing_half_has_no_ratio_rather_than_a_ratio_of_one():
+    """1.0 would read as 'the fault cost nothing'. It is not measured."""
+    clean_only = [_pair("v", f"s{i}", condition="clean", steps=4) for i in range(2)]
+    row = board.summarize(clean_only)[0]
+    assert row.faulted_steps is None
+    assert row.effort_ratio is None
+    assert "effort_ratio" not in row.intervals
+
+
+def test_the_ratio_carries_a_width():
+    """A ratio printed without one is how experiment 007 published three
+    per-factor spreads that were every one of them inside the noise."""
+    runs = ([_pair("v", f"s{i}", condition="clean", steps=4 + i) for i in range(4)]
+            + [_pair("v", f"s{i}", condition="faulted", steps=9 + i) for i in range(4)])
+    row = board.summarize(runs)[0]
+    iv = row.intervals["effort_ratio"]
+    assert iv.low < row.effort_ratio < iv.high
+    assert iv.method.startswith("bootstrap")
+    # In multiples, and the value is the ratio itself -- not a percentage,
+    # which is what the page's default formatter would have made of it.
+    assert 1.0 < iv.value < 4.0
+
+
+def test_one_run_a_side_gets_no_width_at_all():
+    """A single observation constrains nothing, and a ratio's width has no
+    upper bound to fall back on the way a proportion's does."""
+    runs = [_pair("v", "s0", condition="clean", steps=4),
+            _pair("v", "s0", condition="faulted", steps=8)]
+    row = board.summarize(runs)[0]
+    assert row.effort_ratio == 2.0
+    assert "effort_ratio" not in row.intervals
+
+
+def test_the_ratio_reaches_the_page_and_the_recording():
+    from agent_gauntlet import replay
+
+    runs = ([_pair("v", f"s{i}", condition="clean", steps=4) for i in range(2)]
+            + [_pair("v", f"s{i}", condition="faulted", steps=8) for i in range(2)])
+    payload = replay.row(board.summarize(runs)[0])
+    assert payload["effort_ratio"] == 2.0
+    assert payload["clean_steps"] == 4.0 and payload["faulted_steps"] == 8.0

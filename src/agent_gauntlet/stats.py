@@ -126,6 +126,56 @@ def bootstrap(
                     method="bootstrap")
 
 
+def ratio_of_means(
+    numerator: Sequence[float],
+    denominator: Sequence[float],
+    *,
+    resamples: int = 2000,
+    seed: str = "gauntlet",
+    alpha: float = 0.05,
+) -> Optional[Interval]:
+    """Percentile bootstrap for the ratio of two independent means.
+
+    Not `bootstrap`: that one is for values bounded in [0, 1] and its
+    single-observation fallback reports `[0, 1]`, which would be a
+    confident lie about a ratio that has no upper bound.
+
+    Both groups are resampled independently, because they are independent
+    samples -- the clean and faulted halves of a variant's runs. A ratio
+    reported without a width is how experiment 007 ended up publishing
+    three per-factor spreads that were all inside the noise floor.
+
+    Returns None below two observations on either side: one run constrains
+    nothing, and a width of "anything at all" is not worth printing.
+    """
+    num = [float(v) for v in numerator]
+    den = [float(v) for v in denominator]
+    if len(num) < 2 or len(den) < 2:
+        return None
+    base_den = sum(den) / len(den)
+    if base_den <= 0:
+        return None
+
+    rng = random.Random(seed)
+    ratios = []
+    for _ in range(resamples):
+        a = sum(num[rng.randrange(len(num))] for _ in range(len(num))) / len(num)
+        b = sum(den[rng.randrange(len(den))] for _ in range(len(den))) / len(den)
+        if b <= 0:
+            continue
+        ratios.append(a / b)
+    if not ratios:
+        return None
+    ratios.sort()
+    lo = ratios[int((alpha / 2) * len(ratios))]
+    hi = ratios[min(len(ratios) - 1, int((1 - alpha / 2) * len(ratios)))]
+    return Interval(
+        value=(sum(num) / len(num)) / base_den,
+        low=lo, high=hi, n=min(len(num), len(den)),
+        method="bootstrap (ratio of means)",
+    )
+
+
 def detectable_difference(
     n_per_group: int, p: float = 0.5, z_alpha: float = Z_95,
     z_power: float = Z_POWER_80,
