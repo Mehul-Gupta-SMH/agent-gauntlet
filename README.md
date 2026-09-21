@@ -43,6 +43,9 @@ gauntlet certify fixtures/inventory/audited.yaml --out certificate.json
 gauntlet check certificate.json --max-quality-drop 0.20
 ```
 
+Add `--max-cost-per-run 0.02` to get the constrained answer — the best config
+you can afford at that price — beside the unconstrained frontier.
+
 `check` has **three** verdicts, not two. `INCONCLUSIVE` means the run was too
 small to have seen the drop it was checking for — so a pass would have meant
 nothing. Most tooling in this shape prints a green tick there.

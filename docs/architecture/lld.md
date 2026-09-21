@@ -18,8 +18,8 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1159<br/>argparse · board rendering · probe · ui"]
-    BOARD["<b>board</b> · 820<br/>summarize · rank · pareto · held-out"]
+    CLI["<b>cli</b> · 1253<br/>argparse · board rendering · probe · ui"]
+    BOARD["<b>board</b> · 976<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 542<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 520<br/>RunContext · tool surface · notes"]
@@ -248,6 +248,42 @@ Offline policies are shape-blind by construction (`obedient` reads the
 canary off the schedule; `anchored` never looks), so the spread is 0 in
 every offline run. That is a fact about the test doubles, not evidence
 about phrasing — which is why #37 part 1, one live matrix, is still open.
+
+### From an ordering to a decision (#36)
+
+Four things sit between "it produces a ranking" and "it produces a decision
+you can defend", and all four are computable from what the board already
+holds.
+
+**`evidence_tiers`** cuts the ranking where the intervals actually separate
+it. `rank` groups exact ties, which is a statement about arithmetic; this
+groups configs whose intervals overlap, which is a statement about what the
+run could tell apart. Each config is compared against its tier's *best*,
+the conservative direction — it merges more and claims less. A tier means
+"this run could not separate these", never "these are equal". On the
+default fixture at n=36, eight contenders collapse into two tiers.
+
+**`best_under`** answers the constraint an operator actually arrives with —
+"the best thing I can afford at $X a run" — beside the frontier, which
+answers the preference. Inside the top tier the tiebreak is cost, because
+picking between configs the run could not separate on quality would be
+reading noise. Unpriced configs are refused and *handed back*: an unpriced
+run is not a free one (#14), and admitting them would make "no price" the
+cheapest possible answer.
+
+**`search_cost`** reports what finding the answer cost, as opposed to what
+running it will. Without it the escalation ladder — offline, then `probe`,
+then a live matrix — is a claim rather than a budget. `complete=False`
+means the number is a floor.
+
+**`FactorEffect.conditional_spreads`** is the cheap interaction detector.
+The marginal table averages over everything else, which is honest only when
+nothing interacts. Recomputing each factor's spread *inside* each setting of
+the others exposes when it does, and the CLI refuses to let the rows be read
+at all when a factor's swing across cells is at least its own marginal
+number. On `inventory/task.yaml` the prompt axis is worth ~3 points with a
+bare tool set and ~47 with a cross-check; the marginal 22% describes
+neither. Full Shapley attribution remains #22.
 
 ### Severity: how badly, not just how often
 

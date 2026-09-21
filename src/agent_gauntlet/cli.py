@@ -89,6 +89,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="CommonADK SDK target for --live (default: claude)",
     )
     run.add_argument(
+        "--max-cost-per-run", type=float, default=None, metavar="USD",
+        help="also answer the question an operator actually arrives with: "
+             "the best config that costs no more than this per run. A "
+             "constraint, not a preference -- the Pareto frontier stays",
+    )
+    run.add_argument(
         "--replay", type=Path, default=None, metavar="PATH",
         help="also record this run's event stream to a JSON file the arena "
              "page can replay without a server. Captured from the run that "
@@ -624,6 +630,9 @@ def _run(args) -> int:
                 r.is_sentinel = v.is_sentinel
 
     _print_board(results)
+    _print_search_cost(results, len(seeds), args)
+    if args.max_cost_per_run is not None:
+        _print_under_budget(results, args.max_cost_per_run)
     _print_effects(results)
     rc = _print_gate(records, seeds, task)
     held = _export(results, variants, out, records)
@@ -877,18 +886,30 @@ def _print_resolution(results) -> None:
     print("  95% Wilson, over seed and repeat variance on this scenario --")
     print("  not over tasks, models drifting, or provider nondeterminism.")
 
-    ranked = sorted(
-        (r for r in scored if r.accuracy is not None),
-        key=lambda r: -r.accuracy,
-    )
-    if len(ranked) >= 2:
-        first, second = ranked[0], ranked[1]
-        a, b = first.intervals.get("quality"), second.intervals.get("quality")
-        if a and b and not a.excludes(b):
-            print(f"\n  the top two are NOT separated: {first.label} "
-                  f"[{a.low:.0%},{a.high:.0%}] overlaps")
-            print(f"  {second.label} [{b.low:.0%},{b.high:.0%}]. Reading an "
-                  f"order into that is reading noise.")
+    # Every pair, not just the top one. The held-out split (#20) polices
+    # the winner; people read the whole column, and an ordering the run
+    # cannot support anywhere below the top is still an ordering somebody
+    # will act on (#36).
+    tiers = board.evidence_tiers(results)
+    if tiers:
+        print("\n  what this run can actually separate:")
+        for i, tier in enumerate(tiers, 1):
+            members = sorted(tier, key=lambda r: -(r.quality or 0))
+            head = members[0].intervals["quality"]
+            if len(members) == 1:
+                print(f"    {i}. {members[0].label}  "
+                      f"[{head.low:.0%},{head.high:.0%}]")
+                continue
+            print(f"    {i}. these {len(members)} are NOT separated "
+                  f"from each other:")
+            for r in members:
+                ci = r.intervals["quality"]
+                print(f"         {r.label:<34}{ci.value:>5.0%} "
+                      f"[{ci.low:.0%},{ci.high:.0%}]")
+        if any(len(t) > 1 for t in tiers):
+            print("    Within a tier the order on the board is noise. A tier")
+            print("    means this run could not tell them apart -- never that")
+            print("    they are the same.")
 
     interesting = [r for r in scored if r.intervals.get("propagation_rate")
                    or r.intervals.get("compliance_rate")][:6]
@@ -904,6 +925,58 @@ def _print_resolution(results) -> None:
             print(f"    {r.label:<34} {'  '.join(bits)}")
 
 
+def _print_search_cost(results, seeds: int, args) -> None:
+    """What finding the answer cost, beside what running it will (#36).
+
+    Every contender's `$/run` was on the board and the price of the
+    *search* was nowhere, which makes the escalation ladder -- offline,
+    then probe, then matrix -- a claim rather than a budget.
+    """
+    cost = board.search_cost(results)
+    print("\n--- what this search cost " + "-" * 46)
+    print(f"  {cost['runs']} runs across {cost['variants']} contenders, "
+          f"{seeds} seed(s), {args.repeats} repeat(s)")
+    if not cost["usd"]:
+        # Nothing priced it, which offline means nothing was spent and
+        # live means the roll-up carried no price. Those are different
+        # facts and must not print the same confident $0.00.
+        print("  spend: none" if not args.live else
+              "  spend: NOT MEASURED -- the provider returned no price")
+    elif cost["complete"]:
+        print(f"  spend: ${cost['usd']:.4f} to find the answer")
+    else:
+        print(f"  spend: at least ${cost['usd']:.4f} -- some runs went "
+              f"unpriced, so this is a floor")
+    if not args.live:
+        print("  Offline is the first rung of the ladder: it exercises the")
+        print("  whole pipeline and proves nothing about agents. `probe` is")
+        print("  next (~$0.03), then a live matrix.")
+
+
+def _print_under_budget(results, ceiling: float) -> None:
+    """The constrained answer, next to the unconstrained frontier."""
+    pick, unpriced = board.best_under(results, ceiling)
+    print(f"\n--- best config at or under ${ceiling:.4f}/run " + "-" * 31)
+    if pick is None:
+        print("  nothing priced came in under the ceiling.")
+    else:
+        ci = pick.intervals.get("quality")
+        qual = "n/a" if pick.quality is None else f"{pick.quality:.0%}"
+        band = f" [{ci.low:.0%},{ci.high:.0%}]" if ci else ""
+        print(f"  {pick.label}   {qual}{band}   "
+              f"${pick.cost_per_run:.4f}/run")
+        print("  Cheapest of the configs this run could not tell apart at the")
+        print("  top -- picking between them on quality would be reading")
+        print("  noise, so the tiebreak is the constraint you actually set.")
+    if unpriced:
+        # An unpriced run is not a free one (#14). They cannot be admitted
+        # under a ceiling, and dropping them silently would hide the fact
+        # that the cheapest option might be among them.
+        print(f"\n  {len(unpriced)} config(s) carried no price and were not")
+        print("  considered: unpriced is not free, and admitting them would")
+        print("  be the cheapest possible answer for the wrong reason.")
+
+
 def _print_effects(results) -> None:
     print("\n--- per-factor effects " + "-" * 49)
     effects = board.factor_effects(results)
@@ -914,6 +987,27 @@ def _print_effects(results) -> None:
         levels = "  ".join(f"{k}={v:.0%}" for k, v in e.levels.items())
         print(f"{e.factor:<12} spread={e.spread:>5.0%}   {levels}")
     print(f"\n  {effects[0].caveat}")
+
+    # Not a footnote: a factor whose effect swings more across the other
+    # factors than the marginal number itself is a row that does not
+    # describe any configuration that exists. Experiment 005 is the live
+    # case -- the model axis moved repair 22% -> 100% with prompt and
+    # toolset fixed, while this table called it 10 points.
+    unstable = [e for e in effects
+                if e.interaction_range is not None
+                and e.interaction_range >= e.spread]
+    if unstable:
+        print("\n  DO NOT READ THE ROWS ABOVE FOR:",
+              ", ".join(e.factor for e in unstable))
+        for e in unstable:
+            lo = min(e.conditional_spreads.items(), key=lambda kv: kv[1])
+            hi = max(e.conditional_spreads.items(), key=lambda kv: kv[1])
+            print(f"    {e.factor}: marginal {e.spread:.0%}, but holding the "
+                  f"others fixed it ranges")
+            print(f"      {lo[1]:.0%} at {lo[0]}")
+            print(f"      {hi[1]:.0%} at {hi[0]}")
+        print("    The average is not a description of any config you could")
+        print("    ship. Pick the cell you actually intend to run.")
 
 
 def _gate_caveat(records) -> None:

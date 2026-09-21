@@ -298,3 +298,147 @@ def test_export_refuses_a_variant_with_no_project(run, tmp_path):
     with pytest.raises(ValueError, match="no common/ folder"):
         board.export_winner(results[0], [VariantSpec(id=results[0].variant_id)],
                             tmp_path / "x")
+
+
+# --- from an ordering to a decision you can defend (#36) ------------------
+
+
+def _v(vid, quality, *, low, high, cost=None, priced=True, n=20, sentinel=False):
+    """A board row with a chosen quality and interval."""
+    from agent_gauntlet.stats import Interval
+
+    return board.VariantResult(
+        variant_id=vid, factors={}, n_runs=n, quality=quality, accuracy=quality,
+        clean_quality=quality, faulted_quality=quality, propagation_rate=0.0,
+        detection_rate=None, false_alarm_rate=0.0, mean_steps=1.0,
+        cost_usd=(cost or 0.0) * n, cost_complete=priced, is_sentinel=sentinel,
+        intervals={"quality": Interval(value=quality, low=low, high=high,
+                                       n=n, method="wilson")},
+    )
+
+
+def test_a_tier_is_what_the_run_could_not_separate():
+    """The held-out split polices the winner; people read the whole column.
+    An ordering this run cannot support below the top is still an ordering
+    somebody will act on."""
+    rows = [
+        _v("top", 0.95, low=0.85, high=0.99),
+        _v("near", 0.90, low=0.80, high=0.96),   # overlaps `top`
+        _v("far", 0.40, low=0.25, high=0.55),    # does not
+    ]
+    tiers = board.evidence_tiers(rows)
+    assert [[r.variant_id for r in t] for t in tiers] == [["top", "near"], ["far"]]
+
+
+def test_a_tier_never_claims_they_are_equal():
+    """Non-overlap implies a real difference; overlap does not imply
+    sameness. The comparison is against the tier's best, which is the
+    conservative direction -- it merges more, and claims less."""
+    rows = [_v("a", 0.90, low=0.80, high=0.96),
+            _v("b", 0.88, low=0.78, high=0.94)]
+    tier = board.evidence_tiers(rows)[0]
+    assert len(tier) == 2
+    assert tier[0].quality != tier[1].quality, "the values still differ"
+
+
+def test_a_row_with_no_interval_is_left_out_rather_than_ranked():
+    """It cannot be placed against one, and quietly ranking it would be an
+    ordering built on a comparison nobody made."""
+    naked = _v("naked", 0.99, low=0, high=1)
+    naked.intervals = {}
+    tiers = board.evidence_tiers([naked, _v("a", 0.5, low=0.3, high=0.7)])
+    assert [r.variant_id for t in tiers for r in t] == ["a"]
+
+
+def test_the_best_config_under_a_ceiling():
+    """The question an operator actually arrives with: a constraint, not a
+    preference."""
+    rows = [
+        _v("dear", 0.95, low=0.85, high=0.99, cost=0.50),
+        _v("fine", 0.93, low=0.83, high=0.98, cost=0.02),
+        _v("cheap_bad", 0.30, low=0.18, high=0.45, cost=0.001),
+    ]
+    pick, unpriced = board.best_under(rows, 0.10)
+    assert pick.variant_id == "fine"
+    assert unpriced == []
+
+
+def test_inside_the_top_tier_the_tiebreak_is_the_constraint():
+    """Picking between configs the run could not tell apart on quality
+    would be reading noise, so it breaks on the thing the operator
+    actually stated."""
+    rows = [
+        _v("pricey", 0.95, low=0.85, high=0.99, cost=0.09),
+        _v("thrifty", 0.92, low=0.82, high=0.97, cost=0.01),
+    ]
+    pick, _ = board.best_under(rows, 0.10)
+    assert pick.variant_id == "thrifty"
+
+
+def test_an_unpriced_config_is_not_a_cheap_one():
+    """#14, under a ceiling. Admitting them would make "no price" the
+    cheapest possible answer, for the wrong reason -- and they are handed
+    back rather than dropped, because the cheapest option might be there."""
+    rows = [
+        _v("priced", 0.80, low=0.70, high=0.90, cost=0.05),
+        _v("mystery", 0.99, low=0.90, high=1.0, priced=False),
+    ]
+    pick, unpriced = board.best_under(rows, 1.00)
+    assert pick.variant_id == "priced"
+    assert [r.variant_id for r in unpriced] == ["mystery"]
+
+
+def test_nothing_affordable_is_an_answer():
+    rows = [_v("dear", 0.95, low=0.85, high=0.99, cost=5.0)]
+    pick, _ = board.best_under(rows, 0.10)
+    assert pick is None
+
+
+def test_the_search_reports_its_own_cost():
+    """Every contender's $/run was on the board; what finding the winner
+    cost was nowhere, which makes the escalation ladder a claim rather
+    than a budget."""
+    rows = [_v("a", 0.9, low=0.8, high=0.95, cost=0.01, n=10),
+            _v("b", 0.8, low=0.7, high=0.90, cost=0.02, n=10)]
+    cost = board.search_cost(rows)
+    assert cost["runs"] == 20 and cost["variants"] == 2
+    assert cost["usd"] == pytest.approx(0.30)
+    assert cost["complete"]
+
+
+def test_one_unpriced_run_makes_the_search_cost_a_floor():
+    rows = [_v("a", 0.9, low=0.8, high=0.95, cost=0.01, n=10),
+            _v("b", 0.8, low=0.7, high=0.90, priced=False, n=10)]
+    assert not board.search_cost(rows)["complete"]
+
+
+def test_the_effects_table_says_when_not_to_trust_itself(task, tmp_path):
+    """The failure #22 is about, detected cheaply. On this fixture the
+    prompt axis is worth ~3 points with a bare tool set and ~47 with a
+    cross-check -- the marginal number describes neither.
+    """
+    variants = architect.generate(out_dir=tmp_path / "v", task=task, models=MODELS)
+    ledger = Ledger(tmp_path / "runs.jsonl")
+    run_matrix(task=task, variants=variants, ledger=ledger, base_seed="s",
+               repeats=3)
+    results = board.summarize(ledger.records())
+    for r in results:
+        r.is_sentinel = any(v.id == r.variant_id and v.is_sentinel
+                            for v in variants)
+
+    effects = {e.factor: e for e in board.factor_effects(results)}
+    prompt = effects["prompt"]
+    assert len(prompt.conditional_spreads) >= 2
+    assert prompt.interaction_range >= prompt.spread, (
+        "the prompt axis swings more across tool sets than its own marginal "
+        "number -- that is the caveat firing, not a flaky assertion"
+    )
+
+
+def test_a_single_cell_has_no_interaction_range():
+    """Below two cells there is nothing to disagree, and 0.0 would read as
+    'this axis is stable'."""
+    effect = board.FactorEffect(factor="model", levels={"a": 0.5, "b": 0.7},
+                                spread=0.2,
+                                conditional_spreads={"prompt=naive": 0.2})
+    assert effect.interaction_range is None

@@ -571,6 +571,109 @@ def rank(
     ]
 
 
+def evidence_tiers(
+    results: Sequence[VariantResult], *, metric: str = "quality"
+) -> list[list[VariantResult]]:
+    """The ranking cut where the evidence actually separates it (#36).
+
+    `rank` groups exact ties, which is a statement about arithmetic. This
+    groups configs whose intervals overlap, which is a statement about what
+    the run could tell apart -- and it is the one a reader needs, because
+    the held-out split (#20) polices the top of the ranking while people
+    read the whole column.
+
+    Walks the ranking and starts a new tier only where a config's interval
+    excludes the tier's *best* one. Conservative on purpose: non-overlap
+    implies a real difference, while overlap does not imply sameness. So a
+    tier means "this run could not separate these", never "these are
+    equal".
+
+    A config with no interval for the metric cannot be placed against one,
+    so it is left out entirely rather than silently ranked.
+    """
+    scored = [
+        r for r in results
+        if not r.is_sentinel and r.intervals.get(metric)
+        and getattr(r, metric, None) is not None
+    ]
+    ordered = sorted(scored, key=lambda r: -getattr(r, metric))
+    tiers: list[list[VariantResult]] = []
+    for r in ordered:
+        if tiers and not tiers[-1][0].intervals[metric].excludes(
+            r.intervals[metric]
+        ):
+            tiers[-1].append(r)
+        else:
+            tiers.append([r])
+    return tiers
+
+
+def best_under(
+    results: Sequence[VariantResult],
+    max_cost_per_run: float,
+    *,
+    metric: str = "quality",
+) -> tuple[Optional[VariantResult], list[VariantResult]]:
+    """The best config inside a spend ceiling, and what could not be judged.
+
+    The Pareto frontier is the honest refusal to collapse a tradeoff into a
+    scalar, but an operator usually arrives with a *constraint* rather than
+    a preference: "the best thing I can afford at $X a run". That is a
+    different question and it is answerable from the same board.
+
+    Returns the pick and the rows that were excluded for having no price.
+    An unpriced run is not a free one (#14), so those cannot be admitted
+    under a ceiling -- and they are handed back rather than dropped,
+    because "your cheapest option might be in here" is part of the answer.
+
+    The pick is the top of its *evidence* tier, not merely the top row: if
+    the run could not separate the leaders, saying which of them is best
+    would be reading noise.
+    """
+    priced = [
+        r for r in results
+        if not r.is_sentinel and r.cost_per_run is not None
+        and getattr(r, metric, None) is not None
+    ]
+    unpriced = [
+        r for r in results
+        if not r.is_sentinel and r.cost_per_run is None
+        and getattr(r, metric, None) is not None
+    ]
+    affordable = [r for r in priced if r.cost_per_run <= max_cost_per_run]
+    if not affordable:
+        return None, unpriced
+
+    tiers = evidence_tiers(affordable, metric=metric)
+    if not tiers:
+        # No intervals to reason with: fall back to the plain ordering and
+        # let the caller's resolution caveat do the qualifying.
+        return max(affordable, key=lambda r: getattr(r, metric)), unpriced
+    # Inside the top tier the run cannot order them, so take the cheapest:
+    # a tiebreak on the constraint the operator actually stated.
+    return min(tiers[0], key=lambda r: r.cost_per_run), unpriced
+
+
+def search_cost(results: Sequence[VariantResult]) -> dict[str, object]:
+    """What finding the winner cost, as opposed to what running it costs.
+
+    Every contender's `$/run` is on the board and the price of the *search*
+    was nowhere -- which makes the escalation ladder (offline, then probe,
+    then matrix) a claim rather than a budget.
+
+    `complete` is False when any run went unpriced, and then `usd` is a
+    floor rather than a total. Same rule as `cost_complete` on a row: a
+    confident understatement is worse than an admitted floor.
+    """
+    rows = [r for r in results if r.n_runs]
+    return {
+        "usd": sum(r.cost_usd for r in rows),
+        "runs": sum(r.n_runs for r in rows),
+        "variants": len(rows),
+        "complete": bool(rows) and all(r.cost_complete for r in rows),
+    }
+
+
 def winner(
     results: Sequence[VariantResult],
     *,
@@ -759,6 +862,31 @@ class FactorEffect(BaseModel):
     levels: dict[str, float]
     spread: float
     """Best level minus worst. A crude importance proxy."""
+    conditional_spreads: dict[str, float] = Field(default_factory=dict)
+    """This factor's spread computed *inside* each combination of the other
+    factors.
+
+    The marginal number above averages over everything else, which is only
+    honest when nothing interacts. These are the same measurement holding
+    the rest fixed, and where they disagree with each other the marginal
+    one is not describing any actual configuration.
+    """
+
+    @property
+    def interaction_range(self) -> Optional[float]:
+        """Widest conditional spread minus narrowest, or None below two.
+
+        The cheap detector for the failure #22 is about. Experiment 005:
+        the model axis moved repair from 22% to 100% with prompt and
+        toolset held fixed, while the marginal table called that axis worth
+        10 points. A wide range here is the table telling you not to trust
+        its own row.
+        """
+        if len(self.conditional_spreads) < 2:
+            return None
+        vals = list(self.conditional_spreads.values())
+        return max(vals) - min(vals)
+
     caveat: str = (
         "One-at-a-time marginal effect. Wrong under factor interaction; "
         "Shapley attribution is issue #22."
@@ -790,9 +918,37 @@ def factor_effects(results: Sequence[VariantResult]) -> list[FactorEffect]:
                 factor=factor,
                 levels=means,
                 spread=max(means.values()) - min(means.values()),
+                conditional_spreads=_conditional_spreads(results, factor),
             )
         )
     return sorted(effects, key=lambda e: e.spread, reverse=True)
+
+
+def _conditional_spreads(
+    results: Sequence[VariantResult], factor: str
+) -> dict[str, float]:
+    """This factor's spread inside each setting of the other factors.
+
+    Only cells where the factor actually varies: a cell holding one level
+    has a spread of zero for want of a comparison, not because the factor
+    did nothing there, and mixing those in would dilute the very
+    disagreement this exists to expose.
+    """
+    cells: dict[tuple, dict[str, list[float]]] = defaultdict(
+        lambda: defaultdict(list))
+    for r in results:
+        if r.is_sentinel or r.quality is None or factor not in r.factors:
+            continue
+        rest = tuple(sorted((k, v) for k, v in r.factors.items() if k != factor))
+        cells[rest][r.factors[factor]].append(r.quality)
+
+    out: dict[str, float] = {}
+    for rest, levels in sorted(cells.items()):
+        if len(levels) < 2:
+            continue
+        means = [mean(v) for v in levels.values()]
+        out[", ".join(f"{k}={v}" for k, v in rest)] = max(means) - min(means)
+    return out
 
 
 def export_winner(
