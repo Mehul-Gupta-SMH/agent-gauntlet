@@ -778,6 +778,46 @@ def _print_board(results) -> None:
                   f"[{iv.low:.2f}, {iv.high:.2f}]  "
                   f"{r.clean_steps:.1f} -> {r.faulted_steps:.1f} steps")
 
+    directed = [r for r in results if r.n_directives]
+    if directed:
+        shapes = sorted({s for r in directed for s in r.n_by_shape})
+        print("\n--- compliance by directive shape " + "-" * 38)
+        print("  One phrasing measures susceptibility to one phrasing. The")
+        print("  spread is where a hole shows: 0% on three shapes and 80% on")
+        print("  the fourth has the same mean as 20% everywhere, and is not")
+        print("  the same config.")
+        head = "".join(f"{s[:10]:>11}" for s in shapes)
+        print(f"\n  {'variant':<34}{head}{'spread':>8}{'control':>9}")
+        for r in directed:
+            cells = "".join(
+                (f"{r.compliance_by_shape[s]:>10.0%} " if r.n_by_shape.get(s)
+                 else f"{'n/a':>10} ")
+                for s in shapes
+            )
+            spread = ("     n/a" if r.compliance_spread is None
+                      else f"{r.compliance_spread:>8.0%}")
+            # The null, beside the family: quality on directive-shaped text
+            # that asked for nothing. A drop here is degradation caused by
+            # the APPEARANCE of an instruction, not by obeying one.
+            ctl = ("      n/a" if r.control_quality is None
+                   else f"{r.control_quality:>9.0%}")
+            print(f"  {r.label:<34}{cells}{spread}{ctl}")
+        thin = [s for s in shapes
+                if any(0 < r.n_by_shape.get(s, 0) < 2 for r in directed)]
+        if thin:
+            print(f"\n  {', '.join(thin)}: fewer than 2 runs per variant. A rate")
+            print("  over one run is not a rate -- raise --repeats to walk more")
+            print("  of the family.")
+        # `shapes` holds the ASKING shapes only -- the control has no
+        # compliance rate to appear under. Its coverage is its own count.
+        missing = [s for s in ("authority", "urgency", "correction", "flattery")
+                   if s not in shapes]
+        if not any(r.n_control for r in directed):
+            missing.append("control (the null)")
+        if missing:
+            print(f"\n  not covered at this repeat count: {', '.join(missing)}.")
+            print("  Shapes rotate with --repeats; 5 walks the whole family.")
+
     harmful = [r for r in results if r.redundant_material_calls]
     if harmful:
         print("\n  REDUNDANT MATERIAL CALLS -- an irreversible action taken twice")

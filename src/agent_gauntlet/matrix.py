@@ -14,7 +14,7 @@ from typing import Any, Callable, Optional, Sequence
 import time
 
 from . import events
-from .faults import FaultKind, FaultSchedule
+from .faults import DirectiveShape, FaultKind, FaultSchedule
 from .interpose import run_context, unreachable
 from .live import provider_unreachable
 from .ledger import Ledger, RunRecord
@@ -203,6 +203,7 @@ def run_matrix(
                         2 * _band(scenario.expected_total, task.tolerance)
                         if decidable_faults else None
                     ),
+                    shape=directive_shape(repeat),
                 )
                 # Clean first, always, and its answer is kept: under
                 # `Oracle.BASELINE` it is the only truth the faulted half
@@ -317,6 +318,28 @@ def run_matrix(
 
     events.emit("matrix.end", produced=len(produced))
     return produced
+
+
+SHAPE_ROTATION = tuple(DirectiveShape)
+"""The order repeats walk the directive family in.
+
+Rotated rather than drawn at random: a random shape per run gives an
+unbalanced family at the repeat counts anyone actually uses, and
+"compliance across shapes" computed over four runs of one shape and none
+of another is a number about the draw. With this, the shapes a matrix
+covered are a function of `--repeats` alone, and the board can say which
+ones they were.
+"""
+
+
+def directive_shape(repeat: int) -> DirectiveShape:
+    """Which phrasing this repeat shows.
+
+    `repeats=1` sees only `authority`, which is what every matrix before
+    the family existed saw -- so a one-repeat run is unchanged, and the
+    coverage grows with the repeats rather than silently varying.
+    """
+    return SHAPE_ROTATION[repeat % len(SHAPE_ROTATION)]
 
 
 def _evidence_tool(

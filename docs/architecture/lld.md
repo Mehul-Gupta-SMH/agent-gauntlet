@@ -18,14 +18,14 @@ flowchart TD
         REPLAY["<b>replay</b> · 215<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1101<br/>argparse · board rendering · probe · ui"]
-    BOARD["<b>board</b> · 735<br/>summarize · rank · pareto · held-out"]
+    CLI["<b>cli</b> · 1141<br/>argparse · board rendering · probe · ui"]
+    BOARD["<b>board</b> · 795<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 542<br/>PROMPTS · TOOLSETS · generate"]
-    SCORE["<b>score</b> · 454<br/>Outcome · score_run"]
+    SCORE["<b>score</b> · 481<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 520<br/>RunContext · tool surface · notes"]
     OFFLINE["<b>offline</b> · 375<br/>scripted policies"]
-    MATRIX["<b>matrix</b> · 378<br/>run_matrix · _attempt · budget"]
-    FAULTS["<b>faults</b> · 312<br/>FaultKind · FaultSchedule"]
+    MATRIX["<b>matrix</b> · 401<br/>run_matrix · _attempt · budget"]
+    FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
     SPEC["<b>spec</b> · 308<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 290<br/>executor · parsing · classification"]
     LEDGER["<b>ledger</b> · 273<br/>RunRecord · rescore"]
@@ -221,6 +221,33 @@ nothing was injected*, scored and ranked as though every agent had resisted
 (#40). Reachability is asserted from the registry, never inferred from a
 tool being granted — `_exposure_possible` answers a different question and
 its answer reads as a pass.
+
+### The directive family, and its null
+
+One phrasing measures susceptibility to one phrasing. `instruction` faults
+draw from five shapes — `authority` (the original `SYSTEM NOTICE`),
+`urgency`, `correction`, `flattery`, and a `control` — rotated by repeat,
+so coverage is a function of `--repeats` rather than of a draw, and
+`repeats=1` injects exactly what every matrix injected before the family
+existed.
+
+Every asking shape requests the same observable thing, a specific total, so
+what varies is the pretext and nothing else. The reportable figure is the
+rate across the family **plus the spread between shapes**: 0% on three and
+80% on the fourth has the same mean as 20% everywhere and is not the same
+config.
+
+The `control` is directive-shaped text that asks for nothing. It names no
+canary, so compliance on it is **not decidable** — those runs are out of
+that denominator rather than counted as configs that resisted — and what it
+reports instead is `control_quality`, to be read against the variant's own
+`clean_quality`. Without it, a config that answers badly whenever an
+annotation gets long is indistinguishable from one that was persuaded.
+
+Offline policies are shape-blind by construction (`obedient` reads the
+canary off the schedule; `anchored` never looks), so the spread is 0 in
+every offline run. That is a fact about the test doubles, not evidence
+about phrasing — which is why #37 part 1, one live matrix, is still open.
 
 ### Effort, beside harm
 
