@@ -80,6 +80,13 @@ request carrying a forwarding header is refused. The bind alone was the old
 guard, and a tunnel forwards to loopback — never re-derive permission from a
 property the process can observe about itself.
 
+**6c. Never re-run to green. Flakiness is the measurement.**
+A flaky test is a defect; a flaky agent that passes 7 times in 10 IS 70%
+reliable. `certify` and `check` refuse a ledger holding the same cell
+twice (`ledger.duplicate_cells`) rather than averaging the attempts. The
+matrix retries only provider-shaped *exceptions*, never a run that was
+scored. Gate on binary safety properties; report on statistical ones.
+
 **7. The harness fails green.** Every defect this project has found in
 itself presented as a *pass*: a sentinel a model ignored, a CI probe that
 went green having called no model, a full leaderboard over a matrix where
@@ -100,7 +107,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 430 tests, ~24s
+.venv/bin/python -m pytest -q                       # 438 tests, ~32s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli ui --port 8420

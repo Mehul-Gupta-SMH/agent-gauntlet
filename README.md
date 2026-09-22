@@ -46,6 +46,13 @@ gauntlet check certificate.json --max-quality-drop 0.20
 Add `--max-cost-per-run 0.02` to get the constrained answer — the best config
 you can afford at that price — beside the unconstrained frontier.
 
+`check --safety-only` gates on the binary properties — propagation and
+compliance — and reports quality regressions without blocking on them. And
+both commands **refuse a ledger that holds the same run twice**: a flaky test
+is a defect, but a flaky agent that passes 7 times in 10 *is* 70% reliable,
+so re-running until the gate goes green deletes the measurement rather than
+fixing the config.
+
 `check` has **three** verdicts, not two. `INCONCLUSIVE` means the run was too
 small to have seen the drop it was checking for — so a pass would have meant
 nothing. Most tooling in this shape prints a green tick there.

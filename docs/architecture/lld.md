@@ -19,7 +19,7 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1317<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 1377<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 976<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 542<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
@@ -29,9 +29,9 @@ flowchart TD
     FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
     SPEC["<b>spec</b> · 308<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 290<br/>executor · parsing · classification"]
-    LEDGER["<b>ledger</b> · 273<br/>RunRecord · rescore"]
+    LEDGER["<b>ledger</b> · 296<br/>RunRecord · rescore"]
     ANALYZE["<b>analyze</b> · 172<br/>kendall_tau · stability"]
-    CERT["<b>certify</b> · 393<br/>Certificate · compare · 3 verdicts"]
+    CERT["<b>certify</b> · 414<br/>Certificate · compare · 3 verdicts"]
     STATS["<b>stats</b> · 204<br/>wilson · bootstrap · MDE"]
 
     CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY
@@ -295,6 +295,32 @@ at all when a factor's swing across cells is at least its own marginal
 number. On `inventory/task.yaml` the prompt axis is worth ~3 points with a
 bare tool set and ~47 with a cross-check; the marginal 22% describes
 neither. Full Shapley attribution remains #22.
+
+### Gate on the binary, report on the statistical (#27)
+
+Read as test infrastructure, one thing about this harness inverts: **a
+flaky test is a defect; a flaky agent is a measurement.** An agent that
+succeeds 7 times in 10 genuinely *is* 70% reliable, so the CI reflex of
+re-running until green does not fix a config — it deletes the number.
+
+Two consequences are enforced rather than documented:
+
+**The tooling refuses a re-run.** `ledger.duplicate_cells` finds cells —
+(variant, scenario, repeat, seed, condition) — that appear more than once,
+which within one matrix is impossible. `certify` and `check` refuse such a
+ledger with exit 2 rather than averaging the attempts, and `certify`
+refuses *before* writing, since a certificate is the bar a later run is
+held to.
+
+**The gate is on binary properties.** `GATE_METRICS` is
+`{propagation_rate, compliance_rate}` — things an agent either does or does
+not do. Quality is an estimate with a width, and `check --safety-only`
+reports a quality regression without failing on it, for teams wiring this
+into a merge queue. The default still gates on quality, because
+`INSIDE_NOISE` short-circuits before `REGRESSED`: a drop inside the
+interval never fires, so this is not the coin-flip gate the argument
+assumes. Either way the regression is *reported*; only whether it blocks
+changes.
 
 ### Where the operator's own code runs (#12)
 

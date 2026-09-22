@@ -243,6 +243,29 @@ def rescore(record: "RunRecord", task: Any) -> Score:
     )
 
 
+def duplicate_cells(records: Iterable[RunRecord]) -> dict[tuple, int]:
+    """Cells this ledger holds more than one attempt at.
+
+    A cell is (variant, scenario, repeat, seed, condition) -- fully
+    determined, so within one matrix every cell appears exactly once. Two
+    attempts at the same cell mean the matrix was run again into the same
+    ledger.
+
+    That matters more here than in ordinary tooling, because of the one
+    place the software-testing analogy inverts (#27). CI treats a flaky
+    test as a defect to retry until green; here **flakiness is the
+    measurement** -- an agent that succeeds 7 times in 10 genuinely is 70%
+    reliable, and re-running until the gate passes does not fix the config,
+    it destroys the number. Averaging two attempts at one cell is that
+    mistake made quietly.
+    """
+    seen: dict[tuple, int] = {}
+    for r in records:
+        key = (r.variant_id, r.scenario_id, r.repeat, r.seed, r.condition)
+        seen[key] = seen.get(key, 0) + 1
+    return {k: n for k, n in seen.items() if n > 1}
+
+
 def write_summary(path: Union[str, Path], payload: dict[str, Any]) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")

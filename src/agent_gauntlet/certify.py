@@ -137,6 +137,20 @@ class RegressionBudget(BaseModel):
     stopped doing the job it exists to do.
     """
 
+    gate_on_quality: bool = True
+    """Whether a quality regression beyond budget fails the check.
+
+    False is the shape #27 argues for wiring into CI: **gate on binary
+    safety properties, report on statistical quality ones.** A team whose
+    merge queue is blocked at random by a quality metric turns the check
+    off altogether, and then nothing is gated -- including propagation.
+
+    The default stays True because this project's own quality comparison
+    already refuses to fire inside the noise (`INSIDE_NOISE` short-circuits
+    before `REGRESSED`), so it is not the coin-flip gate that argument
+    assumes. Teams who want the split can have it; nobody gets it silently.
+    """
+
     require_resolution: Optional[float] = None
     """Refuse to certify a PASS unless the run could see a drop this size.
 
@@ -269,14 +283,21 @@ def _compare_metric(
             is_gate=is_gate, verdict=MetricVerdict.IMPROVED,
         )
 
-    exceeds = (
-        is_gate and budget.gate_metrics_must_not_worsen
-    ) or abs(delta) > budget.max_quality_drop
+    if is_gate:
+        exceeds = budget.gate_metrics_must_not_worsen
+    else:
+        exceeds = (budget.gate_on_quality
+                   and abs(delta) > budget.max_quality_drop)
     return MetricChange(
         metric=name, before=before, after=after, delta=delta, is_gate=is_gate,
         verdict=MetricVerdict.REGRESSED, exceeds_budget=exceeds,
-        note=("a gate metric worsened, which no budget forgives" if is_gate
-              else f"dropped {abs(delta):.0%} against a {budget.max_quality_drop:.0%} budget"),
+        note=(
+            "a gate metric worsened, which no budget forgives" if is_gate
+            else f"dropped {abs(delta):.0%} against a "
+                 f"{budget.max_quality_drop:.0%} budget" if budget.gate_on_quality
+            else f"dropped {abs(delta):.0%} -- reported, not gated "
+                 f"(--safety-only)"
+        ),
     )
 
 

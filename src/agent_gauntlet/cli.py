@@ -26,6 +26,7 @@ from .live import provider_unreachable as _provider_unreachable
 from . import certify
 from .ledger import Ledger, write_summary
 from .stats import detectable_difference
+from .ledger import duplicate_cells as ledger_duplicates
 from .ledger import errors as ledger_errors
 from .ledger import variant_drift as ledger_drift
 from .matrix import run_matrix
@@ -162,6 +163,13 @@ def build_parser() -> argparse.ArgumentParser:
              "(defaults to --max-quality-drop)",
     )
 
+    check.add_argument(
+        "--safety-only", action="store_true",
+        help="fail only on the binary safety metrics (propagation, "
+             "compliance) and report quality regressions without gating "
+             "on them. The shape for a merge queue: a gate that blocks at "
+             "random gets switched off, and then nothing is gated",
+    )
     ui = sub.add_parser(
         "ui",
         help="watch a gauntlet run in the browser -- intake, arena, and the "
@@ -1173,6 +1181,12 @@ def _certify(args) -> int:
         print(f"no runs in {args.runs}")
         return 2
 
+    # A certificate is the bar a later run is held to. Issuing one over a
+    # ledger that holds the same cell twice would bake the averaged retry
+    # into the baseline itself.
+    if (rc := _refuse_rerun_cells(records, args.runs)) is not None:
+        return rc
+
     results = board.summarize(
         records,
         harm_budget=task.acceptable_degradation.get("redundant_material_calls"),
@@ -1199,6 +1213,43 @@ def _certify(args) -> int:
     return 0
 
 
+def _refuse_rerun_cells(records, path) -> Optional[int]:
+    """Refuse a ledger that holds the same cell twice (#27).
+
+    The one place the software-testing analogy inverts. CI treats a flaky
+    test as a defect to retry until green; here flakiness IS the
+    measurement -- an agent that succeeds 7 times in 10 is 70% reliable,
+    and re-running until the gate passes does not fix the config, it
+    deletes the number. Averaging two attempts at one cell is that mistake
+    made quietly, so the tooling refuses rather than documenting it
+    somewhere nobody reads.
+    """
+    dupes = ledger_duplicates(records)
+    if not dupes:
+        return None
+    extra = sum(n - 1 for n in dupes.values())
+    print(f"REFUSED: {path} holds {len(dupes)} cell(s) more than once "
+          f"({extra} extra run(s)).")
+    print()
+    print("  A cell is one (variant, scenario, repeat, seed, condition), and")
+    print("  a matrix produces each exactly once. More than one means the")
+    print("  matrix was run again into the same ledger.")
+    print()
+    print("  This is the one place the testing analogy inverts. A flaky test")
+    print("  is a defect to retry until green; a flaky agent is a 70%")
+    print("  reliable agent, and that 70% is the measurement. Re-running")
+    print("  until the gate passes does not fix the config -- it deletes the")
+    print("  number, and averaging the attempts hides that it happened.")
+    print()
+    for (variant, scenario, repeat, seed, condition), n in sorted(dupes.items())[:3]:
+        print(f"    {n}x  {variant}  {scenario} repeat={repeat} {condition}")
+    if len(dupes) > 3:
+        print(f"    ... and {len(dupes) - 3} more")
+    print()
+    print("  Use a fresh --out directory for each matrix.")
+    return 2
+
+
 def _check(args) -> int:
     """Compare a run against its certificate.
 
@@ -1213,10 +1264,14 @@ def _check(args) -> int:
         print(f"no runs in {args.runs}")
         return 2
 
+    if (rc := _refuse_rerun_cells(records, args.runs)) is not None:
+        return rc
+
     results = board.summarize(records)
     budget = certify.RegressionBudget(
         max_quality_drop=args.max_quality_drop,
         require_resolution=args.require_resolution,
+        gate_on_quality=not getattr(args, "safety_only", False),
     )
     report = certify.compare(certs, results, budget=budget)
 
@@ -1237,6 +1292,11 @@ def _check(args) -> int:
                       f"{change.after:.0%}{flag}")
         if comp.verdict is not certify.Verdict.PASS:
             print(f"       {comp.reason}")
+
+    if getattr(args, "safety_only", False):
+        print("\n  --safety-only: quality regressions above are reported and")
+        print("  do not fail this check. The binary properties -- propagation")
+        print("  and compliance -- still do, and no budget forgives them.")
 
     print(f"\nVERDICT: {report.verdict.value.upper()} -- {report.reason}")
     if report.verdict is certify.Verdict.INCONCLUSIVE:

@@ -236,3 +236,151 @@ def test_the_direction_table_covers_every_reported_rate():
     assert certify.GATE_METRICS <= certify.HIGHER_IS_WORSE
     assert not (certify.HIGHER_IS_BETTER & certify.HIGHER_IS_WORSE), (
         "a metric cannot point both ways")
+
+
+# --- the retry instinct, refused in the tooling (#27) ---------------------
+
+
+def test_one_matrix_produces_each_cell_exactly_once(task, tmp_path):
+    """The premise the refusal below rests on. A cell is fully determined
+    by (variant, scenario, repeat, seed, condition), so seeds and repeats
+    do not collide with each other."""
+    from agent_gauntlet.ledger import duplicate_cells
+
+    ledger = Ledger(tmp_path / "once.jsonl")
+    variants = [VariantSpec(id="v", factors={"prompt": "naive",
+                                             "toolset": "records+summary"})]
+    for seed in ("seed0", "seed1"):
+        run_matrix(task=task, variants=variants, ledger=ledger,
+                   base_seed=seed, repeats=3)
+    assert duplicate_cells(ledger.records()) == {}
+
+
+def test_a_ledger_holding_a_cell_twice_is_refused(task, tmp_path, capsys):
+    """The one place the testing analogy inverts.
+
+    CI treats a flaky test as a defect to retry until green. Here an agent
+    that succeeds 7 times in 10 IS 70% reliable, and that 70% is the
+    measurement -- so re-running until the gate passes does not fix the
+    config, it deletes the number. Averaging two attempts at one cell is
+    that mistake made quietly, and #27 asks whether the instinct is
+    prevented by tooling or by documentation nobody reads.
+    """
+    from agent_gauntlet.cli import _certify, _check, build_parser
+    from agent_gauntlet.ledger import duplicate_cells
+
+    ledger = Ledger(tmp_path / "twice.jsonl")
+    variants = [VariantSpec(id="v", factors={"prompt": "naive",
+                                             "toolset": "records+summary"})]
+    # The same matrix, run again into the same ledger. Exactly what a
+    # "just re-run it" reflex produces.
+    for _ in range(2):
+        run_matrix(task=task, variants=variants, ledger=ledger,
+                   base_seed="seed0", repeats=2)
+
+    dupes = duplicate_cells(ledger.records())
+    assert dupes and all(n == 2 for n in dupes.values())
+
+    rc = _certify(build_parser().parse_args(
+        ["certify", str(FIXTURE), "--runs", str(ledger.path),
+         "--out", str(tmp_path / "cert.json")]))
+    assert rc == 2
+    out = capsys.readouterr().out
+    assert "REFUSED" in out and "flaky agent is a 70%" in out
+    # Refused before writing: a certificate is the bar a later run is held
+    # to, and an averaged retry must not become the baseline.
+    assert not (tmp_path / "cert.json").exists()
+
+    # And the same refusal on the checking side, against a certificate
+    # issued from a clean ledger.
+    clean = Ledger(tmp_path / "clean.jsonl")
+    run_matrix(task=task, variants=variants, ledger=clean,
+               base_seed="seed0", repeats=2)
+    assert _certify(build_parser().parse_args(
+        ["certify", str(FIXTURE), "--runs", str(clean.path),
+         "--out", str(tmp_path / "cert.json")])) == 0
+    capsys.readouterr()
+
+    rc = _check(build_parser().parse_args(
+        ["check", str(tmp_path / "cert.json"), "--runs", str(ledger.path)]))
+    assert rc == 2
+    assert "REFUSED" in capsys.readouterr().out
+
+
+# --- gate on safety, report on quality (#27) ------------------------------
+
+
+def _cert_and_row(quality_before, quality_after, prop_before, prop_after):
+    """A certificate and a later board row, with intervals wide apart so
+    the comparison is never short-circuited as noise."""
+    from agent_gauntlet.stats import Interval
+
+    def iv(v):
+        return Interval(value=v, low=max(0.0, v - 0.02),
+                        high=min(1.0, v + 0.02), n=200, method="wilson")
+
+    cert = Certificate(
+        variant_id="v", task_fingerprint="f", n_runs=200, resolution=0.05,
+        metrics={"quality": quality_before, "propagation_rate": prop_before},
+        intervals={"quality": iv(quality_before),
+                   "propagation_rate": iv(prop_before)},
+    )
+    row = board.VariantResult(
+        variant_id="v", factors={}, n_runs=200, quality=quality_after,
+        accuracy=quality_after, clean_quality=quality_after,
+        faulted_quality=quality_after, propagation_rate=prop_after,
+        detection_rate=None, false_alarm_rate=0.0, cost_usd=0.0,
+        mean_steps=1.0,
+        intervals={"quality": iv(quality_after),
+                   "propagation_rate": iv(prop_after)},
+    )
+    return cert, row
+
+
+def test_a_quality_regression_fails_by_default():
+    # The budget is above the run's own resolution (0.14 at n=200), or the
+    # verdict would be INCONCLUSIVE before it was ever FAIL.
+    cert, row = _cert_and_row(0.90, 0.50, 0.0, 0.0)
+    report = certify.compare([cert], [row],
+                             budget=RegressionBudget(max_quality_drop=0.20))
+    assert report.verdict is Verdict.FAIL
+
+
+def test_safety_only_reports_that_same_regression_without_failing():
+    """The shape #27 argues for wiring into CI. A gate that blocks a merge
+    queue at random gets switched off, and then nothing is gated --.
+    including propagation."""
+    cert, row = _cert_and_row(0.90, 0.50, 0.0, 0.0)
+    report = certify.compare(
+        [cert], [row],
+        budget=RegressionBudget(max_quality_drop=0.20, gate_on_quality=False))
+    assert report.verdict is Verdict.PASS
+
+    # Reported, not hidden: the drop is still in the comparison, still
+    # marked REGRESSED, and only `exceeds_budget` changes.
+    change = next(c for c in report.variants[0].changes if c.metric == "quality")
+    assert change.verdict is MetricVerdict.REGRESSED
+    assert not change.exceeds_budget
+    assert "reported, not gated" in change.note
+
+
+def test_safety_only_still_fails_on_propagation():
+    """The half that must not move. A config that starts propagating has
+    stopped doing the job, and no mode forgives it."""
+    cert, row = _cert_and_row(0.90, 0.90, 0.0, 0.40)
+    report = certify.compare(
+        [cert], [row],
+        budget=RegressionBudget(max_quality_drop=0.20, gate_on_quality=False))
+    assert report.verdict is Verdict.FAIL
+    change = next(c for c in report.variants[0].changes
+                  if c.metric == "propagation_rate")
+    assert change.is_gate and change.exceeds_budget
+
+
+def test_the_split_is_between_binary_and_statistical_metrics():
+    """Which side each metric falls on, pinned. `propagation_rate` and
+    `compliance_rate` are properties an agent either has or does not;
+    quality is an estimate with a width."""
+    assert certify.GATE_METRICS == {"propagation_rate", "compliance_rate"}
+    assert "quality" not in certify.GATE_METRICS
+    assert "accuracy" not in certify.GATE_METRICS
