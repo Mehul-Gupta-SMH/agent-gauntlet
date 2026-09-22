@@ -18,6 +18,8 @@
   --blood:     #d4553f;
   --parry:     #52b9a2;
   --dark:      #4a4038;
+  --wyrm:      #8f5ad6;
+  --wyrm-deep: #3a2450;
 
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -175,6 +177,7 @@ button.row-x { padding: 0.15rem 0.45rem; font-size: 0.75rem; color: var(--ink-fa
 .dot.parry { background: var(--parry); }
 .dot.fall { background: #7a2318; }
 .dot.dark { background: var(--dark); }
+.dot.wyrm { background: var(--wyrm); }
 
 /* fighter states, driven by a data attribute the JS sets from real events */
 .fighter { transition: opacity .2s; }
@@ -483,3 +486,62 @@ input[type="file"] { font-size: 0.8rem; color: var(--ink-dim); }
               font-size: 0.8rem; color: var(--ink-dim); max-width: 78ch;
               line-height: 1.55; }
 .resolution strong { color: var(--ink); }
+
+/* --- the injector ------------------------------------------------------
+ *
+ * A dragon on the arena floor, and the only thing on this page that stands
+ * for a mechanism rather than for a measurement -- so it is bound tightly
+ * to one: it stirs when a run carries an armed schedule, and it breathes
+ * ONLY on a `tool.call` that actually arrived faulted. There is no idle
+ * attack, no flourish between runs, nothing it does that the event stream
+ * did not do first. A crowd-pleasing animation that fired on its own would
+ * be the page inventing a fault, which is the one thing it must never do.
+ *
+ * `#wyrm-body` is positioned by an SVG attribute and animated by CSS on an
+ * inner group, for the reason written at `strikeAt`: a CSS transform
+ * replaces the attribute outright rather than composing with it.
+ */
+
+#dragon .wyrm-idle { animation: wyrm-breathe 5.5s ease-in-out infinite; }
+#dragon .wyrm-wing { animation: wyrm-wing 5.5s ease-in-out infinite;
+                     transform-origin: 0 0; }
+#dragon .wyrm-eye  { fill: var(--dark); }
+
+/* Armed: this run carries a fault schedule. Dormant on a clean run, which
+   is half of what makes the counterfactual pair legible at a glance. */
+#dragon[data-armed="true"] .wyrm-eye { fill: var(--blood); filter: url(#soft); }
+#dragon[data-armed="true"] .wyrm-idle { animation-duration: 2.6s; }
+
+#dragon[data-striking="true"] .wyrm-head { animation: wyrm-lunge .5s ease-out; }
+
+@keyframes wyrm-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-3px) scale(1.015); }
+}
+@keyframes wyrm-wing {
+  0%, 100% { transform: rotate(0deg) scaleY(1); }
+  50%      { transform: rotate(-7deg) scaleY(0.92); }
+}
+@keyframes wyrm-lunge {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+/* The breath itself: drawn from the dragon to the contender that was
+   actually lied to, and gone as soon as the strike lands. */
+/* Opacity and width, not a dash sweep: a `stroke-dasharray` animation
+ * leaves the line undrawn for most of its life, so the one thing the
+ * dragon is for was invisible in almost every frame. */
+.breath { animation: breath-out .62s ease-out forwards; }
+@keyframes breath-out {
+  0%   { opacity: 0; stroke-width: 1; }
+  18%  { opacity: 1; stroke-width: 7; }
+  100% { opacity: 0; stroke-width: 2; }
+}
+.breath-mote { animation: breath-mote .62s ease-out forwards; }
+@keyframes breath-mote {
+  0%   { opacity: 0; transform: scale(.2); }
+  40%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.5); }
+}

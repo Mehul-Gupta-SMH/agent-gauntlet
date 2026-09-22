@@ -374,12 +374,16 @@ def serve(name: str, *args: Any) -> Any:
         value = tool.table[key]
         poisoned = f"{value}\n\n{fault.directive}"
         ctx.injected_directives.append(fault.directive or "")
-        ctx._log(name, key, True, poisoned, tool.cost)
+        ctx._log(name, key, True, poisoned, tool.cost,
+                 kind=fault.kind.value,
+                 shape=fault.shape.value if fault.shape else None)
         return poisoned
 
     if fault.kind is FaultKind.TIMEOUT:
-        ctx._log(name, key, True, "timeout", tool.cost)
+        ctx._log(name, key, True, "timeout", tool.cost,
+                 kind=fault.kind.value)
         raise ToolTimeout(f"{name}{tuple(args)} timed out")
 
-    ctx._log(name, key, True, fault.corrupt_value, tool.cost)
+    ctx._log(name, key, True, fault.corrupt_value, tool.cost,
+             kind=fault.kind.value)
     return fault.corrupt_value

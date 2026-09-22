@@ -194,3 +194,63 @@ def test_the_page_computes_no_rates_of_its_own():
     src = (Path(server.__file__).parent / "ui" / "arena.js").read_text()
     for banned in ("propagated / ", "/ total", "Math.round(prop", "accSum / total"):
         assert banned not in src
+
+
+# --- the injector, drawn (#12 arena) --------------------------------------
+
+
+def _arena_js() -> str:
+    return (Path(server.__file__).parent / "ui" / "arena.js").read_text(encoding="utf-8")
+
+
+def test_the_dragon_breathes_only_on_a_real_faulted_call():
+    """It is the only figure on the page standing for a mechanism rather
+    than a measurement, so it is bound to the one event that is allowed to
+    draw a hit. An idle attack, or a flourish between runs, would be the
+    page inventing a fault -- which is the single thing it must never do.
+    """
+    src = _arena_js()
+    # Called from exactly one place, and that place is guarded by `faulted`.
+    assert src.count("breatheAt(") == 2, "one definition, one call site"
+    guard = src.index("if (ev.faulted) {")
+    call = src.index("breatheAt(v, ev.fault_kind)")
+    end = src.index("} else setFighterState(v, 'acting', 500);")
+    assert guard < call < end, "the breath must sit inside the faulted branch"
+
+    # Nothing schedules it on its own.
+    for banned in ("setInterval", "Math.random"):
+        assert banned not in src, f"the arena must not {banned}"
+
+
+def test_the_page_is_told_which_lie_it_was_rather_than_guessing():
+    """It used to decide a directive had arrived by searching the result
+    for "SYSTEM NOTICE" -- true of exactly one of the five shapes, and
+    silently false for the other four from the day the family landed."""
+    src = _arena_js()
+    # The check, not the comment that records why it is gone.
+    assert "includes('SYSTEM NOTICE')" not in src
+    assert "ev.fault_kind === 'instruction'" in src
+
+
+def test_every_fault_kind_has_a_colour_and_they_come_from_the_event():
+    src = _arena_js()
+    for kind in ("wrong_value", "timeout", "instruction", "poisoned_memory"):
+        assert f"{kind}:" in src, kind
+
+
+def test_the_arena_has_somewhere_to_draw_it():
+    html = (Path(server.__file__).parent / "ui" / "index.html").read_text(encoding="utf-8")
+    # Under the fighters, over the floor: it must never hide a contender.
+    assert html.index('id="dragon"') < html.index('id="fighters"')
+    assert html.index('id="floor-marks"') < html.index('id="dragon"')
+    # And the legend says what it is, in the same breath as what it means.
+    assert "the injector" in html
+    assert "breathes only when a" in html
+
+
+def test_a_crowded_floor_gets_no_dragon():
+    """Past three rings the floor belongs to the contenders, and a picture
+    of a crowd with a dragon on top is a picture of neither."""
+    src = _arena_js()
+    assert "if (scale < 0.7) return;" in src
+    assert "buildDragon(cx, cy, grid ? 0 : scale)" in src

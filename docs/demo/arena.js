@@ -24,6 +24,7 @@ const state = {
   done: 0,
   selected: null,        // which contender the step log is showing
   logs: new Map(),       // variant id -> step lines
+  dragon: null,          // the injector, when the floor has room for it
   recording: null,       // set when the stream is a file, not a poll
   gen: 0,                // bumped per stream, so an old drain timer stops
   startedAt: null,
@@ -119,6 +120,8 @@ function buildArena(variants, faultTool) {
   const spreads = [0.84, 0.54, 0.26];
   const perRing = Math.ceil(n / rings);
 
+  buildDragon(cx, cy, grid ? 0 : scale);
+
   variants.forEach((v, i) => {
     let x, y;
     if (grid) {
@@ -211,6 +214,156 @@ function buildTabs(variants) {
   state.selected = variants[0]?.id || null;
 }
 
+/* ---------------------------------------------------------------- wyrm */
+
+/* The fault injector, drawn as the thing it is: something in the middle of
+ * the arena that lies to whichever contender reaches for a tool.
+ *
+ * It is the only figure on this page standing for a mechanism rather than
+ * for a measurement, so it is tied hard to one. It stirs when a run carries
+ * an armed schedule, and it BREATHES only on a `tool.call` that actually
+ * arrived faulted -- the same event, and the only event, that is allowed to
+ * draw a strike. No idle attacks, no flourish between runs. An animation
+ * that fired on its own would be the page inventing a fault.
+ */
+
+const WYRM_COLOURS = {
+  wrong_value: 'var(--blood)',
+  timeout: 'var(--dark)',
+  instruction: 'var(--wyrm)',
+  poisoned_memory: 'var(--parry)',
+};
+
+function buildDragon(cx, cy, scale) {
+  const host = $('#dragon');
+  host.innerHTML = '';
+  state.dragon = null;
+  // Past three rings the floor belongs to the contenders. A dragon drawn
+  // over its own crowd would hide the thing the page is actually about.
+  if (scale < 0.7) return;
+
+  const SKIN = '#4a2d66';
+  const EDGE = '#b07ce8';
+  const g = svgEl('g', { transform: `translate(${cx} ${cy}) scale(${scale * 1.25})` });
+  const idle = svgEl('g', { class: 'wyrm-idle' });
+
+  // Wings, mirrored about the body's long axis -- both sweep BACK, which
+  // only works if the mirror flips y alone. Flipping x as well (the first
+  // version) rotates the second wing into the first's place and the
+  // silhouette collapses into a blob.
+  [-1, 1].forEach((side) => {
+    const wing = svgEl('g', { class: 'wyrm-wing' });
+    // Scalloped trailing edge and straight leading spar -- the one cue
+    // that separates a bat wing from a moth's, which is what the first
+    // pair of smooth curves read as.
+    wing.appendChild(svgEl('path', {
+      d: `M -2 ${3 * side} L -30 ${30 * side} L -50 ${34 * side}`
+         + ` Q -40 ${22 * side}, -34 ${20 * side}`
+         + ` Q -28 ${17 * side}, -22 ${11 * side}`
+         + ` Q -14 ${9 * side}, -2 ${3 * side} Z`,
+      fill: SKIN, stroke: EDGE, 'stroke-width': 1.4, opacity: 0.72,
+    }));
+    [[-30, 30], [-22, 20]].forEach(([rx, ry]) => wing.appendChild(svgEl('path', {
+      d: `M -4 ${4 * side} L ${rx} ${ry * side}`,
+      stroke: EDGE, 'stroke-width': 0.9, opacity: 0.5, fill: 'none',
+    })));
+    idle.appendChild(wing);
+  });
+
+  // Body: small enough that the head clears it at every angle. The first
+  // version had a fat body and a short neck, so a head turned upward
+  // simply sat on top of it.
+  idle.appendChild(svgEl('ellipse', {
+    cx: 0, cy: 0, rx: 19, ry: 13, fill: SKIN, stroke: EDGE, 'stroke-width': 1.8,
+  }));
+
+  // Tail and head turn together -- the body is an ellipse and gives the
+  // rotation away at no angle, so the whole creature can face its target.
+  const swivel = svgEl('g', { class: 'wyrm-swivel' });
+
+  swivel.appendChild(svgEl('path', {
+    d: 'M -14 0 C -40 -4, -56 10, -44 22 C -37 28, -28 22, -31 15',
+    fill: 'none', stroke: SKIN, 'stroke-width': 7, 'stroke-linecap': 'round',
+  }));
+  swivel.appendChild(svgEl('path', {
+    d: 'M -14 0 C -40 -4, -56 10, -44 22 C -37 28, -28 22, -31 15',
+    fill: 'none', stroke: EDGE, 'stroke-width': 1.1, opacity: 0.5,
+  }));
+
+  const head = svgEl('g', { class: 'wyrm-head' });
+  head.appendChild(svgEl('path', {          // neck, long enough to clear
+    d: 'M 8 -8 C 20 -11, 28 -10, 34 -7 L 34 7 C 28 10, 20 11, 8 8 Z',
+    fill: SKIN, stroke: EDGE, 'stroke-width': 1.4,
+  }));
+  head.appendChild(svgEl('path', {          // spines along the neck
+    d: 'M 12 -9 l 3 -7 l 4 6 l 4 -7 l 4 6',
+    fill: 'none', stroke: EDGE, 'stroke-width': 1.5, 'stroke-linejoin': 'round',
+  }));
+  head.appendChild(svgEl('path', {          // skull, snout to the right
+    d: 'M 32 -9 C 46 -11, 60 -6, 66 0 C 60 6, 46 11, 32 9 Z',
+    fill: SKIN, stroke: EDGE, 'stroke-width': 1.8,
+  }));
+  head.appendChild(svgEl('path', {          // jawline
+    d: 'M 40 5 C 50 6, 58 3, 64 1',
+    fill: 'none', stroke: EDGE, 'stroke-width': 1, opacity: 0.75,
+  }));
+  [-1, 1].forEach((side) => head.appendChild(svgEl('path', {   // horns, back
+    d: `M 38 ${6 * side} L 24 ${17 * side} L 43 ${9 * side} Z`,
+    fill: EDGE, opacity: 0.8,
+  })));
+  head.appendChild(svgEl('circle', { class: 'wyrm-eye', cx: 52, cy: -3, r: 3.4 }));
+  swivel.appendChild(head);
+  idle.appendChild(swivel);
+
+  g.appendChild(idle);
+  host.appendChild(g);
+  state.dragon = { x: cx, y: cy, scale, swivel, host };
+}
+
+/** Armed, or dormant. A clean run has no schedule and the dragon sleeps
+ *  through it -- half of what makes the counterfactual pair legible. */
+function armDragon(armed) {
+  if (state.dragon) $('#dragon').dataset.armed = armed ? 'true' : 'false';
+}
+
+/** Breathe at the contender that was actually lied to. */
+function breatheAt(id, faultKind) {
+  const d = state.dragon;
+  const f = state.fighters.get(id);
+  if (!d || !f) return;
+
+  const dx = f.x - d.x, dy = f.y - d.y;
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  d.swivel.setAttribute('transform', `rotate(${angle})`);
+  $('#dragon').dataset.striking = 'true';
+  clearTimeout(state.wyrmTimer);
+  state.wyrmTimer = setTimeout(
+    () => { $('#dragon').dataset.striking = 'false'; }, 500);
+
+  const colour = WYRM_COLOURS[faultKind] || 'var(--blood)';
+  const g = svgEl('g', { transform: `translate(${d.x} ${d.y})` });
+  // From the mouth rather than the middle of the creature: the snout sits
+  // ~66 units along the head's axis, scaled with the rest of it.
+  const reach = 66 * d.scale * 1.25;
+  const len = Math.hypot(dx, dy) || 1;
+  const mx = (dx / len) * reach, my = (dy / len) * reach;
+  const beam = svgEl('line', {
+    class: 'breath', x1: mx, y1: my, x2: dx, y2: dy,
+    stroke: colour, 'stroke-width': 5, 'stroke-linecap': 'round',
+    // No `#soft`: that filter is a 9px gaussian, which spreads a five-pixel
+    // line until the only thing the dragon exists to show is invisible.
+    opacity: 0.9,
+  });
+  g.appendChild(beam);
+  const mote = svgEl('circle', {
+    class: 'breath-mote', cx: dx, cy: dy, r: 11,
+    fill: colour, opacity: 0.55, filter: 'url(#soft)',
+  });
+  g.appendChild(mote);
+  $('#breath').appendChild(g);
+  setTimeout(() => g.remove(), 700);
+}
+
 function setFighterState(id, s, ms = 600) {
   const f = state.fighters.get(id);
   if (!f) return;
@@ -300,6 +453,7 @@ function handle(ev) {
         cls: 'head',
         text: `── ${ev.scenario} · repeat ${ev.repeat} · ${ev.condition} · seed ${ev.seed}`,
       });
+      armDragon(ev.faults.length > 0);
       if (ev.faults.length) {
         ev.faults.forEach((fl) => pushLog(ev.variant, {
           cls: 'head',
@@ -324,14 +478,21 @@ function handle(ev) {
         value: Array.isArray(ev.result) ? `[${ev.result.length} ids]` : ev.result,
         faulted: ev.faulted, cost: ev.cost, redundant: ev.redundant,
       });
-      if (ev.faulted) { setFighterState(v, 'struck', 700); strikeAt(v, String(ev.result)); }
-      else setFighterState(v, 'acting', 500);
+      if (ev.faulted) {
+        setFighterState(v, 'struck', 700);
+        breatheAt(v, ev.fault_kind);
+        // A directive arriving in a tool result is its own kind of hit: the
+        // value was not corrupted, the instructions were. The event says
+        // which it was -- this used to be inferred by searching the result
+        // for "SYSTEM NOTICE", which silently stopped finding four of the
+        // five directive shapes the day the family grew.
+        if (ev.fault_kind === 'instruction') {
+          strikeAt(v, `injected directive${ev.fault_shape ? ` · ${ev.fault_shape}` : ''}`);
+        } else {
+          strikeAt(v, String(ev.result));
+        }
+      } else setFighterState(v, 'acting', 500);
       if (ev.redundant) strikeAt(v, 'second inquiry');
-      // A directive arriving in a tool result is its own kind of hit: the
-      // value was not corrupted, the instructions were.
-      if (typeof ev.result === 'string' && ev.result.includes('SYSTEM NOTICE')) {
-        strikeAt(v, 'injected directive');
-      }
       break;
     }
     case 'run.end': {

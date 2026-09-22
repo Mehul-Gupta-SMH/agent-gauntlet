@@ -78,7 +78,9 @@ on it is mocked and nothing on it can spend money. Capture your own with
 ![declaring tools](docs/assets/ui-tools.png)
 
 Then every configuration your inventory can supply competes in one arena,
-with the real technical detail underneath it.
+with the real technical detail underneath it. The fault injector is the
+dragon on the floor: it breathes only when a fault actually reaches a
+contender, and the colour of the breath is the kind of lie it told.
 
 ![the arena](docs/assets/ui-arena.png)
 

@@ -11,7 +11,7 @@ flowchart TD
     subgraph ui["UI layer — a view, not a second pipeline"]
         SERVER["<b>server</b> · 724<br/>stdlib http · wizard · arena"]
         RUNNER["<b>runner</b> · 637<br/>project → TaskSpec · policies"]
-        USERT["<b>usertools</b> · 385<br/>discover · calibrate · serve"]
+        USERT["<b>usertools</b> · 389<br/>discover · calibrate · serve"]
         PROJECT["<b>project</b> · 309<br/>Project · blockers"]
         SECRETS["<b>secrets</b> · 203<br/>.env · Store"]
         CALIB["<b>_calibrate</b> · 88<br/>the child process"]
@@ -23,7 +23,7 @@ flowchart TD
     BOARD["<b>board</b> · 976<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 542<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
-    INTER["<b>interpose</b> · 520<br/>RunContext · tool surface · notes"]
+    INTER["<b>interpose</b> · 540<br/>RunContext · tool surface · notes"]
     OFFLINE["<b>offline</b> · 375<br/>scripted policies"]
     MATRIX["<b>matrix</b> · 401<br/>run_matrix · _attempt · budget"]
     FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
@@ -206,6 +206,13 @@ what to do by its own data does not have a quality problem.
 tools consult the schedule — each for one kind. Every other tool, and every
 other pairing, returns its clean value, which is correct: an annotation has
 no number to corrupt and a quantity has nowhere to put a sentence.
+
+A faulted `tool.call` event carries `fault_kind` (and `fault_shape` for an
+instruction fault) alongside the value. Added because the arena had been
+deciding that a directive arrived by searching the result for `SYSTEM
+NOTICE` — true of exactly one of the five shapes, and silently false for
+the other four from the day the family landed. Which lie was told is the
+harness's to state, not the page's to infer.
 
 | tool | carries |
 |---|---|

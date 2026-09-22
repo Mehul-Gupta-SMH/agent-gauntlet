@@ -152,7 +152,15 @@ Three constraints hold it to the rest of the project:
 2. **The emitter is optional and off by default.** `events.emit` with nothing
    attached is a lookup and a return, so the CLI, the tests and CI run exactly
    as they did before the UI existed. A test pins that.
-3. **The intake builds a real `TaskSpec`.** Same validation, same
+3. **The one figure that stands for a mechanism is bound to an event.** The
+   fault injector is drawn as a dragon on the arena floor. It stirs when a
+   run carries an armed schedule and breathes **only** on a `tool.call` that
+   arrived faulted — the same event, and the only event, allowed to draw a
+   strike. No idle attack, no flourish between runs; an animation that fired
+   on its own would be the page inventing a fault. The beam is coloured by
+   the event's `fault_kind`, which the harness now states rather than the
+   page inferring it from the result text.
+4. **The intake builds a real `TaskSpec`.** Same validation, same
    fingerprint, same instrument check — an intake whose fault tool no
    contender can call is refused rather than rendered as a full arena over a
    matrix where nothing could happen.

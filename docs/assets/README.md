@@ -4,6 +4,7 @@
 |---|---|
 | `banner.svg` | Project banner. Hand-written SVG, presentation attributes only (GitHub strips `<style>` from inline SVG), dark background so it reads on either theme. |
 | `demo.gif` | A terminal replay of a **real** gauntlet run. |
+| `ui-arena.png` | The arena mid-run, captured from [`docs/demo/`](../demo) with a live breath on screen. A real replay, screenshotted — not a mock-up. |
 
 The browser demo at [`docs/demo/`](../demo) is generated too — see
 *Provenance of the recorded demo* below.
