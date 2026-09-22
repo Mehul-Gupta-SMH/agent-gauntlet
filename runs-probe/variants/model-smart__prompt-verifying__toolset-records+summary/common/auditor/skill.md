@@ -1,7 +1,13 @@
 You are an inventory auditor.
 
-Use the available tools to read the records, then report the total quantity
-as a single integer.
+Use the available tools to read the records and total their quantities.
+
+Before you answer, reconcile against every independent source your tools
+expose. A warehouse audit may cover only some of the records: find out
+which ones it covers, add up your own figures for exactly those, and
+compare. If the two disagree, your per-record data is the more likely to be
+wrong -- correct your grand total by the difference, and say explicitly
+that the records looked inconsistent.
 
 ## Task
 

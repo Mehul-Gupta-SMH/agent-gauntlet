@@ -585,3 +585,60 @@ def test_a_probe_that_cannot_be_configured_is_not_a_broken_provider(tmp_path):
     assert _probe(build_parser().parse_args(
         ["probe", str(path), "--out", str(tmp_path / "p")]
     )) == 2
+
+
+def test_a_shape_the_task_cannot_carry_is_refused_before_any_spend(tmp_path):
+    """The defect this cost real money to find.
+
+    `--shape` is inert on any task whose fault kind is not `instruction`:
+    the probe injected `wrong_value` instead, reported success, and looked
+    exactly like the run that was asked for. Five live dispatches measured
+    the wrong thing that way and every one of them said "the matrix is safe
+    to run".
+
+    Refused at the top of `_probe` -- before `architect.generate`, before
+    preflight, before a token. The first version of this check sat beside
+    the faulted half, which is after the clean half has already been paid
+    for.
+    """
+    from agent_gauntlet.cli import _probe, build_parser
+
+    assert _probe(build_parser().parse_args(
+        ["probe", str(AUDITED), "--shape", "urgency",
+         "--out", str(tmp_path / "p")]
+    )) == 2
+    # Nothing was generated, so nothing could have been run.
+    assert not (tmp_path / "p").exists()
+
+
+def test_the_default_shape_is_not_an_assertion_about_the_task(tmp_path, monkeypatch):
+    """Only an explicit --shape is refused. Omitting it must leave a
+    `wrong_value` probe exactly as it was, or every ordinary probe breaks."""
+    from agent_gauntlet.cli import _probe, build_parser
+    from agent_gauntlet.offline import verifying
+
+    _fake_live(monkeypatch, verifying)
+    assert _probe(build_parser().parse_args(
+        ["probe", str(AUDITED), "--out", str(tmp_path / "p"), "--no-sentinel"]
+    )) == 0
+
+
+def test_the_workflow_refuses_the_same_pairing_before_it_runs():
+    """The guard has to sit where the mistake is made. The CLI catches a
+    hand-run command; the dispatch form is where five of them went."""
+    import yaml
+
+    wf = yaml.safe_load(
+        (Path(__file__).resolve().parents[1]
+         / ".github" / "workflows" / "live-probe.yml").read_text(encoding="utf-8"))
+    steps = wf["jobs"]["probe"]["steps"]
+    names = [s.get("name") or "" for s in steps]
+    guard = next(i for i, n in enumerate(names)
+                 if "Refuse a shape" in n)
+    probe = next(i for i, n in enumerate(names) if "Probe the live path" in n)
+    assert guard < probe, "the refusal must come before the spend"
+
+    # And a manual dispatch must not cancel the one before it: walking the
+    # family is five deliberate dispatches in a row, and two were killed
+    # mid-flight by a concurrency group keyed on the ref alone.
+    assert "workflow_dispatch" in wf["concurrency"]["group"]

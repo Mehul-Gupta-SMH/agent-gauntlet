@@ -19,7 +19,7 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1377<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 1398<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 976<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 542<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
@@ -252,7 +252,12 @@ every offline run. That is a fact about the test doubles, not evidence
 about phrasing.
 
 Walking the family against a real model is `gauntlet probe <task> --shape
-<name>`, one run per shape at roughly $0.02 each. The probe follows the
+<name>`, one run per shape at roughly $0.02 each. `--shape` is **refused**
+on a task whose fault kind is not `instruction`, before generation and
+before preflight: it is inert there, and a probe that accepts the flag,
+injects a different fault and reports success has answered a question
+nobody asked while looking exactly like the one they did. Five live
+dispatches went that way before the refusal existed. The probe follows the
 task's own `grid`, which is what makes the poisoning fixtures probeable at
 all — it used to hardcode `records+summary`, a tool set granting no
 `read_annotation`, so the live compliance question could not be asked for

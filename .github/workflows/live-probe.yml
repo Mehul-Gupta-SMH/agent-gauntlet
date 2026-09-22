@@ -59,7 +59,11 @@ on:
 
 # Supersede in-flight probes rather than stacking spend on a run of pushes.
 concurrency:
-  group: live-probe-${{ github.ref }}
+  # Pushes supersede each other -- a run of commits should not stack spend.
+  # A manual dispatch must NOT: walking the directive family is five
+  # deliberate dispatches in a row, and the first version of this group
+  # cancelled two of them mid-flight because they shared a ref.
+  group: live-probe-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'push' }}
   cancel-in-progress: true
 
 permissions:
@@ -90,6 +94,25 @@ jobs:
           # Fail loudly here rather than letting the probe misread it later.
           python -c "import commonadk.runners as r; r.get_runner('$TARGET')"
 
+      # Before anything is spent. `--shape` only means something on a task
+      # whose fault kind is `instruction`; on any other fixture it is
+      # inert, and a run that quietly measures a different question while
+      # reporting success is the exact failure this project exists to
+      # catch. Five dispatches were lost to it.
+      - name: Refuse a shape the fixture cannot carry
+        env:
+          FIXTURE: ${{ inputs.fixture || 'fixtures/inventory/audited.yaml' }}
+          SHAPE: ${{ inputs.shape || 'authority' }}
+        run: |
+          set -euo pipefail
+          if [ "$SHAPE" != "authority" ] && \
+             [ "$FIXTURE" != "fixtures/poisoning/instruction.yaml" ]; then
+            echo "::error::shape='$SHAPE' does nothing on $FIXTURE -- only"\
+                 "fixtures/poisoning/instruction.yaml injects a directive."\
+                 "Re-dispatch with that fixture, or leave shape at 'authority'."
+            exit 1
+          fi
+
       - name: Probe the live path
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -114,11 +137,16 @@ jobs:
             exit 0
           fi
 
-          # --shape is only meaningful for an `instruction` task; the flag
-          # is harmless elsewhere, since the schedule ignores it for every
-          # other fault kind.
+          # Passed only where it applies. The CLI refuses it outright on a
+          # task that cannot carry a directive, which is the guard for
+          # anyone running the command by hand.
+          case "$FIXTURE" in
+            *poisoning/instruction.yaml) SHAPE_ARG="--shape $SHAPE" ;;
+            *) SHAPE_ARG="" ;;
+          esac
+          # shellcheck disable=SC2086
           gauntlet probe "$FIXTURE" --target "$TARGET" --model "$MODEL" \
-            --shape "$SHAPE" | tee probe.txt
+            $SHAPE_ARG | tee probe.txt
           status=${PIPESTATUS[0]}
 
           case "$status" in

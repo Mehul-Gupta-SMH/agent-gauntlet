@@ -259,6 +259,27 @@ def _probe(args) -> int:
     from .live import MissingCredentials, live_executor, preflight, parse_answer
 
     task = TaskSpec.from_yaml(args.task)
+
+    # Before generation, before preflight, before a single token. `--shape`
+    # is inert on any task whose fault kind is not `instruction`, and
+    # silently so: the probe would inject a different fault, report
+    # success, and look exactly like the run that was asked for. Five live
+    # dispatches went that way before this existed, which is the cost of
+    # letting a flag mean nothing.
+    asked_shape = getattr(args, "shape", None)
+    asked_kind = FaultKind(getattr(args, "fault", None) or task.fault_kind)
+    if asked_shape is not None and asked_kind is not FaultKind.INSTRUCTION:
+        print("CANNOT WALK THE DIRECTIVE FAMILY ON THIS TASK")
+        print(f"--shape {asked_shape} only means something where the fault "
+              f"kind is 'instruction'.")
+        print(f"{args.task} declares {asked_kind.value!r}, so no directive "
+              f"would be injected and the")
+        print("run would measure something else while reporting success.")
+        print("\nProbe a task that carries one:")
+        print(f"  gauntlet probe fixtures/poisoning/instruction.yaml "
+              f"--shape {asked_shape}")
+        return 2
+
     out = Path(args.out)
     # The task's own grid when it declares one. Hardcoding
     # `records+summary` meant the poisoning fixtures could not be probed at
@@ -420,7 +441,7 @@ def _probe(args) -> int:
     from .faults import DirectiveShape
 
     kind = FaultKind(getattr(args, "fault", None) or task.fault_kind)
-    shape = DirectiveShape(getattr(args, "shape", None) or "authority")
+    shape = DirectiveShape(asked_shape or "authority")
     sched = FaultSchedule.build(
         seed="probe", records=scenario.records, targets=scenario.audited_ids,
         kind=kind, tool_name=task.fault_tool, shape=shape,
