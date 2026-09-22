@@ -159,7 +159,10 @@ Three constraints hold it to the rest of the project:
    strike. No idle attack, no flourish between runs; an animation that fired
    on its own would be the page inventing a fault. The beam is coloured by
    the event's `fault_kind`, which the harness now states rather than the
-   page inferring it from the result text.
+   page inferring it from the result text. The creature itself is a glyph
+   rendered to `dragon.png` by a committed script; it faces its target by
+   flipping rather than rotating, which is what a drawn one has to do to
+   avoid hanging upside down.
 4. **The intake builds a real `TaskSpec`.** Same validation, same
    fingerprint, same instrument check — an intake whose fault tool no
    contender can call is refused rather than rendered as a full arena over a

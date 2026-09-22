@@ -503,28 +503,25 @@ input[type="file"] { font-size: 0.8rem; color: var(--ink-dim); }
  */
 
 #dragon .wyrm-idle { animation: wyrm-breathe 5.5s ease-in-out infinite; }
-#dragon .wyrm-wing { animation: wyrm-wing 5.5s ease-in-out infinite;
-                     transform-origin: 0 0; }
-#dragon .wyrm-eye  { fill: var(--dark); }
 
-/* Armed: this run carries a fault schedule. Dormant on a clean run, which
-   is half of what makes the counterfactual pair legible at a glance. */
-#dragon[data-armed="true"] .wyrm-eye { fill: var(--blood); filter: url(#soft); }
+/* Dormant on a clean run, lit when the run carries an armed schedule.
+ * Half of what makes the counterfactual pair legible at a glance: on the
+ * clean half of every pair the dragon is visibly asleep. */
+.wyrm-img { opacity: 0.42; filter: grayscale(0.75) brightness(0.8);
+            transition: opacity .4s ease, filter .4s ease; }
+#dragon[data-armed="true"] .wyrm-img {
+  opacity: 1; filter: drop-shadow(0 0 7px rgba(212, 85, 63, 0.55));
+}
 #dragon[data-armed="true"] .wyrm-idle { animation-duration: 2.6s; }
-
-#dragon[data-striking="true"] .wyrm-head { animation: wyrm-lunge .5s ease-out; }
+#dragon[data-striking="true"] .wyrm-lunge { animation: wyrm-lunge .5s ease-out; }
 
 @keyframes wyrm-breathe {
   0%, 100% { transform: translateY(0) scale(1); }
-  50%      { transform: translateY(-3px) scale(1.015); }
-}
-@keyframes wyrm-wing {
-  0%, 100% { transform: rotate(0deg) scaleY(1); }
-  50%      { transform: rotate(-7deg) scaleY(0.92); }
+  50%      { transform: translateY(-4px) scale(1.02); }
 }
 @keyframes wyrm-lunge {
   0%   { transform: scale(1); }
-  35%  { transform: scale(1.18); }
+  35%  { transform: scale(1.14); }
   100% { transform: scale(1); }
 }
 

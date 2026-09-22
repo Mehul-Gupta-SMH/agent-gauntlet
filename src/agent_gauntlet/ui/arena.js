@@ -234,6 +234,14 @@ const WYRM_COLOURS = {
   poisoned_memory: 'var(--parry)',
 };
 
+const WYRM_W = 103;       // dragon.png at 1x -- the glyph's own proportions
+const WYRM_H = 120;
+const WYRM_MOUTH = { x: -0.30, y: -0.30 };
+/* Where the jaw sits in the artwork, as a fraction of its box from the
+ * centre. Measured off `dragon.png` rather than guessed: the breath has to
+ * leave the mouth, and a beam starting from the middle of the creature
+ * reads as a laser through its own chest. */
+
 function buildDragon(cx, cy, scale) {
   const host = $('#dragon');
   host.innerHTML = '';
@@ -242,82 +250,32 @@ function buildDragon(cx, cy, scale) {
   // over its own crowd would hide the thing the page is actually about.
   if (scale < 0.7) return;
 
-  const SKIN = '#4a2d66';
-  const EDGE = '#b07ce8';
-  const g = svgEl('g', { transform: `translate(${cx} ${cy}) scale(${scale * 1.25})` });
+  const w = WYRM_W * scale * 1.15, h = WYRM_H * scale * 1.15;
+  const g = svgEl('g', { transform: `translate(${cx} ${cy})` });
   const idle = svgEl('g', { class: 'wyrm-idle' });
-
-  // Wings, mirrored about the body's long axis -- both sweep BACK, which
-  // only works if the mirror flips y alone. Flipping x as well (the first
-  // version) rotates the second wing into the first's place and the
-  // silhouette collapses into a blob.
-  [-1, 1].forEach((side) => {
-    const wing = svgEl('g', { class: 'wyrm-wing' });
-    // Scalloped trailing edge and straight leading spar -- the one cue
-    // that separates a bat wing from a moth's, which is what the first
-    // pair of smooth curves read as.
-    wing.appendChild(svgEl('path', {
-      d: `M -2 ${3 * side} L -30 ${30 * side} L -50 ${34 * side}`
-         + ` Q -40 ${22 * side}, -34 ${20 * side}`
-         + ` Q -28 ${17 * side}, -22 ${11 * side}`
-         + ` Q -14 ${9 * side}, -2 ${3 * side} Z`,
-      fill: SKIN, stroke: EDGE, 'stroke-width': 1.4, opacity: 0.72,
-    }));
-    [[-30, 30], [-22, 20]].forEach(([rx, ry]) => wing.appendChild(svgEl('path', {
-      d: `M -4 ${4 * side} L ${rx} ${ry * side}`,
-      stroke: EDGE, 'stroke-width': 0.9, opacity: 0.5, fill: 'none',
-    })));
-    idle.appendChild(wing);
+  // A facing group of its own: the artwork faces LEFT, so meeting a target
+  // on the right is a horizontal flip. Rotating a drawn creature to point
+  // at things would hang it upside down half the time -- which is what the
+  // hand-drawn version did, and it looked like it.
+  const facing = svgEl('g', { class: 'wyrm-facing' });
+  // The lunge lives on its own group INSIDE the facing one. A CSS
+  // transform replaces an SVG transform attribute outright rather than
+  // composing with it (see `strikeAt`), so animating the same group that
+  // carries the flip would snap the dragon back round mid-strike.
+  const lunge = svgEl('g', { class: 'wyrm-lunge' });
+  const img = svgEl('image', {
+    href: 'dragon.png', x: -w / 2, y: -h / 2, width: w, height: h,
+    class: 'wyrm-img',
   });
-
-  // Body: small enough that the head clears it at every angle. The first
-  // version had a fat body and a short neck, so a head turned upward
-  // simply sat on top of it.
-  idle.appendChild(svgEl('ellipse', {
-    cx: 0, cy: 0, rx: 19, ry: 13, fill: SKIN, stroke: EDGE, 'stroke-width': 1.8,
-  }));
-
-  // Tail and head turn together -- the body is an ellipse and gives the
-  // rotation away at no angle, so the whole creature can face its target.
-  const swivel = svgEl('g', { class: 'wyrm-swivel' });
-
-  swivel.appendChild(svgEl('path', {
-    d: 'M -14 0 C -40 -4, -56 10, -44 22 C -37 28, -28 22, -31 15',
-    fill: 'none', stroke: SKIN, 'stroke-width': 7, 'stroke-linecap': 'round',
-  }));
-  swivel.appendChild(svgEl('path', {
-    d: 'M -14 0 C -40 -4, -56 10, -44 22 C -37 28, -28 22, -31 15',
-    fill: 'none', stroke: EDGE, 'stroke-width': 1.1, opacity: 0.5,
-  }));
-
-  const head = svgEl('g', { class: 'wyrm-head' });
-  head.appendChild(svgEl('path', {          // neck, long enough to clear
-    d: 'M 8 -8 C 20 -11, 28 -10, 34 -7 L 34 7 C 28 10, 20 11, 8 8 Z',
-    fill: SKIN, stroke: EDGE, 'stroke-width': 1.4,
-  }));
-  head.appendChild(svgEl('path', {          // spines along the neck
-    d: 'M 12 -9 l 3 -7 l 4 6 l 4 -7 l 4 6',
-    fill: 'none', stroke: EDGE, 'stroke-width': 1.5, 'stroke-linejoin': 'round',
-  }));
-  head.appendChild(svgEl('path', {          // skull, snout to the right
-    d: 'M 32 -9 C 46 -11, 60 -6, 66 0 C 60 6, 46 11, 32 9 Z',
-    fill: SKIN, stroke: EDGE, 'stroke-width': 1.8,
-  }));
-  head.appendChild(svgEl('path', {          // jawline
-    d: 'M 40 5 C 50 6, 58 3, 64 1',
-    fill: 'none', stroke: EDGE, 'stroke-width': 1, opacity: 0.75,
-  }));
-  [-1, 1].forEach((side) => head.appendChild(svgEl('path', {   // horns, back
-    d: `M 38 ${6 * side} L 24 ${17 * side} L 43 ${9 * side} Z`,
-    fill: EDGE, opacity: 0.8,
-  })));
-  head.appendChild(svgEl('circle', { class: 'wyrm-eye', cx: 52, cy: -3, r: 3.4 }));
-  swivel.appendChild(head);
-  idle.appendChild(swivel);
-
+  // Safari and older renderers still want the namespaced form.
+  img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', 'dragon.png');
+  lunge.appendChild(img);
+  facing.appendChild(lunge);
+  idle.appendChild(facing);
   g.appendChild(idle);
   host.appendChild(g);
-  state.dragon = { x: cx, y: cy, scale, swivel, host };
+
+  state.dragon = { x: cx, y: cy, scale, facing, w, h };
 }
 
 /** Armed, or dormant. A clean run has no schedule and the dragon sleeps
@@ -333,8 +291,9 @@ function breatheAt(id, faultKind) {
   if (!d || !f) return;
 
   const dx = f.x - d.x, dy = f.y - d.y;
-  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-  d.swivel.setAttribute('transform', `rotate(${angle})`);
+  // Face the contender being lied to, by flipping rather than rotating.
+  const flipped = dx > 0;
+  d.facing.setAttribute('transform', flipped ? 'scale(-1 1)' : '');
   $('#dragon').dataset.striking = 'true';
   clearTimeout(state.wyrmTimer);
   state.wyrmTimer = setTimeout(
@@ -342,11 +301,9 @@ function breatheAt(id, faultKind) {
 
   const colour = WYRM_COLOURS[faultKind] || 'var(--blood)';
   const g = svgEl('g', { transform: `translate(${d.x} ${d.y})` });
-  // From the mouth rather than the middle of the creature: the snout sits
-  // ~66 units along the head's axis, scaled with the rest of it.
-  const reach = 66 * d.scale * 1.25;
-  const len = Math.hypot(dx, dy) || 1;
-  const mx = (dx / len) * reach, my = (dy / len) * reach;
+  // The jaw, mirrored with the artwork when it turns.
+  const mx = WYRM_MOUTH.x * d.w * (flipped ? -1 : 1);
+  const my = WYRM_MOUTH.y * d.h;
   const beam = svgEl('line', {
     class: 'breath', x1: mx, y1: my, x2: dx, y2: dy,
     stroke: colour, 'stroke-width': 5, 'stroke-linecap': 'round',

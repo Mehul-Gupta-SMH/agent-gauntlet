@@ -6,6 +6,14 @@
 | `demo.gif` | A terminal replay of a **real** gauntlet run. |
 | `ui-arena.png` | The arena mid-run, captured from [`docs/demo/`](../demo) with a live breath on screen. A real replay, screenshotted — not a mock-up. |
 
+The arena's dragon lives at `src/agent_gauntlet/ui/dragon.png` rather than
+here, because the page loads it. It is U+1F409 rendered from **Noto Color
+Emoji** by [`tools/make_dragon_png.py`](../../tools/make_dragon_png.py).
+That font is under the SIL Open Font License 1.1, whose terms cover the
+font software and explicitly do not extend to documents created using it —
+which is what a rendered glyph is. It replaced a hand-drawn SVG that was
+three rendering bugs and not recognisable as a dragon.
+
 The browser demo at [`docs/demo/`](../demo) is generated too — see
 *Provenance of the recorded demo* below.
 

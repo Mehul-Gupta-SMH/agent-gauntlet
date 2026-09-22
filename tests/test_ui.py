@@ -254,3 +254,45 @@ def test_a_crowded_floor_gets_no_dragon():
     src = _arena_js()
     assert "if (scale < 0.7) return;" in src
     assert "buildDragon(cx, cy, grid ? 0 : scale)" in src
+
+
+def test_the_dragon_is_artwork_the_repo_can_regenerate():
+    """Not a binary somebody once dropped in. The glyph is rendered from a
+    font that ships with the container, by a committed script, on the same
+    terms as `demo.gif`: if the asset is wrong, the generator is wrong, and
+    both are in git.
+
+    The hand-drawn version it replaced was three rendering bugs and,
+    fairly, unrecognisable as a dragon.
+    """
+    ui = Path(server.__file__).parent / "ui"
+    art = ui / "dragon.png"
+    assert art.is_file() and art.stat().st_size > 2000
+
+    tool = Path(server.__file__).resolve().parents[2] / "tools" / "make_dragon_png.py"
+    assert tool.is_file()
+    text = tool.read_text(encoding="utf-8")
+    assert "U+1F409" in text or "1F409" in text
+    # The licence question, answered where the asset is made.
+    assert "Open Font License" in text
+
+
+def test_the_published_demo_ships_the_dragon_too():
+    """A page that references artwork it does not carry is a broken image
+    on the one link anybody clicks."""
+    demo = Path(server.__file__).resolve().parents[2] / "docs" / "demo"
+    assert (demo / "dragon.png").read_bytes() == (
+        Path(server.__file__).parent / "ui" / "dragon.png").read_bytes()
+    assert "dragon.png" in _arena_js()
+
+
+def test_the_flip_and_the_lunge_are_separate_groups():
+    """A CSS transform replaces an SVG transform attribute outright rather
+    than composing with it. Animating the group that carries the facing
+    flip snapped the dragon back round mid-strike -- the same defect the
+    comment at `strikeAt` exists for, made twice."""
+    src = _arena_js()
+    assert "wyrm-facing" in src and "wyrm-lunge" in src
+    css = (Path(server.__file__).parent / "ui" / "arena.css").read_text(encoding="utf-8")
+    assert ".wyrm-lunge { animation" in css
+    assert ".wyrm-facing { animation" not in css
