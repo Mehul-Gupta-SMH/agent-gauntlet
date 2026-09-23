@@ -1,0 +1,106 @@
+Experiment 010 — does robustness rank differently from quality?
+======================================================================
+
+--- 1. LIVE: the two matrices already paid for --------------------------
+
+  experiment 003  (fixtures/inventory/task.yaml)
+  contender                                                clean  faulted
+  model-cheap__prompt-verifying__toolset-records+summary    100%     100%
+  model-smart__prompt-verifying__toolset-records+summary    100%     100%
+  model-smart__prompt-naive__toolset-records                100%       0%
+  model-cheap__prompt-naive__toolset-records+summary        100%       0%
+  model-smart__prompt-verifying__toolset-records            100%       0%
+  model-cheap__prompt-verifying__toolset-records            100%       0%
+  model-smart__prompt-naive__toolset-records+summary        100%       0%
+  model-cheap__prompt-naive__toolset-records                100%       0%
+
+  contenders                 8 (sentinel excluded)
+  distinct clean values      1
+  tau(clean, robustness)     UNDEFINED
+  -> the clean ranking does not exist. Every contender answered
+     correctly every time its tools told the truth, so there is
+     no happy-path order for the robustness order to agree with.
+     Not an artefact of binarising, either: tolerance is 0, so
+     100% clean correctness forces graded clean accuracy to
+     1.000 for every contender. The tie-breaker ties too.
+
+  experiment 007  (fixtures/inventory/audited.yaml)
+  contender                                                clean  faulted
+  smart verifying records+summary                           100%     100%
+  cheap verifying records+summary                           100%      22%
+  cheap naive records+summary                               100%       0%
+  cheap naive records                                       100%       0%
+  smart naive records                                       100%       0%
+  cheap verifying records                                   100%       0%
+  smart naive records+summary                               100%       0%
+  smart verifying records                                   100%       0%
+
+  contenders                 8 (sentinel excluded)
+  distinct clean values      1
+  tau(clean, robustness)     UNDEFINED
+  -> the clean ranking does not exist. Every contender answered
+     correctly every time its tools told the truth, so there is
+     no happy-path order for the robustness order to agree with.
+     Not an artefact of binarising, either: tolerance is 0, so
+     100% clean correctness forces graded clean accuracy to
+     1.000 for every contender. The tie-breaker ties too.
+
+--- 2. OFFLINE: the same two fixtures, under declared noise -------------
+
+  fixtures/inventory/task.yaml  (5c9848747223eaa4)  k=30
+  contender                            clean  faulted
+  smart-verifying-records              0.944    0.000
+  smart-naive-records                  0.922    0.000
+  smart-naive-records+summary          0.922    0.000
+  smart-verifying-records+summary      0.878    0.944  <- survives the fault
+  cheap-naive-records+summary          0.778    0.000
+  cheap-naive-records                  0.767    0.000
+  cheap-verifying-records              0.767    0.000
+  cheap-verifying-records+summary      0.744    0.800  <- survives the fault
+
+  tau(clean, robustness)     -0.272
+
+  fixtures/inventory/audited.yaml  (d11a0b2a6801ee74)  k=30
+  contender                            clean  faulted
+  smart-naive-records                  0.933    0.000
+  smart-naive-records+summary          0.922    0.000
+  smart-verifying-records              0.922    0.000
+  smart-verifying-records+summary      0.867    0.911  <- survives the fault
+  cheap-naive-records+summary          0.833    0.000
+  cheap-verifying-records              0.756    0.000
+  cheap-verifying-records+summary      0.756    0.722  <- survives the fault
+  cheap-naive-records                  0.700    0.000
+
+  tau(clean, robustness)     -0.109
+
+--- 3. what the two halves mean together --------------------------------
+
+  LIVE is the evidence and it cannot compute the statistic #4 asks for.
+  On both fixtures every contender scored 100% clean, so the clean
+  leaderboard is one big tie and tau is undefined -- not low, absent. The
+  bet in #4 was that the happy-path champion is often credulous. On these
+  tasks the stronger thing is true: there IS no happy-path champion. The
+  faulted half is the only axis that ranked anything, and it ranked the
+  same config first across three seeds (experiment 007).
+
+  OFFLINE can compute it, and gets a NEGATIVE correlation on both
+  fixtures. The two configurations that survive a fault sit 4th and 7th of
+  8 on the clean board. The mechanism is legible: cross-checking costs a
+  little clean accuracy, because every extra step is another chance to
+  slip, and buys everything under fault.
+
+  That second number is NOT evidence about real agents and must not be
+  quoted as if it were. The offline policies were written by hand, with
+  exactly this structure in them; finding it again is a statement about
+  the harness, not about the world. What it does establish is that the
+  two metrics are not redundant BY CONSTRUCTION -- the machinery can
+  represent and detect a robustness ranking that contradicts the quality
+  ranking, which is the precondition for the live question being
+  answerable at all.
+
+  The gap is the finding. This project has no fixture on which a live
+  clean run discriminates between competent configurations, so #4's
+  correlation cannot be measured live -- only bounded, and the bound is
+  the strongest form of the thesis. Building such a fixture is what
+  would turn an existence proof into a measurement.
+

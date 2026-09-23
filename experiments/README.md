@@ -24,6 +24,7 @@ Two rules this directory follows:
 | [007](007-m0-gate-passed/) | **The M0 gate** | ~$5 | **PASS** — tau 0.845, top-1 100%, sentinel last. #1 answered. Found that the run recorded no cost |
 | [008](008-catching-a-regression/) | Does the check catch a regression? | $0.00 | **CAUGHT** — a prompt edit moved propagation 0% → 100% and the certificate refused it |
 | [009](009-how-many-repeats/) | How many repeats does a stable board need? | $0.00 | **MEASURED** — k=4 on this fixture; `--repeats 3` was one short, and depth 3 never settles at any k |
+| [010](010-robustness-vs-quality/) | Does robustness rank differently from quality? | $0.00 | **BET HOLDS** — across both live matrices the clean ranking is an 8-way tie, so tau is undefined: the faulted half is the only axis that ranked anything |
 
 ## Where that leaves the question
 
