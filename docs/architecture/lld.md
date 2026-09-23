@@ -19,7 +19,7 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1398<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 1506<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 976<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 542<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
@@ -27,14 +27,17 @@ flowchart TD
     OFFLINE["<b>offline</b> · 375<br/>scripted policies"]
     MATRIX["<b>matrix</b> · 401<br/>run_matrix · _attempt · budget"]
     FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
-    SPEC["<b>spec</b> · 308<br/>TaskSpec · VariantSpec · GridSpec"]
+    SPEC["<b>spec</b> · 322<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 290<br/>executor · parsing · classification"]
     LEDGER["<b>ledger</b> · 296<br/>RunRecord · rescore"]
     ANALYZE["<b>analyze</b> · 172<br/>kendall_tau · stability"]
     CERT["<b>certify</b> · 414<br/>Certificate · compare · 3 verdicts"]
     STATS["<b>stats</b> · 204<br/>wilson · bootstrap · MDE"]
+    META["<b>metamorphic</b> · 314<br/>relations · perturbations"]
 
-    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY
+    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META
+    META --> SPEC & INTER & MATRIX & META
+    META --> SPEC & INTER & MATRIX
     CERT --> BOARD & STATS
     SERVER --> PROJECT & RUNNER & SECRETS & EVENTS & BOARD & REPLAY
     REPLAY --> BOARD & EVENTS & STATS
@@ -308,6 +311,37 @@ number. On `inventory/task.yaml` the prompt axis is worth ~3 points with a
 bare tool set and ~47 with a cross-check; the marginal 22% describes
 neither. Full Shapley attribution remains #22.
 
+### Relations, for a task with no oracle (#28)
+
+`metamorphic.py` scores what the harness cannot grade directly. Instead of
+comparing an answer against a known one, it perturbs the world in a way
+whose effect is known and compares a config's answer against **its own**
+unperturbed answer:
+
+| relation | asserts | catches |
+|---|---|---|
+| `relabel` | renaming every record leaves the total alone | an answer that depends on identifiers or enumeration order |
+| `scale` | trebling every quantity trebles the total | truncation, a cap, an answer that stopped being a sum |
+| `split` | splitting one record in two leaves the total alone | an answer that depends on how many records there are |
+
+Both sides of a pair share a seed, as the clean/faulted pair does — the
+first version drew them separately and reported every config as violating
+`relabel`, because the deltas were the policy's own miscounts.
+
+Slack exists only where the comparison rounds: `scale` allows `k-1` units,
+because multiplying an integer answer by `k` and comparing it against one
+computed in a `k`-times-larger world differs by the rounding of `k`
+sub-unit parts however well-behaved the agent is. A threshold chosen to
+make a result pass would be the judged quantity this module avoids.
+
+On `fixtures/inventory/task.yaml` the sentinel scores 1/3 — caught by
+`relabel` and `split`, and correctly *not* by `scale`, whose undercount is
+proportional. No `expected` is read anywhere in that result.
+
+Rephrase-invariance is deliberately absent: offline policies never read the
+statement, so it would pass vacuously and report a property of the test
+doubles as a property of the agents. It needs the live path.
+
 ### Gate on the binary, report on the statistical (#27)
 
 Read as test infrastructure, one thing about this harness inverts: **a
@@ -559,6 +593,8 @@ test_injection_sites  the registry against the code, and every pairing that
                  cannot fire being refused
 test_isolation   calibration in a child process, and the honest limit of a
                  process boundary
+test_metamorphic  relations that need no oracle, and the sentinel they
+                 catch without one
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

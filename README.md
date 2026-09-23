@@ -41,6 +41,9 @@ gauntlet ui            # http://127.0.0.1:8420, offline, no spend
 # Regression: record what a run scored, then check a later one against it.
 gauntlet certify fixtures/inventory/audited.yaml --out certificate.json
 gauntlet check certificate.json --max-quality-drop 0.20
+
+# No oracle? Score the relations between runs instead of the answers.
+gauntlet relations fixtures/inventory/task.yaml
 ```
 
 Add `--max-cost-per-run 0.02` to get the constrained answer — the best config
@@ -288,6 +291,34 @@ a judge — no rubric, no similarity threshold, no LLM grading an LLM. That sing
 property is what the rest of the design is arranged around.
 
 Full detail: [**architecture docs**](docs/architecture/) — [HLD](docs/architecture/hld.md) · [LLD](docs/architecture/lld.md).
+
+## Scoring a task nobody knows the answer to
+
+Every number above compares an answer against something the harness knows.
+Most real work has no such answer, and that is exactly where a judge would
+take over and become the noise floor.
+
+`gauntlet relations` scores the **relations between runs** instead. Rename
+every record and the total must not move. Treble every quantity and the
+total must treble. Split one record in two and the total must not move.
+None of those needs to know the right answer, and because the compared
+answers are integers, none of them needs a similarity threshold — which
+would be a judged quantity smuggled back in.
+
+Each relation compares a config's perturbed answer against its **own**
+unperturbed one, with the same seed on both sides, exactly as the
+clean/faulted pair does. On the bundled fixture this catches the
+structurally degraded sentinel — which can enumerate only half the records,
+so its answer depends on *which* half — while correctly **not** firing on
+the relation it does satisfy:
+
+```
+  variant                                    relabel     scale     split    kept
+  smart verifying records+summary                 ok        ok        ok     3/3
+  cheap naive records-partial                    0/3        ok       0/3     1/3
+```
+
+Nothing in that table consulted a known answer.
 
 ## What the harness can lie about
 

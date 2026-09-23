@@ -173,6 +173,19 @@ class TaskSpec(BaseModel):
     Joins `fingerprint()` only when non-default, so no existing hash moves.
     """
 
+    relations: list[str] = Field(default_factory=list)
+    """Metamorphic relations this task accepts, by name (#28).
+
+    Declared rather than inherited, because a relation that does not hold
+    for a task is not a finding about the agent: a task answering "how many
+    records are there" violates `split` by being right. Empty means the
+    whole starter library, which is correct for every bundled fixture --
+    each one aggregates a collection.
+
+    Joins `fingerprint()` only when set, per the rule above, so no existing
+    hash moves.
+    """
+
     gate: Optional[GateCriteria] = None
     """Pre-registered gate thresholds. Absent means the gate reports
     numbers without a verdict -- it never invents a bar."""
@@ -238,6 +251,7 @@ class TaskSpec(BaseModel):
                    if self.fault_tool != "fetch_record" else {}),
                 **({"fault_kind": self.fault_kind}
                    if self.fault_kind != "wrong_value" else {}),
+                **({"relations": sorted(self.relations)} if self.relations else {}),
                 "gate": self.gate.model_dump(mode="json") if self.gate else None,
             },
             sort_keys=True,

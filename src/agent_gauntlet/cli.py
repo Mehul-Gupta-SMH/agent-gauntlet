@@ -170,6 +170,20 @@ def build_parser() -> argparse.ArgumentParser:
              "on them. The shape for a merge queue: a gate that blocks at "
              "random gets switched off, and then nothing is gated",
     )
+    rel = sub.add_parser(
+        "relations",
+        help="check metamorphic relations -- objective scoring for a task "
+             "with no known answer",
+    )
+    rel.add_argument("task", type=Path, help="path to a task spec YAML")
+    rel.add_argument("--out", type=Path, default=Path("runs-relations"))
+    rel.add_argument("--repeats", type=int, default=3,
+                     help="pairs per relation; a relation must hold in all "
+                          "of them")
+    rel.add_argument(
+        "--models", nargs="*", metavar="ALIAS=MODEL",
+        help="model grid, as for `run`",
+    )
     ui = sub.add_parser(
         "ui",
         help="watch a gauntlet run in the browser -- intake, arena, and the "
@@ -199,6 +213,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _certify(args)
     if args.command == "check":
         return _check(args)
+    if args.command == "relations":
+        return _relations(args)
     if args.command == "ui":
         from .server import serve
 
@@ -1232,6 +1248,98 @@ def _certify(args) -> int:
         print(f"            anything smaller than this without more runs")
     print(f"written     {args.out}")
     return 0
+
+
+def _relations(args) -> int:
+    """Score a task nobody knows the answer to (#28).
+
+    Every other number this tool prints compares an answer against
+    something the harness knows. This one compares a config's answers to
+    *each other* under a perturbation whose effect is known -- rename the
+    records and the total must not move -- so it works on a task with no
+    oracle at all, which is most real work.
+    """
+    from . import metamorphic
+
+    task = TaskSpec.from_yaml(args.task)
+    out = Path(args.out)
+    models = parse_models(getattr(args, "models", None))
+    variants = architect.generate(out_dir=out / "variants", task=task,
+                                  models=models)
+    chosen = metamorphic.relations_for(task)
+
+    print(f"task        {task.id}")
+    print(f"relations   {', '.join(r.name for r in chosen)}")
+    print(f"pairs       {args.repeats} per relation, same seed on both sides")
+    print("\n  No oracle is used below. Each relation compares a config's")
+    print("  perturbed answer against its OWN unperturbed one, so none of")
+    print("  this needs to know the right answer.\n")
+    for r in chosen:
+        print(f"  {r.name:<9} {r.asks}")
+        print(f"  {'':<9} catches: {r.catches}")
+        if r.slack:
+            print(f"  {'':<9} +/- {r.slack}: the comparison itself rounds, "
+                  f"and that is arithmetic rather than behaviour")
+
+    outcomes = metamorphic.check(
+        task=task, variants=variants, execute=None,
+        run_once=metamorphic.offline_runner(task), repeats=args.repeats,
+    )
+
+    print("\n--- relations " + "-" * 58)
+    names = [r.name for r in chosen]
+    print(f"  {'variant':<40}" + "".join(f"{n[:9]:>10}" for n in names)
+          + f"{'kept':>8}")
+    tally = metamorphic.coverage(outcomes)
+    by_variant: dict[str, dict[str, metamorphic.RelationOutcome]] = {}
+    for o in outcomes:
+        by_variant.setdefault(o.variant_id, {})[o.relation] = o
+
+    violated = []
+    for vid, row in by_variant.items():
+        cells = ""
+        for n in names:
+            o = row.get(n)
+            if o is None or o.satisfied is None:
+                cells += f"{'n/a':>10}"          # never 0: undecidable
+            elif o.satisfied:
+                cells += f"{'ok':>10}"
+            else:
+                cells += f"{str(o.held) + '/' + str(o.runs):>10}"
+                violated.append((vid, o))
+        held, total = tally.get(vid, (0, 0))
+        # The factor values, not the generated id: three variants whose ids
+        # agree for their first forty characters print as three identical
+        # rows, which is a table that cannot be read.
+        spec = next((v for v in variants if v.id == vid), None)
+        label = (" ".join(str(spec.factors[k]) for k in sorted(spec.factors))
+                 if spec is not None and spec.factors else vid)
+        print(f"  {label[:40]:<40}{cells}{f'{held}/{total}':>8}")
+
+    if violated:
+        print("\n  violations, with the answers that produced them:")
+        for vid, o in violated:
+            spec = next((v for v in variants if v.id == vid), None)
+            label = (" ".join(str(spec.factors[k]) for k in sorted(spec.factors))
+                     if spec is not None and spec.factors else vid)
+            print(f"    {label[:40]:<40} {o.relation:<9} "
+                  f"{o.baseline} -> {o.observed}, wanted {o.wanted}")
+        print("\n  None of the above consulted a known answer. A config can")
+        print("  be caught here on a task where nobody knows what the right")
+        print("  total is.")
+
+    undecided = [o for o in outcomes if o.satisfied is None]
+    if undecided:
+        print(f"\n  {len(undecided)} relation(s) could not be decided -- a run")
+        print("  produced no answer, so there was nothing to compare. Reported")
+        print("  as n/a and left out of the denominator, never counted as a")
+        print("  pass.")
+
+    print("\n  Offline policies never read the task statement, so")
+    print("  rephrase-invariance -- the most universal relation there is --")
+    print("  is deliberately not in this suite. It would pass vacuously and")
+    print("  report a property of the test doubles as one of the agents.")
+    return 0 if not violated else 3
 
 
 def _refuse_rerun_cells(records, path) -> Optional[int]:
