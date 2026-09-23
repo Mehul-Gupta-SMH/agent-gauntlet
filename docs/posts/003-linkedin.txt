@@ -1,0 +1,35 @@
+I built a UI for my agent testing tool. The most common value on it is "n/a".
+
+On the demo board: 216 runs, 9 configurations. Of the cells that are allowed to be unmeasured, more than half are — 26 out of 45.
+
+That was the design goal, not a gap in it.
+
+A propagation rate of 0% reads as "this config faced the corrupted tool and never fell for it." If the config was never granted that tool, the true statement is "we have no idea." Those are different claims and they look identical once you print a number. So the page has no branch that can turn an unmeasured rate into a zero — it doesn't compute rates at all. Every figure arrives from the scorer, None included, and None renders as n/a all the way to the screen.
+
+Six of the nine rows are gated. Not ranked, not greyed out — refused, with the reason in the row: propagated, or propagation not measurable.
+
+And it won't hand you a winner it can't defend. The top config on that run was selected on one set of seeds and came 2nd of 3 on fresh ones, so the page says "the winner did not hold up" instead of crowning it.
+
+It goes further than I expected to like. The nine contenders collapse into three tiers, grouped by whether their confidence intervals actually separate. Inside a tier, the order on the board is noise, and the page says so rather than letting you read a ranking into it.
+
+Now the part I didn't plan.
+
+The fault injector had no body. Faults just appeared on contenders with nothing on screen to say where they came from. So I drew a dragon in the middle of the arena — it sleeps through clean runs, wakes when a run carries an armed fault schedule, and breathes at whichever contender is being lied to. The colour of the breath is the kind of lie.
+
+One rule: it only moves on a real faulted event. No idle attacks, no flourish between runs. An animation that fired on its own would be the page inventing a fault, which is the one thing it must never do. There's a test asserting the file contains no setInterval and no Math.random.
+
+My first dragon was hand-drawn with bezier curves and genuinely bad. Replacing it meant reading the strike code properly — and there I found the page had been detecting injected instructions by searching the tool output for the literal string "SYSTEM NOTICE".
+
+That matched exactly one of the five directive phrasings I'd added the week before. Four out of five injected instructions were landing invisibly.
+
+Building the decorative thing found a real defect in the measured thing. I did not have that on my list of reasons to build a UI.
+
+The demo is a real recorded run, replayed from its own captured event stream. It also tells you, on the page, that it's offline scripted policies and that no model was called — because a mocked demo of a tool whose entire argument is "don't trust an output because it looks reassuring" would be the worst possible own goal.
+
+Watch it: mehul-gupta-smh.github.io/agent-gauntlet/demo
+
+Most dashboards are designed to make you feel informed. The bar I set for this one was lower and harder: it has to be able to tell me it doesn't know.
+
+github.com/Mehul-Gupta-SMH/agent-gauntlet
+
+#AIAgents #LLM #Evaluation #DataViz #OpenSource
