@@ -1,34 +1,38 @@
-I built a UI for my agent testing tool. The most common value on it is "n/a".
+I built a leaderboard for AI agents, then spent a week teaching it to say "I don't know."
 
-On the demo board: 216 runs, 9 configurations. Of the cells that are allowed to be unmeasured, more than half are — 26 out of 45.
+Here is what that looks like on a real run. 216 runs, 9 configurations, and more than half the board is blank.
 
-That was the design goal, not a gap in it.
+Not empty — blank on purpose. Of the cells allowed to be unmeasured, 26 out of 45 are.
 
-A propagation rate of 0% reads as "this config faced the corrupted tool and never fell for it." If the config was never granted that tool, the true statement is "we have no idea." Those are different claims and they look identical once you print a number. So the page has no branch that can turn an unmeasured rate into a zero — it doesn't compute rates at all. Every figure arrives from the scorer, None included, and None renders as n/a all the way to the screen.
+The reason is one rule: a rate nobody measured must never render as a number.
 
-Six of the nine rows are gated. Not ranked, not greyed out — refused, with the reason in the row: propagated, or propagation not measurable.
+"Propagation: 0%" reads as "this config faced the corrupted tool and didn't fall for it." If the config was never granted that tool, the true statement is "we have no idea." Those are completely different claims, and they look identical the moment you print a number.
 
-And it won't hand you a winner it can't defend. The top config on that run was selected on one set of seeds and came 2nd of 3 on fresh ones, so the page says "the winner did not hold up" instead of crowning it.
+So the page has no branch that can turn an unmeasured rate into a zero. It doesn't compute rates at all — every figure arrives from the scorer, None included, and None renders as n/a all the way to the screen.
 
-It goes further than I expected to like. The nine contenders collapse into three tiers, grouped by whether their confidence intervals actually separate. Inside a tier, the order on the board is noise, and the page says so rather than letting you read a ranking into it.
+Six of the nine rows are gated. Not greyed out, not ranked lower — refused, with the reason in the row: propagated, or propagation not measurable.
 
-Now the part I didn't plan.
+And it won't hand you a winner it can't defend. The top config on that run was selected on one set of seeds and came 2nd of 3 on fresh ones, so the page says "the winner did not hold up" rather than crowning it.
 
-The fault injector had no body. Faults just appeared on contenders with nothing on screen to say where they came from. So I drew a dragon in the middle of the arena — it sleeps through clean runs, wakes when a run carries an armed fault schedule, and breathes at whichever contender is being lied to. The colour of the breath is the kind of lie.
+The part I didn't expect to like: the nine contenders collapse into three tiers, grouped by whether their confidence intervals actually separate. Inside a tier the order on the board is noise, and the page says so instead of letting you read a ranking into it.
 
-One rule: it only moves on a real faulted event. No idle attacks, no flourish between runs. An animation that fired on its own would be the page inventing a fault, which is the one thing it must never do. There's a test asserting the file contains no setInterval and no Math.random.
+Then there's a dragon.
 
-My first dragon was hand-drawn with bezier curves and genuinely bad. Replacing it meant reading the strike code properly — and there I found the page had been detecting injected instructions by searching the tool output for the literal string "SYSTEM NOTICE".
+The fault injector had no body. Faults just appeared on agents with nothing on screen to say where they came from. So there's now a dragon in the middle of the arena: it sleeps through clean runs, wakes when a run carries an armed fault schedule, and breathes at whichever agent is being lied to. The colour of the breath is the kind of lie.
 
-That matched exactly one of the five directive phrasings I'd added the week before. Four out of five injected instructions were landing invisibly.
+One rule there too — it only moves on a real faulted event. No idle attacks, no flourish between runs. An animation that fired on its own would be the page inventing a fault, which is the one thing it must never do. There's a test asserting the file contains no setInterval and no Math.random.
 
-Building the decorative thing found a real defect in the measured thing. I did not have that on my list of reasons to build a UI.
+My first dragon was hand-drawn and genuinely bad. Replacing it meant reading the strike code properly, and there I found the page deciding whether an injected instruction had arrived by searching the tool output for the literal string "SYSTEM NOTICE".
 
-The demo is a real recorded run, replayed from its own captured event stream. It also tells you, on the page, that it's offline scripted policies and that no model was called — because a mocked demo of a tool whose entire argument is "don't trust an output because it looks reassuring" would be the worst possible own goal.
+I'd added four more phrasings the week before. Scoring was never affected — that's decided by a canary value, not by text — but on screen, four of the five showed up as an anonymous hit instead of a named one. The page was quietly inferring something it should have been told.
+
+Small bug. Exactly the kind this tool exists to catch, sitting in the tool.
+
+The demo is a real recorded run, replayed from its own captured event stream — and it says on the page that it's offline scripted policies and no model was called. A mocked demo of a tool whose whole argument is "don't trust an output because it looks reassuring" would be the worst possible own goal.
 
 Watch it: mehul-gupta-smh.github.io/agent-gauntlet/demo
 
-Most dashboards are designed to make you feel informed. The bar I set for this one was lower and harder: it has to be able to tell me it doesn't know.
+Most dashboards are built to make you feel informed. The bar I set for this one was lower and much harder: it has to be able to tell me it doesn't know.
 
 github.com/Mehul-Gupta-SMH/agent-gauntlet
 
