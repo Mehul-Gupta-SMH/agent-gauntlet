@@ -265,12 +265,18 @@ def check(
     return out
 
 
-def offline_runner(task: TaskSpec, executor=None):
+def clean_runner(task: TaskSpec, executor=None):
     """A `run_once` that executes a variant against a scenario, cleanly.
 
     No fault schedule: a relation is about the agent's own behaviour under
     a change to the world, and injecting a lie on top would make a
     violation unattributable between the two.
+
+    Named for the fault schedule, not the executor. It was `offline_runner`
+    until relations reached the board (#43), where passing the LIVE executor
+    is the whole point -- a live matrix whose relations were quietly scored
+    against scripted policies would be the fail-green shape again, with the
+    one number that survives a missing oracle as the thing being faked.
     """
     from .faults import FaultSchedule
     from .interpose import run_context

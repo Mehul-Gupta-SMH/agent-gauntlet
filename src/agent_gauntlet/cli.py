@@ -109,6 +109,14 @@ def build_parser() -> argparse.ArgumentParser:
              "actually happens -- there is no way to write one without "
              "running the matrix",
     )
+    run.add_argument(
+        "--with-relations", action="store_true",
+        help="also check the task's metamorphic relations and put them on "
+             "the board. OFF by default because a relation is a second full "
+             "run of every variant against a perturbed world: k relations "
+             "roughly multiply the matrix by k+1 (#43). Without it the "
+             "relation cells read n/a, never ok",
+    )
     probe = sub.add_parser(
         "probe",
         help="one live run, printing the raw reply -- proves the path before a matrix",
@@ -778,6 +786,8 @@ def _run(args) -> int:
     _print_search_cost(results, len(seeds), args)
     if args.max_cost_per_run is not None:
         _print_under_budget(results, args.max_cost_per_run)
+    _print_relations(task, variants, executor,
+                     enabled=args.with_relations, live=args.live)
     _print_effects(results)
     _print_attribution(records, [v.id for v in variants if v.is_sentinel])
     rc = _print_gate(records, seeds, task)
@@ -1181,6 +1191,91 @@ def _print_effects(results) -> None:
         print("    ship. Pick the cell you actually intend to run.")
 
 
+def _print_relations(task, variants, executor, *, enabled: bool,
+                     live: bool) -> None:
+    """The oracle-free check, on the board rather than in its own command
+    (#43).
+
+    Per relation, never averaged. "7/9" across relations that measure
+    different properties is the composite-scalar mistake again: a config
+    that fails `relabel` and one that fails `scale` are not
+    interchangeable, and one number says they are. Which relation broke is
+    the finding.
+
+    Not gated. A relation is a binary property, so #27's rule makes it
+    gate-shaped rather than report-shaped -- which is a stronger claim than
+    putting it in a column, and #43 is explicit that it deserves to be made
+    separately. The block says so instead of quietly deciding.
+    """
+    from . import metamorphic
+
+    chosen = metamorphic.relations_for(task)
+    print("\n--- metamorphic relations " + "-" * 46)
+    if not chosen:
+        print("  none declared by this task.")
+        return
+
+    names = [r.name for r in chosen]
+    if not enabled:
+        # n/a, never ok: a relation nobody ran is not a relation that held,
+        # and this is the obvious place that distinction would be broken.
+        print(f"  {', '.join(names)}: n/a for every config -- not run.")
+        print(f"  --with-relations runs them, at roughly {len(chosen) + 1} "
+              f"clean runs per config")
+        print(f"  ({(len(chosen) + 1) * len(variants)} extra runs on this "
+              f"grid" + (", which costs money on a live target)." if live
+                        else ")."))
+        return
+
+    print(f"  {len(chosen)} relation(s), one pair each, same seed on both "
+          f"sides.")
+    print("  No oracle is used here: each config is compared against its OWN")
+    print("  unperturbed answer, so this survives a task with no ground truth.")
+    if live:
+        print(f"  LIVE: {(len(chosen) + 1) * len(variants)} extra model calls.")
+    print()
+
+    outcomes = metamorphic.check(
+        task=task, variants=variants, execute=None,
+        run_once=metamorphic.clean_runner(task, executor=executor), repeats=1,
+    )
+    by_variant: dict[str, dict] = {}
+    for o in outcomes:
+        by_variant.setdefault(o.variant_id, {})[o.relation] = o
+
+    label = {v.id: " ".join(str(v.factors[k]) for k in sorted(v.factors))
+             or v.id for v in variants}
+    print(f"  {'variant':<34}" + "".join(f"{n[:11]:>12}" for n in names))
+    violations: list[tuple[str, str]] = []
+    for v in variants:
+        row = by_variant.get(v.id, {})
+        cells = ""
+        for n in names:
+            o = row.get(n)
+            if o is None or o.satisfied is None:
+                cells += f"{'n/a':>12}"      # undecidable, never a 0
+            elif o.satisfied:
+                cells += f"{'ok':>12}"
+            else:
+                cells += f"{'VIOLATED':>12}"
+                violations.append((label[v.id], n))
+        print(f"  {label[v.id][:34]:<34}{cells}")
+
+    if violations:
+        print()
+        for vid, name in violations:
+            relation = next(r for r in chosen if r.name == name)
+            print(f"  {vid} breaks {name}: {relation.asks}")
+            print(f"    catches: {relation.catches}")
+        print("\n  A violation is a binary property, so by #27 it is")
+        print("  gate-shaped rather than report-shaped. It does NOT gate")
+        print("  today -- that is a bigger claim than a column and #43 keeps")
+        print("  it a separate decision. Read these rows yourself.")
+    else:
+        print("\n  Every declared relation held for every config. One pair each:")
+        print("  a relation that holds once is not a relation that holds.")
+
+
 def _print_attribution(records, sentinel_ids) -> None:
     """Shapley shares: the same question as the block above, answered in a
     way that survives interaction (#22).
@@ -1438,7 +1533,7 @@ def _relations(args) -> int:
 
     outcomes = metamorphic.check(
         task=task, variants=variants, execute=None,
-        run_once=metamorphic.offline_runner(task), repeats=args.repeats,
+        run_once=metamorphic.clean_runner(task), repeats=args.repeats,
     )
 
     print("\n--- relations " + "-" * 58)

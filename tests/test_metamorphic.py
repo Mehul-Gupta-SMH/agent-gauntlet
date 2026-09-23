@@ -44,7 +44,7 @@ def variants(task, tmp_path):
 def _check(task, variants, repeats=3):
     return metamorphic.check(
         task=task, variants=variants, execute=None,
-        run_once=metamorphic.offline_runner(task), repeats=repeats)
+        run_once=metamorphic.clean_runner(task), repeats=repeats)
 
 
 # --- the perturbations are what they say --------------------------------
@@ -127,7 +127,7 @@ def test_the_pair_shares_a_seed(task, variants):
     this.
     """
     seeds: list[str] = []
-    real = metamorphic.offline_runner(task)
+    real = metamorphic.clean_runner(task)
 
     def spy(variant, scenario, seed):
         seeds.append(seed)
@@ -222,3 +222,78 @@ def test_slack_exists_only_where_the_comparison_rounds():
     assert not RELATIONS["relabel"].holds(100, 101)
     assert RELATIONS["scale"].holds(100, 300 - (SCALE_FACTOR - 1))
     assert not RELATIONS["scale"].holds(100, 300 - SCALE_FACTOR)
+
+
+# --- on the board (#43) --------------------------------------------------
+
+
+def test_the_block_says_n_a_when_the_relations_were_not_run(task, variants, capsys):
+    """An opt-in cost, and the censoring rule applied to the obvious place
+    it would be broken: a relation nobody ran is not a relation that held."""
+    from agent_gauntlet.cli import _print_relations
+
+    _print_relations(task, variants, None, enabled=False, live=False)
+    out = capsys.readouterr().out
+    assert "n/a for every config" in out
+    assert "--with-relations" in out
+    assert "VIOLATED" not in out
+    assert not [l for l in out.splitlines() if l.split()[-1:] == ["ok"]], \
+        "an unrun relation must not render as one that held"
+
+
+def test_the_block_names_the_cost_before_it_is_spent(task, variants, capsys):
+    """k relations is a second full run of every variant, k+1 times over.
+    An operator deciding whether to pay needs the number, not the ratio."""
+    from agent_gauntlet.cli import _print_relations
+
+    _print_relations(task, variants, None, enabled=False, live=True)
+    out = capsys.readouterr().out
+    expected = (len(metamorphic.relations_for(task)) + 1) * len(variants)
+    assert f"{expected} extra runs" in out
+    assert "costs money" in out
+
+
+def test_the_board_block_catches_the_sentinel_with_no_oracle(task, variants, capsys):
+    """The headline claim from #28, now where people actually look."""
+    from agent_gauntlet.cli import _print_relations
+
+    _print_relations(task, variants, None, enabled=True, live=False)
+    out = capsys.readouterr().out
+    assert "VIOLATED" in out
+    sentinel = next(v for v in variants if v.is_sentinel)
+    label = " ".join(str(sentinel.factors[k]) for k in sorted(sentinel.factors))
+    breaking = [l for l in out.splitlines() if "VIOLATED" in l]
+    assert all(label[:20] in l for l in breaking), breaking
+
+
+def test_the_board_block_never_averages_the_relations(task, variants, capsys):
+    """`7/9` across relations that measure different properties is the
+    composite-scalar mistake (#37 part 4). Which relation broke is the
+    finding; how many did is not."""
+    from agent_gauntlet.cli import _print_relations
+
+    _print_relations(task, variants, None, enabled=True, live=False)
+    out = capsys.readouterr().out
+    assert "kept" not in out
+    for n in range(1, 5):
+        assert f"{n}/3" not in out
+
+
+def test_a_live_run_scores_its_relations_live(task, variants):
+    """The fail-green this feature could most easily have shipped: a live
+    matrix whose relations were quietly scored against scripted policies,
+    with the one number that survives a missing oracle as the thing being
+    faked. The executor handed in has to be the executor used.
+    """
+    from agent_gauntlet.cli import _print_relations
+    from agent_gauntlet.score import Answer
+
+    calls: list = []
+
+    def fake_executor(variant, seed):
+        calls.append((variant.id, seed))
+        return Answer(total=1, steps=1)
+
+    _print_relations(task, variants[:1], fake_executor, enabled=True, live=True)
+    assert calls, "the supplied executor was never called"
+    assert {c[0] for c in calls} == {variants[0].id}
