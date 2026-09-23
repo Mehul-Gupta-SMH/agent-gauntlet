@@ -67,7 +67,14 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="run a gauntlet end to end")
     run.add_argument("task", type=Path, help="path to a task spec YAML")
     run.add_argument("--out", type=Path, default=Path("runs"), help="output directory")
-    run.add_argument("--repeats", type=int, default=3, help="k per (variant, scenario)")
+    run.add_argument(
+        "--repeats", type=int, default=3,
+        help="k per (variant, scenario). The default is a starting point, not "
+             "a measured recommendation: experiment 009 found the k a stable "
+             "board needs tracks the separation between adjacent "
+             "configurations relative to their noise, which is not knowable "
+             "before the run. Sweep it on your own task",
+    )
     run.add_argument(
         "--seeds", type=int, default=2,
         help="independent seeds; >=2 enables the stability gate",

@@ -413,6 +413,15 @@ It failed once first, for reasons worth reading
 Scope: one task, one framework, k=2 repeats, and one configuration surviving the
 propagation gate. Spelled out in [experiment 007](experiments/007-m0-gate-passed/).
 
+Read that k=2 with [experiment 009](experiments/009-how-many-repeats/) next to
+it. Sweeping k offline on the same fixture, the board only stops moving with the
+seed at **k=4** — below that the winner is a coin flip. That does not undo 007,
+whose three seed pairs each had a decidable winner and each agreed. It does mean
+the margin is narrower than "100%" sounds, and that the number to watch is how
+far apart the top two finished, not the percentage. Whether the live task
+separates its contenders more or less sharply than the scripted policies do is
+unmeasured (#33).
+
 Every result, with raw output committed alongside it, is in
 [`experiments/`](experiments/). Design discussion and open questions are in
 [`plan.md`](plan.md) and the issue tracker.
