@@ -22,6 +22,8 @@ Two rules this directory follows:
 | [005](005-fifth-outcome-live/) | The fifth outcome, caught in the wild | $0.02 | `SURFACED_BUT_PROPAGATED` fired on its first live faulted run — the taxonomy gap was real |
 | [006](006-live-instrument-check/) | The instrument check, against a real model | $0.03 | **PASS** — the structural sentinel undercounts by 47% live; the check printed a false number about itself |
 | [007](007-m0-gate-passed/) | **The M0 gate** | ~$5 | **PASS** — tau 0.845, top-1 100%, sentinel last. #1 answered. Found that the run recorded no cost |
+| [008](008-catching-a-regression/) | Does the check catch a regression? | $0.00 | **CAUGHT** — a prompt edit moved propagation 0% → 100% and the certificate refused it |
+| [009](009-how-many-repeats/) | How many repeats does a stable board need? | $0.00 | **MEASURED** — k=4 on this fixture; `--repeats 3` was one short, and depth 3 never settles at any k |
 
 ## Where that leaves the question
 
@@ -38,6 +40,14 @@ the winner. Discrimination and stability together.
 
 What it does not cover: one task, one framework, k=2, and a field of one
 candidate after gating. Scope is spelled out in the writeup.
+
+[Experiment 009](009-how-many-repeats/) then measured the k that 007 had
+assumed. On this fixture the board stops moving with the seed at **k=4**, one
+above the `--repeats 3` every M0 run has used — and depth 3 of the ranking
+never stops moving at any budget, because the configurations there are tied in
+truth. So the answer has a shape 007 could not see: stable at the top, and
+never stable below it. It is offline, against scripted policies at a declared
+slip rate, so it measures the machinery rather than real agents (#33).
 
 The bar was pre-registered first, in
 [`fixtures/inventory/task.yaml`](../fixtures/inventory/task.yaml) and commit

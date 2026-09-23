@@ -1,0 +1,395 @@
+{
+  "task": "d11a0b2a6801ee74",
+  "seeds": [
+    "seed-a",
+    "seed-b",
+    "seed-c",
+    "seed-d",
+    "seed-e",
+    "seed-f",
+    "seed-g",
+    "seed-h"
+  ],
+  "curve": {
+    "as-shipped": [
+      {
+        "k": 1,
+        "runs": 48,
+        "median_tau": 0.6271454685723135,
+        "top1_stability": 0.5714285714285714,
+        "decidable_pairs": 28,
+        "n_pairs": 28,
+        "passes_bar": false
+      },
+      {
+        "k": 2,
+        "runs": 96,
+        "median_tau": 0.6834752796680499,
+        "top1_stability": 0.5714285714285714,
+        "decidable_pairs": 28,
+        "n_pairs": 28,
+        "passes_bar": false
+      },
+      {
+        "k": 3,
+        "runs": 144,
+        "median_tau": 0.6994192047625067,
+        "top1_stability": 1.0,
+        "decidable_pairs": 15,
+        "n_pairs": 28,
+        "passes_bar": false
+      },
+      {
+        "k": 4,
+        "runs": 192,
+        "median_tau": 0.7171087882915773,
+        "top1_stability": 1.0,
+        "decidable_pairs": 28,
+        "n_pairs": 28,
+        "passes_bar": true
+      },
+      {
+        "k": 5,
+        "runs": 240,
+        "median_tau": 0.7412493166611012,
+        "top1_stability": 1.0,
+        "decidable_pairs": 28,
+        "n_pairs": 28,
+        "passes_bar": true
+      },
+      {
+        "k": 6,
+        "runs": 288,
+        "median_tau": 0.8037043693580159,
+        "top1_stability": 1.0,
+        "decidable_pairs": 28,
+        "n_pairs": 28,
+        "passes_bar": true
+      },
+      {
+        "k": 8,
+        "runs": 384,
+        "median_tau": 0.8037043693580159,
+        "top1_stability": 1.0,
+        "decidable_pairs": 28,
+        "n_pairs": 28,
+        "passes_bar": true
+      },
+      {
+        "k": 10,
+        "runs": 480,
+        "median_tau": 0.8276472015451712,
+        "top1_stability": 1.0,
+        "decidable_pairs": 28,
+        "n_pairs": 28,
+        "passes_bar": true
+      },
+      {
+        "k": 15,
+        "runs": 720,
+        "median_tau": 0.7707701968018755,
+        "top1_stability": 1.0,
+        "decidable_pairs": 28,
+        "n_pairs": 28,
+        "passes_bar": true
+      },
+      {
+        "k": 20,
+        "runs": 960,
+        "median_tau": 0.8010078850924266,
+        "top1_stability": 1.0,
+        "decidable_pairs": 28,
+        "n_pairs": 28,
+        "passes_bar": true
+      },
+      {
+        "k": 30,
+        "runs": 1440,
+        "median_tau": 0.7637626158259733,
+        "top1_stability": 1.0,
+        "decidable_pairs": 28,
+        "n_pairs": 28,
+        "passes_bar": true
+      },
+      {
+        "k": 50,
+        "runs": 2400,
+        "median_tau": 0.7747384507701295,
+        "top1_stability": 1.0,
+        "decidable_pairs": 28,
+        "n_pairs": 28,
+        "passes_bar": true
+      }
+    ]
+  },
+  "depth": [
+    {
+      "k": 1,
+      "m1": [
+        16,
+        28
+      ],
+      "m2": [
+        21,
+        21
+      ],
+      "m3": [
+        0,
+        0
+      ],
+      "m4": [
+        0,
+        0
+      ]
+    },
+    {
+      "k": 2,
+      "m1": [
+        16,
+        28
+      ],
+      "m2": [
+        21,
+        21
+      ],
+      "m3": [
+        1,
+        3
+      ],
+      "m4": [
+        0,
+        0
+      ]
+    },
+    {
+      "k": 3,
+      "m1": [
+        15,
+        15
+      ],
+      "m2": [
+        28,
+        28
+      ],
+      "m3": [
+        1,
+        3
+      ],
+      "m4": [
+        1,
+        3
+      ]
+    },
+    {
+      "k": 4,
+      "m1": [
+        28,
+        28
+      ],
+      "m2": [
+        28,
+        28
+      ],
+      "m3": [
+        1,
+        6
+      ],
+      "m4": [
+        2,
+        6
+      ]
+    },
+    {
+      "k": 5,
+      "m1": [
+        28,
+        28
+      ],
+      "m2": [
+        28,
+        28
+      ],
+      "m3": [
+        4,
+        15
+      ],
+      "m4": [
+        2,
+        6
+      ]
+    },
+    {
+      "k": 6,
+      "m1": [
+        28,
+        28
+      ],
+      "m2": [
+        28,
+        28
+      ],
+      "m3": [
+        4,
+        10
+      ],
+      "m4": [
+        4,
+        10
+      ]
+    },
+    {
+      "k": 8,
+      "m1": [
+        28,
+        28
+      ],
+      "m2": [
+        28,
+        28
+      ],
+      "m3": [
+        3,
+        6
+      ],
+      "m4": [
+        7,
+        15
+      ]
+    },
+    {
+      "k": 10,
+      "m1": [
+        28,
+        28
+      ],
+      "m2": [
+        28,
+        28
+      ],
+      "m3": [
+        4,
+        10
+      ],
+      "m4": [
+        2,
+        10
+      ]
+    },
+    {
+      "k": 15,
+      "m1": [
+        28,
+        28
+      ],
+      "m2": [
+        28,
+        28
+      ],
+      "m3": [
+        6,
+        21
+      ],
+      "m4": [
+        2,
+        10
+      ]
+    },
+    {
+      "k": 20,
+      "m1": [
+        28,
+        28
+      ],
+      "m2": [
+        28,
+        28
+      ],
+      "m3": [
+        3,
+        15
+      ],
+      "m4": [
+        4,
+        15
+      ]
+    },
+    {
+      "k": 30,
+      "m1": [
+        28,
+        28
+      ],
+      "m2": [
+        28,
+        28
+      ],
+      "m3": [
+        7,
+        28
+      ],
+      "m4": [
+        2,
+        10
+      ]
+    },
+    {
+      "k": 50,
+      "m1": [
+        28,
+        28
+      ],
+      "m2": [
+        28,
+        28
+      ],
+      "m3": [
+        7,
+        28
+      ],
+      "m4": [
+        4,
+        15
+      ]
+    }
+  ],
+  "pooled": {
+    "cheap-naive-records": 0.37583333333333335,
+    "cheap-naive-records+summary": 0.39708333333333334,
+    "cheap-verifying-records": 0.3879166666666667,
+    "cheap-verifying-records+summary": 0.7720833333333333,
+    "smart-naive-records": 0.46041666666666664,
+    "smart-naive-records+summary": 0.46416666666666667,
+    "smart-verifying-records": 0.46291666666666664,
+    "smart-verifying-records+summary": 0.90625
+  },
+  "worlds": {
+    "as-shipped": {
+      "slip": {
+        "cheap": 0.22,
+        "smart": 0.08
+      },
+      "first_k": [
+        4
+      ]
+    },
+    "half": {
+      "slip": {
+        "cheap": 0.11,
+        "smart": 0.04
+      },
+      "first_k": [
+        20
+      ]
+    },
+    "double": {
+      "slip": {
+        "cheap": 0.44,
+        "smart": 0.16
+      },
+      "first_k": [
+        3
+      ]
+    }
+  },
+  "total_runs": 177408
+}
