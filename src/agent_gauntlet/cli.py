@@ -18,7 +18,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Optional, Sequence
 
-from . import architect, board, replay
+from . import architect, attribution, board, replay
 from .analyze import stability
 from .faults import FaultKind
 from .score import Outcome
@@ -779,6 +779,7 @@ def _run(args) -> int:
     if args.max_cost_per_run is not None:
         _print_under_budget(results, args.max_cost_per_run)
     _print_effects(results)
+    _print_attribution(records, [v.id for v in variants if v.is_sentinel])
     rc = _print_gate(records, seeds, task)
     held = _export(results, variants, out, records)
 
@@ -1153,6 +1154,83 @@ def _print_effects(results) -> None:
             print(f"      {hi[1]:.0%} at {hi[0]}")
         print("    The average is not a description of any config you could")
         print("    ship. Pick the cell you actually intend to run.")
+
+
+def _print_attribution(records, sentinel_ids) -> None:
+    """Shapley shares: the same question as the block above, answered in a
+    way that survives interaction (#22).
+
+    Printed beside the marginal table rather than instead of it, on purpose.
+    Where the two disagree, the disagreement is the finding -- and a reader
+    who has only ever seen the marginal numbers should be able to see what
+    they were missing rather than be told to trust a new table.
+    """
+    print("\n--- per-factor attribution (Shapley) " + "-" * 35)
+
+    reported = False
+    for metric in ("quality", "faulted_quality"):
+        report = attribution.attribute(records, metric=metric,
+                                       sentinel_ids=sentinel_ids)
+        if report.refusal:
+            print(f"  {metric}: REFUSED -- {report.refusal}")
+            continue
+        reported = True
+        corners = "by level name, not by score" if report.chose_corners_by_name \
+            else "chosen by the caller"
+        base = ", ".join(f"{k}={v}" for k, v in sorted(report.baseline.items()))
+        targ = ", ".join(f"{k}={v}" for k, v in sorted(report.target.items()))
+        print(f"\n  {metric}: {report.baseline_value:.0%} -> "
+              f"{report.target_value:.0%}   gap {report.gap:+.0%}")
+        print(f"    from  {base}")
+        print(f"    to    {targ}      ({corners})")
+        print()
+        wide = max(len(s.from_level) for s in report.shares)
+        for share in report.shares:
+            flag = ("   <- INTERVAL INCLUDES ZERO: not measured"
+                    if share.excludes_zero is False else "")
+            ci = share.interval
+            bounds = f"  [{ci.low:+.0%}, {ci.high:+.0%}]" if ci else ""
+            print(f"    {share.factor:<10} {share.from_level:<{wide}} -> "
+                  f"{share.to_level:<18} {share.share:>+5.0%}{bounds}{flag}")
+        # The floor is context, not the verdict: a share averages several
+        # contrasts and can legitimately be tighter than the two-proportion
+        # resolution for any one of them. Saying which of the two a row
+        # rests on is the point (#34).
+        thin = [s.factor for s in report.shares
+                if s.below_resolution(report.resolution)]
+        if report.resolution is not None:
+            print(f"\n    Design floor: one contrast at n={report.min_cell_n} "
+                  f"resolves {report.resolution:.0%}.")
+            if thin:
+                print(f"    Under it, resting on the interval alone: "
+                      f"{', '.join(thin)}.")
+        # Efficiency is the property the marginal table does not have, so it
+        # is stated rather than assumed -- and checked, because an
+        # attribution that does not add up is arithmetic, not evidence.
+        if report.explains_all_of_it:
+            print(f"\n    The shares add to the whole gap ({report.gap:+.0%}). "
+                  "That is the efficiency")
+            print("    axiom, and it is what the marginal table cannot do.")
+
+        for inter in report.interactions:
+            a, b = inter.factors
+            if abs(inter.index) < max(abs(s.share) for s in report.shares):
+                continue
+            print(f"\n    BUT {a} x {b} interact by {inter.index:+.0%}, more than "
+                  f"either share.")
+            print(f"    Neither is worth its number alone. The sentence to quote is")
+            print(f"    conditional: what {a} is worth AT a given {b}, not on average.")
+
+    if not reported:
+        return
+    censored = [m for m in ("detection_rate", "repair_rate", "propagation_rate")
+                if attribution.attribute(records, metric=m,
+                                         sentinel_ids=sentinel_ids,
+                                         resamples=1).refusal]
+    if censored:
+        print(f"\n  Not attributable on this grid: {', '.join(censored)}.")
+        print("  A metric with no value in part of the design cannot be")
+        print("  decomposed across it -- there is no coalition to compare.")
 
 
 def _gate_caveat(records) -> None:

@@ -888,8 +888,8 @@ class FactorEffect(BaseModel):
         return max(vals) - min(vals)
 
     caveat: str = (
-        "One-at-a-time marginal effect. Wrong under factor interaction; "
-        "Shapley attribution is issue #22."
+        "One-at-a-time marginal effect. Wrong under factor interaction -- "
+        "read the Shapley attribution below instead, which is not (#22)."
     )
 
 

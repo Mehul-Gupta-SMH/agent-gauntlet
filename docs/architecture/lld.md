@@ -19,7 +19,7 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1535<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 1627<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 976<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 561<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
@@ -30,14 +30,16 @@ flowchart TD
     SPEC["<b>spec</b> · 322<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 290<br/>executor · parsing · classification"]
     LEDGER["<b>ledger</b> · 296<br/>RunRecord · rescore"]
-    ANALYZE["<b>analyze</b> · 172<br/>kendall_tau · stability"]
+    ANALYZE["<b>analyze</b> · 193<br/>kendall_tau · stability"]
     CERT["<b>certify</b> · 414<br/>Certificate · compare · 3 verdicts"]
     STATS["<b>stats</b> · 204<br/>wilson · bootstrap · MDE"]
     META["<b>metamorphic</b> · 314<br/>relations · perturbations"]
+    ATTR["<b>attribution</b> · 435<br/>exact Shapley · interaction · refusals"]
 
-    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META
+    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR
     META --> SPEC & INTER & MATRIX & META
     META --> SPEC & INTER & MATRIX
+    ATTR --> LEDGER & STATS
     CERT --> BOARD & STATS
     SERVER --> PROJECT & RUNNER & SECRETS & EVENTS & BOARD & REPLAY
     REPLAY --> BOARD & EVENTS & STATS
@@ -609,6 +611,8 @@ test_isolation   calibration in a child process, and the honest limit of a
                  process boundary
 test_metamorphic  relations that need no oracle, and the sentinel they
                  catch without one
+test_attribution  the Shapley axioms, the interaction the grid really has,
+                 and every design the table refuses to describe
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims
