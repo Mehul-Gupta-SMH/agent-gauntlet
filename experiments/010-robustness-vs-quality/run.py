@@ -62,8 +62,11 @@ def parse_board(console: Path) -> list[tuple[str, dict[str, Optional[float]], bo
     lines = console.read_text().splitlines()
     start = next(i for i, l in enumerate(lines) if l.startswith("--- board"))
     header = lines[start + 1].split()
-    assert header[0] == "variant", header
-    columns = header[1:]
+    # The board grew a leading rank column in #44, so the variant column is
+    # located rather than assumed to be first. Everything to its right is a
+    # value; everything between it and the values is the name.
+    assert "variant" in header, header
+    columns = header[header.index("variant") + 1:]
 
     rows = []
     for line in lines[start + 2:]:
@@ -76,6 +79,9 @@ def parse_board(console: Path) -> list[tuple[str, dict[str, Optional[float]], bo
         tokens = stripped.split()
         values = tokens[-len(columns):]
         name = " ".join(tokens[:-len(columns)])
+        if header.index("variant") > 0 and name:
+            # Drop the rank label, which is not part of the name.
+            name = name.split(None, 1)[1] if " " in name else name
         rows.append((name, {c: _num(v) for c, v in zip(columns, values)}, sentinel))
     return rows
 

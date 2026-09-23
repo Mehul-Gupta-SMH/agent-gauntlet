@@ -608,6 +608,59 @@ def evidence_tiers(
     return tiers
 
 
+def decidable_depth(
+    results: Sequence[VariantResult], *, metric: str = "quality"
+) -> Optional[int]:
+    """How far down the ranking this run actually ordered anything (#44).
+
+    The count of leading positions each held by a single config whose
+    interval excludes the next one's. Below it the board is still printing
+    rows in an order, but the order is a coin flip that a bigger budget may
+    or may not resolve.
+
+    Experiment 009 measured the same boundary the expensive way: sweeping
+    k across eight seeds, depths 1 and 2 locked in at k=4 and never moved,
+    while depth 3 never settled at any budget because ranks 3-5 differ by
+    four thousandths. This computes that boundary from ONE run's intervals,
+    which is the only version an operator can act on -- and
+    `tests/test_board.py` pins the two against each other.
+
+    None when nothing is rankable at all. Zero is a real answer, and a
+    different one: the run produced a board it could not order at the very
+    top.
+    """
+    tiers = evidence_tiers(results, metric=metric)
+    if not tiers:
+        return None
+    depth = 0
+    for tier in tiers:
+        if len(tier) != 1:
+            break
+        depth += 1
+    return depth
+
+
+def rank_labels(
+    results: Sequence[VariantResult], *, metric: str = "quality"
+) -> dict[str, str]:
+    """Competition rank per variant, with `=` marking an unordered band.
+
+    `3=` on three rows says the run placed them somewhere in positions 3
+    to 5 and could not say which is which. Printing 3, 4, 5 instead would
+    be the board asserting an order it did not measure -- the censoring
+    rule this project applies to every rate, applied to the rank column
+    that had so far escaped it.
+    """
+    labels: dict[str, str] = {}
+    position = 1
+    for tier in evidence_tiers(results, metric=metric):
+        mark = "" if len(tier) == 1 else "="
+        for r in tier:
+            labels[r.variant_id] = f"{position}{mark}"
+        position += len(tier)
+    return labels
+
+
 def best_under(
     results: Sequence[VariantResult],
     max_cost_per_run: float,

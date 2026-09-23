@@ -341,6 +341,93 @@ def test_a_tier_never_claims_they_are_equal():
     assert tier[0].quality != tier[1].quality, "the values still differ"
 
 
+def test_decidable_depth_counts_only_the_rows_the_run_ordered():
+    """Three bands -- one alone, one alone, then three that overlap. The
+    order holds to row 2 and no further (#44)."""
+    rows = [
+        _v("first", 0.95, low=0.92, high=0.98),
+        _v("second", 0.80, low=0.76, high=0.84),
+        _v("third", 0.50, low=0.44, high=0.56),
+        _v("fourth", 0.49, low=0.43, high=0.55),
+        _v("fifth", 0.48, low=0.42, high=0.54),
+    ]
+    assert board.decidable_depth(rows) == 2
+    assert board.rank_labels(rows) == {
+        "first": "1", "second": "2",
+        "third": "3=", "fourth": "3=", "fifth": "3=",
+    }
+
+
+def test_depth_zero_is_a_real_answer_not_a_missing_one():
+    """A board whose top two overlap ordered nothing at all. That is
+    different from a board with nothing to rank, and the two must not
+    arrive as the same value."""
+    rows = [_v("a", 0.90, low=0.70, high=0.99),
+            _v("b", 0.88, low=0.68, high=0.98)]
+    assert board.decidable_depth(rows) == 0
+    assert board.rank_labels(rows) == {"a": "1=", "b": "1="}
+    assert board.decidable_depth([]) is None
+
+
+def test_rank_labels_number_by_competition_not_by_band():
+    """Three rows tied at 3 are followed by 6, not by 4. The label has to
+    say where the band sits in the field, not which band it is."""
+    rows = [
+        _v("a", 0.95, low=0.93, high=0.97),
+        _v("b", 0.60, low=0.55, high=0.65),
+        _v("c", 0.59, low=0.54, high=0.64),
+        _v("d", 0.58, low=0.53, high=0.63),
+        _v("e", 0.20, low=0.15, high=0.25),
+    ]
+    labels = board.rank_labels(rows)
+    assert labels["a"] == "1"
+    assert labels["b"] == labels["c"] == labels["d"] == "2="
+    assert labels["e"] == "5"
+
+
+def test_a_sentinel_gets_no_rank_at_all():
+    """It is built to lose. Giving it a position would put a deliberately
+    broken config into a ranking of contenders."""
+    rows = [_v("real", 0.9, low=0.85, high=0.95),
+            _v("sent", 0.1, low=0.05, high=0.15, sentinel=True)]
+    assert "sent" not in board.rank_labels(rows)
+    assert board.decidable_depth(rows) == 1
+
+
+def test_depth_from_one_run_agrees_with_the_seed_sweep(tmp_path):
+    """The cheap version of experiment 009's answer, cross-checked.
+
+    009 swept k across eight seeds, 177,408 runs, and found depths 1 and 2
+    lock in at k=4 and never move while depth 3 never settles at any
+    budget. This computes the same boundary from a SINGLE run's intervals,
+    which is the only version an operator can act on. They have to agree,
+    or the cheap number is not measuring the thing the expensive one did.
+    """
+    from agent_gauntlet import VariantSpec
+
+    audited = FIXTURE.parent / "audited.yaml"
+    task = TaskSpec.from_yaml(audited)
+    grid = [
+        VariantSpec(id=f"{m}-{p}-{t}",
+                    factors={"model": m, "prompt": p, "toolset": t})
+        for m in ("cheap", "smart") for p in ("naive", "verifying")
+        for t in ("records", "records+summary")
+    ]
+    ledger = Ledger(tmp_path / "runs.jsonl")
+    run_matrix(task=task, variants=grid, ledger=ledger, base_seed="seed-a",
+               repeats=30)
+    results = board.summarize(ledger.records())
+
+    for metric in ("accuracy", "quality"):
+        assert board.decidable_depth(results, metric=metric) == 2, metric
+
+    # And the two rows it does order are the two 009 found stable.
+    labels = board.rank_labels(results, metric="quality")
+    top = {v for v, lab in labels.items() if lab in ("1", "2")}
+    assert top == {"smart-verifying-records+summary",
+                   "cheap-verifying-records+summary"}
+
+
 def test_a_row_with_no_interval_is_left_out_rather_than_ranked():
     """It cannot be placed against one, and quietly ranking it would be an
     ordering built on a comparison nobody made."""

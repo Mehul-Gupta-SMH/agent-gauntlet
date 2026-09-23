@@ -847,7 +847,12 @@ def _print_board(results) -> None:
         [r for r in results if not r.is_sentinel],
         objectives=("accuracy", "cost_usd"), maximize=(True, False),
     )}
-    print(f"{'variant':<34}{'qual':>6}{'acc':>6}{'clean':>7}{'fault':>7}"
+    # The board is ordered by accuracy, so the rank column has to be too --
+    # a `#` derived from one metric beside rows sorted by another would be
+    # the most confusing possible version of this.
+    labels = board.rank_labels(results, metric="accuracy")
+    depth = board.decidable_depth(results, metric="accuracy")
+    print(f"{'#':<5}{'variant':<34}{'qual':>6}{'acc':>6}{'clean':>7}{'fault':>7}"
           f"{'prop':>6}{'obey':>6}{'det':>6}{'rep':>6}{'FA':>5}{'ttd':>6}"
           f"{'work':>7}{'$/run':>10}")
     for tier in board.rank(results):
@@ -900,12 +905,32 @@ def _print_board(results) -> None:
                 flag = "  <- frontier"
             else:
                 flag = ""
+            # `3=` on three rows: somewhere in positions 3 to 5, and this
+            # run cannot say which. Printing 3, 4, 5 would be the board
+            # asserting an order nobody measured -- the same censoring rule
+            # as an unmeasured rate, applied to the rank column (#44).
             print(
-                f"{r.label:<34}{qual}{acc}"
+                f"{labels.get(r.variant_id, ''):<5}{r.label:<34}{qual}{acc}"
                 f"{clean}{fault}"
                 f"{prop}{obey}{det}{rep}{r.false_alarm_rate:>5.0%}"
                 f"{ttd}{work}{cost}{flag}"
             )
+
+    if depth is not None:
+        total = sum(1 for r in results if not r.is_sentinel)
+        if depth == 0:
+            print("\n  ORDER: none. This run could not separate even the top two")
+            print("  configs, so every row below is in arbitrary order. The")
+            print("  numbers are real; the ranking is not.")
+        elif depth < total:
+            print(f"\n  ORDER HOLDS TO ROW {depth} of {total}. Below that the")
+            print("  intervals overlap: rows sharing a `=` rank were not")
+            print("  separated by this run, and their printed order is arbitrary.")
+            print("  More runs may resolve them -- or they may be tied in truth,")
+            print("  which no budget fixes (experiment 009).")
+        else:
+            print(f"\n  ORDER HOLDS TO ROW {depth} of {total} -- every adjacent")
+            print("  pair was separated by its interval.")
 
     if len(frontier) > 1:
         print(f"\n  {len(frontier)} configs are on the accuracy/cost frontier -- none")
