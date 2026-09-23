@@ -110,6 +110,12 @@ METRICS: dict[str, Metric] = {
         "faulted_quality",
         lambda r: _faulted(r) and r.score.graded,
         lambda r: float(r.score.correct)),
+    "false_alarm_rate": Metric(
+        "false_alarm_rate",
+        lambda r: r.condition == "clean",
+        lambda r: float(r.score.false_alarm),
+        note="over clean runs only -- crying wolf is only measurable where "
+             "there was no wolf"),
     "propagation_rate": Metric(
         "propagation_rate", _faulted, lambda r: float(r.score.propagated),
         note="over ALL faulted runs; the evidence denominator belongs to "

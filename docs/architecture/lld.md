@@ -19,7 +19,7 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1756<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 1855<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 1029<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 585<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
@@ -27,19 +27,21 @@ flowchart TD
     OFFLINE["<b>offline</b> · 457<br/>scripted policies"]
     MATRIX["<b>matrix</b> · 401<br/>run_matrix · _attempt · budget"]
     FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
-    SPEC["<b>spec</b> · 322<br/>TaskSpec · VariantSpec · GridSpec"]
+    SPEC["<b>spec</b> · 387<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 290<br/>executor · parsing · classification"]
     LEDGER["<b>ledger</b> · 296<br/>RunRecord · rescore"]
     ANALYZE["<b>analyze</b> · 193<br/>kendall_tau · stability"]
     CERT["<b>certify</b> · 414<br/>Certificate · compare · 3 verdicts"]
     STATS["<b>stats</b> · 204<br/>wilson · bootstrap · MDE"]
     META["<b>metamorphic</b> · 314<br/>relations · perturbations"]
-    ATTR["<b>attribution</b> · 435<br/>exact Shapley · interaction · refusals"]
+    ATTR["<b>attribution</b> · 442<br/>exact Shapley · interaction · refusals"]
+    HYP["<b>hypotheses</b> · 246<br/>falsifiable bounds · verdicts"]
 
-    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR
+    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP
     META --> SPEC & INTER & MATRIX & META
     META --> SPEC & INTER & MATRIX
     ATTR --> LEDGER & STATS
+    HYP --> ATTR & SPEC & STATS
     CERT --> BOARD & STATS
     SERVER --> PROJECT & RUNNER & SECRETS & EVENTS & BOARD & REPLAY
     REPLAY --> BOARD & EVENTS & STATS
@@ -615,6 +617,8 @@ test_attribution  the Shapley axioms, the interaction the grid really has,
                  and every design the table refuses to describe
 test_discontinued  the fixture whose clean answer is a subset of the world,
                  and the ceiling and floor it has to avoid
+test_hypotheses  falsifiable bounds, and the three ways a verdict lies:
+                 censored, confirmed-at-zero, held by a hair
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

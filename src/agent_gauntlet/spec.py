@@ -101,6 +101,69 @@ class Scenario(BaseModel, frozen=True):
         return self
 
 
+class Bound(BaseModel, frozen=True):
+    """One falsifiable clause of a hypothesis (#17).
+
+    `metric` names a rate the board already computes, so a bound is checked
+    against the same denominator the board prints. A bound that invented its
+    own arithmetic could be upheld while the board next to it says
+    otherwise, which is the one thing a falsifiable statement must not do.
+    """
+
+    metric: str
+    max: Optional[float] = None
+    min: Optional[float] = None
+    steps: Optional[int] = None
+    """Only for `detected_within`: how many steps count as 'within'."""
+
+    @model_validator(mode="after")
+    def _check(self) -> "Bound":
+        if self.max is None and self.min is None:
+            raise ValueError(f"bound on {self.metric!r} sets neither max nor min")
+        if self.metric == "detected_within" and self.steps is None:
+            raise ValueError("a 'detected_within' bound must say how many steps")
+        return self
+
+    def says(self) -> str:
+        name = (f"detected within {self.steps} step(s)"
+                if self.metric == "detected_within" else self.metric)
+        parts = []
+        if self.min is not None:
+            parts.append(f">= {self.min:g}")
+        if self.max is not None:
+            parts.append(f"<= {self.max:g}")
+        return f"{name} {' and '.join(parts)}"
+
+
+class Hypothesis(BaseModel, frozen=True):
+    """A statement about this task that a run can falsify.
+
+    Chaos engineering's steady-state hypothesis, pre-registered: the
+    operator declares the bar, the harness tries to break it, and the
+    artifact is "propagated in 3 of 10 runs" rather than "robustness 0.71".
+
+    Fixed before anything runs, because it joins `TaskSpec.fingerprint()`
+    when set -- moving a bound after seeing a result changes the hash, and
+    every run record carries the hash it was judged against.
+    """
+
+    id: str
+    says: str
+    """The statement in the operator's own words. Printed verbatim beside
+    the verdict, so a falsification reads as a broken promise rather than
+    as a row of metric names."""
+    bounds: list[Bound]
+
+    @model_validator(mode="after")
+    def _check(self) -> "Hypothesis":
+        if not self.bounds:
+            raise ValueError(
+                f"hypothesis {self.id!r} states no bounds, so nothing can "
+                "falsify it"
+            )
+        return self
+
+
 class GateCriteria(BaseModel, frozen=True):
     """Pre-registered stability thresholds for the M0 gate (#1, #29).
 
@@ -148,6 +211,12 @@ class TaskSpec(BaseModel):
     acceptable_degradation: dict[str, Any] = Field(default_factory=dict)
     """The user's error budget (#15, #17). `propagation_rate: 0` is the
     non-negotiable one; the rest are bounds a hypothesis is checked against."""
+
+    hypotheses: list[Hypothesis] = Field(default_factory=list)
+    """Falsifiable statements about this task, pre-registered (#17).
+
+    Joins `fingerprint()` only when set, so every fixture that declares none
+    keeps the hash its run records were written under."""
 
     tolerance: int = 0
     """Absolute tolerance on the reported total. 0 = exact match required."""
@@ -252,6 +321,9 @@ class TaskSpec(BaseModel):
                 **({"fault_kind": self.fault_kind}
                    if self.fault_kind != "wrong_value" else {}),
                 **({"relations": sorted(self.relations)} if self.relations else {}),
+                **({"hypotheses": [h.model_dump(mode="json")
+                                   for h in self.hypotheses]}
+                   if self.hypotheses else {}),
                 "gate": self.gate.model_dump(mode="json") if self.gate else None,
             },
             sort_keys=True,

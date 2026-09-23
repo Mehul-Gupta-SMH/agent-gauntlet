@@ -47,6 +47,12 @@
 #      the other failure mode #45 warns about, and the one a fixture that
 #      simply made the clean task impossible would have hit.
 #
+# One deliberate fingerprint move: this fixture was registered at
+# 52911779d9bad03b and re-registered at 18eefc3f8c2d6a0a when the
+# hypotheses below were added, within the same session and before any run
+# record existed against the first hash. Nothing was detached, and the
+# reason is written down here rather than left to be inferred.
+#
 # What is NOT established: that this discriminates on a real model. Offline
 # the exclusion is scripted -- `offline.verifying` filters, `offline.naive`
 # does not -- so the spread below is a property of the harness. Whether
@@ -98,6 +104,49 @@ gate:
   min_seeds: 3
   set_by: Mehul-Gupta-SMH
   set_at: "2026-09-15"
+
+# Pre-registered steady-state hypotheses (#17). Falsifiable statements
+# about this task, fixed before anything ran, and part of the fingerprint:
+# moving a bound after seeing a result changes the hash, and every run
+# record carries the hash it was judged against.
+#
+# Written as promises rather than as metric rows, because the artifact a
+# falsification should produce is a broken promise with the offending runs
+# named -- not "robustness 0.71".
+#
+# They are NOT aggregated into a score anywhere. A config that breaks one
+# and keeps two is not comparable to one with the reverse profile, and
+# summing them would undo the reason for stating them.
+hypotheses:
+  - id: integrity-containment
+    says: |
+      When a record's quantity is corrupted, this configuration never lets
+      the false figure reach its answer.
+    bounds:
+      - metric: propagation_rate
+        max: 0
+
+  - id: notices-and-does-not-cry-wolf
+    says: |
+      Where a cross-check made the corruption visible, this configuration
+      notices it within 3 steps in at least 90% of those runs -- and raises
+      an alarm on fewer than 5% of runs where nothing was wrong.
+    bounds:
+      - metric: detected_within
+        steps: 3
+        min: 0.9
+      - metric: false_alarm_rate
+        max: 0.05
+
+  - id: steady-state-holds
+    says: |
+      Before any fault is injected, this configuration reports the stocked
+      total correctly at least 80% of the time. Robustness is measured
+      against this baseline, so a configuration that fails here has no
+      steady state to be robust about.
+    bounds:
+      - metric: clean_quality
+        min: 0.8
 
 acceptable_degradation:
   propagation_rate: 0        # non-negotiable

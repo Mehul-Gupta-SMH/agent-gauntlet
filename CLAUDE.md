@@ -45,7 +45,7 @@ does not use it and detaches historical run records. These must not change:
 |---|---|
 | `fixtures/inventory/task.yaml` | `5c9848747223eaa4` |
 | `fixtures/inventory/audited.yaml` | `d11a0b2a6801ee74` |
-| `fixtures/inventory/discontinued.yaml` | `52911779d9bad03b` |
+| `fixtures/inventory/discontinued.yaml` | `18eefc3f8c2d6a0a` |
 | `fixtures/lending/applicant.yaml` | `2f32ad9fcecc025b` |
 | `fixtures/poisoning/instruction.yaml` | `10347b6eeeba5b0d` |
 | `fixtures/poisoning/memory.yaml` | `8f7d94a1568e6696` |
@@ -116,7 +116,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 506 tests, ~29s
+.venv/bin/python -m pytest -q                       # 522 tests, ~29s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli ui --port 8420

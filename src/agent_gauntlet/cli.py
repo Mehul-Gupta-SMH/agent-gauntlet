@@ -786,6 +786,7 @@ def _run(args) -> int:
     _print_search_cost(results, len(seeds), args)
     if args.max_cost_per_run is not None:
         _print_under_budget(results, args.max_cost_per_run)
+    _print_hypotheses(task, records, variants)
     _print_relations(task, variants, executor,
                      enabled=args.with_relations, live=args.live)
     _print_effects(results)
@@ -1189,6 +1190,109 @@ def _print_effects(results) -> None:
             print(f"      {hi[1]:.0%} at {hi[0]}")
         print("    The average is not a description of any config you could")
         print("    ship. Pick the cell you actually intend to run.")
+
+
+def _miss(bound) -> float:
+    """How badly a falsified clause missed, as the share of runs that broke
+    it.
+
+    Works for a floor and a ceiling alike, which the observed rate does
+    not: 20% is terrible against `>= 90%` and fine against `<= 50%`. It
+    orders the list so the config whose runs get named is the worst one.
+    """
+    return (bound.n_offending / bound.n) if bound.n else 0.0
+
+
+def _print_hypotheses(task, records, variants) -> None:
+    """Falsifiable bounds, per config, unaggregated (#17).
+
+    The whole point is that the output is a broken promise with the
+    offending runs named, rather than a robustness scalar. So the
+    hypothesis is printed in the operator's own words and the verdict sits
+    under it, and nothing here adds the verdicts up -- #17's open question
+    about ranking a config that fails one and passes six is answered by
+    refusing to collapse the profile, the same answer #43 gives relations.
+    """
+    from . import hypotheses as hyp
+
+    if not task.hypotheses:
+        return
+    print("\n--- steady-state hypotheses " + "-" * 44)
+    print(f"  {len(task.hypotheses)} pre-registered with the task "
+          f"({task.fingerprint()}), so a bound moved after the fact")
+    print("  changes the hash every run record carries.\n")
+
+    label = {v.id: " ".join(str(v.factors[k]) for k in sorted(v.factors))
+             or v.id for v in variants}
+    results = hyp.check_all(task.hypotheses, records)
+    by_hypothesis: dict[str, list] = {}
+    for r in results:
+        by_hypothesis.setdefault(r.hypothesis_id, []).append(r)
+
+    for h in task.hypotheses:
+        rows = by_hypothesis.get(h.id, [])
+        print(f"  {h.id}")
+        for line in h.says.strip().splitlines():
+            print(f"    {line.strip()}")
+        upheld = [r for r in rows if r.verdict is hyp.Verdict.UPHELD]
+        broken = [r for r in rows if r.verdict is hyp.Verdict.FALSIFIED]
+        untested = [r for r in rows if r.verdict is hyp.Verdict.NOT_TESTED]
+        print(f"\n    upheld {len(upheld)}   FALSIFIED {len(broken)}   "
+              f"not tested {len(untested)}   of {len(rows)} config(s)")
+
+        # One line per config, worst first -- the profile. Fourteen
+        # identically-shaped findings printed with their run ids is a
+        # number again, so exactly one of them keeps a path into the data.
+        pairs = sorted(
+            ((r, b) for r in broken for b in r.falsified_by),
+            key=lambda rb: -_miss(rb[1]),
+        )
+        for i, (r, b) in enumerate(pairs):
+            where = f"{b.n_offending} of {b.n}" if b.n_offending else f"n={b.n}"
+            print(f"      FALSIFIED  "
+                  f"{label.get(r.variant_id, r.variant_id)[:34]:<34} "
+                  f"{b.observed:>5.0%}  ({where} runs)   {b.says}")
+            # Ids under the worst offender only, where they are a path into
+            # the data rather than another wall of identifiers.
+            if i == 0 and b.offending:
+                more = (f" +{b.n_offending - len(b.offending)} more"
+                        if b.n_offending > len(b.offending) else "")
+                print(f"                 read one: "
+                      f"{', '.join(b.offending)}{more}")
+
+        # Upholding a zero-bound is the one that most wants qualifying:
+        # "never, in n runs" is not "never", and the ceiling says how much
+        # room is left under it.
+        ceilings = [(r, b) for r in upheld for b in r.bounds
+                    if b.ceiling is not None]
+        if ceilings:
+            worst = max(ceilings, key=lambda rb: rb[1].ceiling)
+            print(f"      Upheld at zero in {worst[1].n} run(s) -- which bounds "
+                  f"the true rate at {worst[1].ceiling:.0%},")
+            print("      not at zero. A bound of exactly zero can be falsified "
+                  "by one run")
+            print("      and confirmed by none.")
+
+        thin = [(r, b) for r in upheld for b in r.bounds if b.too_close_to_call]
+        if thin:
+            names = sorted({label.get(r.variant_id, r.variant_id)
+                            for r, _ in thin})
+            print("      Upheld by a margin smaller than these runs could "
+                  "resolve, so read")
+            print("      them as unproven rather than as passes:")
+            for n in names[:4]:
+                print(f"        {n}")
+            if len(names) > 4:
+                print(f"        (+{len(names) - 4} more)")
+
+        if untested:
+            print(f"      Not tested (no run could have falsified it): "
+                  f"{len(untested)} config(s).")
+        print()
+
+    print("  Not summed. A config that breaks one of these and keeps two is")
+    print("  not comparable to one with the reverse profile, and a score")
+    print("  over them would undo the reason for stating them.")
 
 
 def _print_relations(task, variants, executor, *, enabled: bool,
