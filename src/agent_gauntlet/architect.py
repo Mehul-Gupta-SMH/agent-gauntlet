@@ -46,6 +46,30 @@ compare. If the two disagree, your per-record data is the more likely to be
 wrong -- correct your grand total by the difference, and say explicitly
 that the records looked inconsistent.
 """,
+    "filtering": """\
+You are an inventory auditor.
+
+Use the available tools to read the records and total their quantities.
+
+Read the task statement carefully first: it may exclude some records from
+the total. Apply every exclusion it names before you add anything up, and
+say which records you left out.
+""",
+    "reconciling": """\
+You are an inventory auditor.
+
+Use the available tools to read the records. Read the task statement
+carefully first: it may exclude some records from the total. Apply every
+exclusion it names before you add anything up, and say which records you
+left out.
+
+Then, before you answer, reconcile against every independent source your
+tools expose. A warehouse audit may cover only some of the records: find
+out which ones it covers, add up your own figures for exactly those, and
+compare. If the two disagree, your per-record data is the more likely to be
+wrong -- correct your grand total by the difference, and say explicitly
+that the records looked inconsistent.
+""",
     "bureau_deliberate": """\
 You are a credit analyst.
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import random
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 from .interpose import (
     RunContext, ToolTimeout, ToolUnavailable, audited_record_ids,
@@ -55,6 +55,30 @@ def _slip(seed: Optional[str], magnitude: int, rate: float = SLIP_RATE) -> int:
     if rng.random() >= rate:
         return 0
     return rng.choice([-1, 1]) * max(1, int(magnitude * rng.uniform(0.02, 0.08)))
+
+
+DISCONTINUED = "__discontinued"
+"""Id suffix marking a record the task says not to count.
+
+The clean-side reasoning step (#45). Every fixture before `discontinued`
+had the property that enumerate-and-sum IS the clean answer, so any config
+able to call `list_records` got it right every time and the clean
+leaderboard was an eight-way tie on both live matrices (experiment 010).
+Here the answer is a SUBSET of the world, decided by reading the statement
+rather than by holding a particular tool -- so the clean side can
+discriminate on prompt and model while the toolset axis keeps doing its
+faulted-side job.
+
+It is a suffix on the id, deliberately, so it rides on `list_records` and
+needs no new tool: a tool-set-gated marker would have moved clean
+discrimination onto the toolset axis, which already carries the fault.
+"""
+
+
+def _stocked(ids: Iterable[str]) -> list[str]:
+    """Drop the records the task excludes. A no-op on every fixture that
+    marks none, which is all of them except `discontinued.yaml`."""
+    return [i for i in ids if not i.endswith(DISCONTINUED)]
 
 
 def _enumerate() -> list[str]:
@@ -121,6 +145,62 @@ def verifying(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
         covered = audited_record_ids()
     except ToolUnavailable:
         covered = list(seen)
+    mine = sum(seen.get(rid, 0) for rid in covered)
+    if cross_check != mine:
+        return Answer(total=total + (cross_check - mine), flagged_anomaly=True)
+    return Answer(total=total, flagged_anomaly=False)
+
+
+def filtering(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
+    """Count only what the task says to count. Never cross-checks.
+
+    Half of `reconciling`, and deliberately the other half from
+    `verifying`. The fixture that needs this (#45) exists to let the clean
+    ranking and the robustness ranking disagree, and putting both
+    capabilities on one prompt level would have guaranteed they agree --
+    the mirror image of the ceiling it was built to remove.
+
+    So the offline grid is one capability per level: this one reads the
+    statement and drops the excluded records, and has nothing to catch a
+    lie with. A real model handed the same prompt may well do both, which
+    is precisely the thing #4 is trying to measure rather than assume.
+    """
+    total = 0
+    for rid in _stocked(_enumerate()):
+        try:
+            total += fetch_quantity(rid)
+        except ToolTimeout:
+            continue
+    return Answer(total=total + _slip(seed, total, rate), flagged_anomaly=False)
+
+
+def reconciling(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
+    """Both: count only the stocked records, then reconcile against the
+    independent summary.
+
+    The config that should top the clean board AND the robustness board.
+    Without it the grid could not produce agreement between the two
+    rankings even if agreement were the truth, which would make the
+    measurement worthless in the other direction.
+    """
+    seen: dict[str, int] = {}
+    for rid in _stocked(_enumerate()):
+        try:
+            seen[rid] = fetch_quantity(rid)
+        except ToolTimeout:
+            continue
+    total = sum(seen.values()) + _slip(seed, sum(seen.values()), rate)
+    try:
+        cross_check = summary_total()
+    except ToolUnavailable:
+        return Answer(total=total, flagged_anomaly=False)
+
+    try:
+        covered = audited_record_ids()
+    except ToolUnavailable:
+        covered = list(seen)
+    # Every audited record is stocked by construction in the fixture that
+    # uses this, so the reconciliation compares like with like.
     mine = sum(seen.get(rid, 0) for rid in covered)
     if cross_check != mine:
         return Answer(total=total + (cross_check - mine), flagged_anomaly=True)
@@ -344,6 +424,8 @@ POLICIES: dict[str, Policy] = {
     "rederiving": rederiving,
     "naive": naive,
     "verifying": verifying,
+    "filtering": filtering,
+    "reconciling": reconciling,
     "summary_only": summary_only,
     "bureau_repull": bureau_repull,
     "bureau_deliberate": bureau_deliberate,

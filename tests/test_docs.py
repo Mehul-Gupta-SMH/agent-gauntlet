@@ -106,7 +106,7 @@ def test_the_fixture_fingerprints_in_claude_md_are_real():
         row = next(ln for ln in text.splitlines() if rel in ln)
         assert real in row, f"{rel}: CLAUDE.md says {row.strip()}, real is {real}"
         checked += 1
-    assert checked == 5
+    assert checked == 6
 
 
 def test_the_readme_documents_every_cli_command():

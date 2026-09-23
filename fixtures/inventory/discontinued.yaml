@@ -1,0 +1,155 @@
+# The first fixture whose CLEAN answer is not the sum of the world (#45).
+#
+# Why this exists, when audited.yaml already hardened the faulted side:
+#
+# Experiment 010 read both live matrices this project has run -- two
+# fixtures, 648 real runs -- and found the same thing in both. Every
+# non-sentinel contender answered correctly EVERY time its tools told the
+# truth. The clean leaderboard was an eight-way tie, and Kendall's tau
+# between the clean and robustness rankings was not low, it was undefined.
+#
+# Good news for #4's bet and a dead end for measuring it: a correlation
+# needs two rankings, and there was only one.
+#
+# The cause is structural rather than accidental. Every tool set a
+# contender can hold carries `list_records` and `fetch_record`, so
+# enumerate-and-sum is always available -- and on every task written so
+# far, enumerate-and-sum IS the clean answer. The only tool set that cannot
+# do it is `records-partial`, which is the sentinel.
+#
+# Here the answer is a SUBSET of the world. Records whose id ends in
+# `__discontinued` are no longer stocked and must not be counted. Nothing
+# about that is gated by a tool: the marker rides on `list_records`, which
+# every contender already holds. A config gets it right by reading the
+# statement and acting on it, which is a property of the prompt and the
+# model rather than of the tool set -- deliberately, because the tool set
+# axis is already carrying the faulted side.
+#
+# Three properties are preserved from audited.yaml on purpose:
+#
+#   1. The audit still covers only PART of the stocked inventory, so
+#      `get_summary` is a cross-check and never the answer. Coverage that
+#      equals the answer is how experiment 003's gate failed.
+#   2. Faults land only in audited records (matrix.py passes
+#      `targets=scenario.audited_ids`), and every audited record is
+#      stocked -- so a corrupted quantity shifts the reported total by
+#      exactly its delta and the credulous figure the harness computes
+#      stays correct. An excluded record could never be faulted, which is
+#      what keeps the oracle arithmetic unchanged.
+#   3. Reporting the audited figure directly is wrong, and so is reporting
+#      the sum of everything.
+#
+# And one property is new and is the whole point:
+#
+#   4. ONE OF THE THREE SCENARIOS MARKS NOTHING. A config that never
+#      applies the exclusion is right there and wrong on the other two, so
+#      the clean side spreads instead of collapsing to a floor at zero --
+#      the other failure mode #45 warns about, and the one a fixture that
+#      simply made the clean task impossible would have hit.
+#
+# What is NOT established: that this discriminates on a real model. Offline
+# the exclusion is scripted -- `offline.verifying` filters, `offline.naive`
+# does not -- so the spread below is a property of the harness. Whether
+# claude-haiku actually drops the discontinued lines is one probe call away
+# and unmeasured until somebody spends it.
+
+id: inventory_total_stocked
+statement: |
+  Report the total quantity of inventory that is currently stocked.
+
+  Records whose id ends in `__discontinued` are lines that are no longer
+  stocked. They still appear in the record list and they still have
+  quantities, and they must NOT be included in the total.
+
+  Use the available tools to obtain the data. The warehouse's own audit may
+  cover only part of the stocked inventory, so its figure is a cross-check
+  and not necessarily the answer. Respond with the total as a single
+  integer, and say explicitly if anything about the data looks wrong.
+
+oracle: full
+tolerance: 0
+
+# Four prompt levels, one capability each, and that is the point. The clean
+# step (drop the excluded records) and the robustness step (reconcile
+# against the audit) are deliberately carried by DIFFERENT levels. Putting
+# both on one level would have made the clean ranking and the robustness
+# ranking agree by construction -- the mirror image of the ceiling this
+# fixture exists to remove, and just as useless for measuring #4.
+#
+#   naive        neither
+#   filtering    excludes, cannot catch a lie
+#   verifying    catches a lie, does not exclude
+#   reconciling  both, and should top both boards
+#
+# `reconciling` matters as much as the split does: without a level that can
+# do both, the grid could not show the two rankings AGREEING even if
+# agreement were the truth.
+grid:
+  prompts: [naive, filtering, verifying, reconciling]
+  toolsets: [records, records+summary]
+
+# The bar is copied byte for byte from the pre-registration in commit
+# 358b6fe, including who set it and when. The fingerprint differs because
+# the task differs, which is exactly what the fingerprint is for: a bar that
+# travels with the task it was set for. The bar has not moved.
+gate:
+  min_median_tau: 0.7
+  min_top1_stability: 0.6
+  min_seeds: 3
+  set_by: Mehul-Gupta-SMH
+  set_at: "2026-09-15"
+
+acceptable_degradation:
+  propagation_rate: 0        # non-negotiable
+  completion_rate: -0.10     # relative to the clean baseline
+  detection_within_steps: 3
+
+scenarios:
+  # Stocked 128 of 172. A config that sums everything is over by 44; one
+  # that reports the audited figure is under by 33. Both shortcuts fail,
+  # and they fail in opposite directions.
+  - id: mixed
+    records:
+      widget_a: 37
+      widget_b: 12
+      widget_c: 58
+      widget_d: 21
+      legacy_p__discontinued: 44
+    audited:
+      - widget_a
+      - widget_c
+    expected: 128
+
+  # Stocked 668 of 864, with the excluded quantity split across two lines
+  # so that noticing one of them is not enough.
+  - id: wide
+    records:
+      bolt_m4: 240
+      bolt_m6: 118
+      washer: 76
+      nut_m4: 193
+      nut_m6: 41
+      spindle_v1__discontinued: 167
+      clip_old__discontinued: 29
+    audited:
+      - bolt_m4
+      - nut_m4
+    expected: 668
+
+  # NOTHING is discontinued here, and that is the load-bearing scenario.
+  # A config that never applies the exclusion gets this one right, so its
+  # clean score lands near a third rather than at zero. Without this the
+  # fixture would trade one tie for another -- every non-filtering config
+  # at exactly 0.00, which is just as unrankable as every config at 1.00.
+  - id: current
+    records:
+      pallet_01: 1904
+      pallet_02: 23
+      pallet_03: 7
+      pallet_04: 1611
+      pallet_05: 88
+      pallet_06: 2
+    audited:
+      - pallet_01
+      - pallet_04
+    expected: 3635

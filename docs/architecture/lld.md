@@ -19,12 +19,12 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1627<br/>argparse · board rendering · probe · ui"]
-    BOARD["<b>board</b> · 976<br/>summarize · rank · pareto · held-out"]
-    ARCH["<b>architect</b> · 561<br/>PROMPTS · TOOLSETS · generate"]
+    CLI["<b>cli</b> · 1756<br/>argparse · board rendering · probe · ui"]
+    BOARD["<b>board</b> · 1029<br/>summarize · rank · pareto · held-out"]
+    ARCH["<b>architect</b> · 585<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 540<br/>RunContext · tool surface · notes"]
-    OFFLINE["<b>offline</b> · 375<br/>scripted policies"]
+    OFFLINE["<b>offline</b> · 457<br/>scripted policies"]
     MATRIX["<b>matrix</b> · 401<br/>run_matrix · _attempt · budget"]
     FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
     SPEC["<b>spec</b> · 322<br/>TaskSpec · VariantSpec · GridSpec"]
@@ -613,6 +613,8 @@ test_metamorphic  relations that need no oracle, and the sentinel they
                  catch without one
 test_attribution  the Shapley axioms, the interaction the grid really has,
                  and every design the table refuses to describe
+test_discontinued  the fixture whose clean answer is a subset of the world,
+                 and the ceiling and floor it has to avoid
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims
