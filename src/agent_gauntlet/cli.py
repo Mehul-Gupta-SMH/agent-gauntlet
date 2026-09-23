@@ -1192,7 +1192,14 @@ def _print_gate(records, seeds, task) -> int:
     print(f"  variants={report.n_variants}  seeds={len(seeds)}  "
           f"pairs={report.n_pairs}  undefined tau={report.undefined_pairs}")
     print(f"  median tau      = {report.median_tau}")
-    print(f"  top-1 stability = {report.top1_stability:.0%}")
+    decidable = report.n_pairs - report.undecided_pairs
+    if report.top1_stability is None:
+        print("  top-1 stability = n/a  (no seed pair had a decidable winner)")
+    else:
+        print(f"  top-1 stability = {report.top1_stability:.0%}"
+              f"  (of {decidable} decidable pair(s)"
+              + (f"; {report.undecided_pairs} censored, top tied)"
+                 if report.undecided_pairs else ")"))
 
     if gate is None:
         print("\n  NO VERDICT -- the spec pre-registers no thresholds, and the")
@@ -1219,6 +1226,15 @@ def _print_gate(records, seeds, task) -> int:
         failures.append("median tau undefined")
     elif report.median_tau < gate.min_median_tau:
         failures.append(f"median tau {report.median_tau:.3f} < {gate.min_median_tau}")
+    if report.undecided_pairs:
+        # The same zero-tolerance rule as undefined tau, one depth up. A
+        # seed whose top is tied has no winner, so that pair says nothing
+        # about whether the winner holds -- and a gate that passes on the
+        # remaining pairs is reporting agreement it did not observe (#1).
+        failures.append(
+            f"{report.undecided_pairs} seed pair(s) had no decidable winner -- "
+            "the top was tied, so agreement was never observable"
+        )
     if report.top1_stability is None:
         failures.append("top-1 stability undefined")
     elif report.top1_stability < gate.min_top1_stability:

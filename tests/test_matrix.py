@@ -248,6 +248,37 @@ def test_tied_top_is_not_a_winner():
     report = stability(
         {"a": {"v1": 1.0, "v2": 1.0}, "b": {"v1": 1.0, "v2": 1.0}}
     )
+    assert report.top1_stability is None
+    assert report.undecided_pairs == 1
+
+
+def test_tied_top_is_censored_not_counted_as_disagreement():
+    """A pair with no winner is not a pair whose winner changed.
+
+    Three seeds: `a` and `b` agree that v1 wins, `c` ties them. Two of the
+    three pairs therefore had no winner to compare. The honest rate is 1/1
+    of the pairs where agreement was observable -- not 1/3, which reads as
+    "the winner moved on two seeds out of three" and would fail a gate for
+    instability the data never showed (#1).
+    """
+    report = stability({
+        "a": {"v1": 1.0, "v2": 0.0},
+        "b": {"v1": 1.0, "v2": 0.0},
+        "c": {"v1": 1.0, "v2": 1.0},
+    })
+    assert report.n_pairs == 3
+    assert report.undecided_pairs == 2
+    assert report.top1_stability == 1.0
+
+
+def test_a_real_disagreement_still_counts_against_stability():
+    """The censoring must not swallow the case it exists to distinguish
+    from: both seeds had a winner, and they were different."""
+    report = stability({
+        "a": {"v1": 1.0, "v2": 0.0},
+        "b": {"v1": 0.0, "v2": 1.0},
+    })
+    assert report.undecided_pairs == 0
     assert report.top1_stability == 0.0
 
 

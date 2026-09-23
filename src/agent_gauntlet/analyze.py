@@ -68,7 +68,22 @@ class StabilityReport(BaseModel):
     n_pairs: int
     taus: list[Optional[float]]
     top1_stability: Optional[float]
-    """Fraction of seed pairs whose winner is the same variant."""
+    """Fraction of DECIDABLE seed pairs whose winner is the same variant.
+
+    None when no pair was decidable -- every seed's top was tied, so there
+    was never a winner to agree or disagree about. Zero would be a lie of
+    exactly the kind this project exists to refuse: "nobody won twice" is
+    not "the winner changed every time"."""
+    undecided_pairs: int
+    """Pairs dropped from `top1_stability`'s denominator because at least
+    one of the two seeds had a tied top.
+
+    These are censored, not failures. Counting them as disagreement -- the
+    original behaviour -- made a board with a tied top read as an UNSTABLE
+    board, which is a different diagnosis with a different fix (#1). The
+    treatment mirrors `DetectionReport.n_with_evidence`: a run that could
+    not have detected anything leaves the denominator rather than scoring
+    as a miss."""
     undefined_pairs: int
     """Pairs where tau could not be computed -- usually a ceiling effect,
     every variant tied. A large count here means the task failed to
@@ -104,19 +119,25 @@ def stability(runs: Mapping[str, Mapping[str, float]]) -> StabilityReport:
 
     taus: list[Optional[float]] = []
     winners_agree = 0
+    undecided = 0
     pairs = list(combinations(seeds, 2))
     for s1, s2 in pairs:
         v1 = [runs[s1][v] for v in variants]
         v2 = [runs[s2][v] for v in variants]
         taus.append(kendall_tau(v1, v2))
-        if _winner(runs[s1]) == _winner(runs[s2]) is not None:
+        w1, w2 = _winner(runs[s1]), _winner(runs[s2])
+        if w1 is None or w2 is None:
+            undecided += 1
+        elif w1 == w2:
             winners_agree += 1
 
+    decidable = len(pairs) - undecided
     return StabilityReport(
         n_variants=len(variants),
         n_pairs=len(pairs),
         taus=taus,
-        top1_stability=(winners_agree / len(pairs)) if pairs else None,
+        top1_stability=(winners_agree / decidable) if decidable else None,
+        undecided_pairs=undecided,
         undefined_pairs=sum(1 for t in taus if t is None),
     )
 
