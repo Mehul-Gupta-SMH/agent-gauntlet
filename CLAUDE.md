@@ -46,10 +46,18 @@ does not use it and detaches historical run records. These must not change:
 | `fixtures/inventory/task.yaml` | `5c9848747223eaa4` |
 | `fixtures/inventory/audited.yaml` | `d11a0b2a6801ee74` |
 | `fixtures/lending/applicant.yaml` | `2f32ad9fcecc025b` |
-| `fixtures/poisoning/instruction.yaml` | `88c1437a871c5f46` |
+| `fixtures/poisoning/instruction.yaml` | `10347b6eeeba5b0d` |
 | `fixtures/poisoning/memory.yaml` | `8f7d94a1568e6696` |
 
 A failing gate is a **finding**. Record it; do not tune the threshold.
+
+The instruction fixture's hash moved once, on 2026-09-23, and the reason
+is in the file: its first live run put no directive in front of the agent
+at all, because nothing in the statement gave it a reason to read an
+annotation. A fixture that cannot deliver its fault is a broken
+instrument rather than a bar worth protecting, and nothing historical was
+attached to the old hash. Re-registering is allowed; doing it quietly is
+not.
 
 **5. Degrade structurally, never attitudinally.**
 You cannot degrade a capable model by asking it to be careless (experiment

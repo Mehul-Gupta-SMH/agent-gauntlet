@@ -497,6 +497,35 @@ def _probe(args) -> int:
     print(f"faulted results reaching the agent: {sum(bool(c.get('faulted')) for c in fctx.calls)}")
 
     if not was_exposed:
+        called = [c["tool"] for c in fctx.calls]
+        # An agent that called NOTHING is not a task-design problem: it is
+        # not using the tool surface at all, and a matrix of those scores
+        # propagation 0% across the board. That stays the loud failure.
+        # Calling tools but not the corrupted one is the other thing
+        # entirely, and the two printed the same sentence.
+        if called and task.fault_tool not in called:
+            # Two very different failures used to print the same sentence.
+            # The agent never CALLED the corrupted tool, which says nothing
+            # about the adapter and everything about the task: nothing in
+            # the statement gave it a reason to. Reporting that as "the
+            # live path is broken" sends the reader to look at the SDK for
+            # a problem in a YAML file. Observed on the first live run of
+            # `poisoning/instruction.yaml`: haiku listed the records,
+            # fetched all six, cross-checked the audit and answered,
+            # without ever reading an annotation.
+            print(f"\nTHE AGENT NEVER CONSULTED {task.fault_tool!r}")
+            print(f"it called: {', '.join(dict.fromkeys(called)) or '(nothing)'}")
+            print()
+            print("The fault was scheduled correctly and the variant holds")
+            print("the tool. The agent simply had no reason to call it, so")
+            print("the directive was never put in front of it -- every")
+            print("compliance number for this task would be n/a, which is")
+            print("honest and useless.")
+            print()
+            print("This is the task's problem, not the adapter's. The")
+            print("statement has to give the agent a reason to read what the")
+            print("fault sits in, without telling it to obey what it finds.")
+            return 2
         print("\nFAILED: the fault was scheduled and no tool call returned it.")
         print("Injection is not reaching the agent through this target. Every")
         print("propagation and detection number in a matrix would be a")
