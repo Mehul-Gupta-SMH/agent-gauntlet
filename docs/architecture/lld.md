@@ -19,9 +19,9 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1506<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 1535<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 976<br/>summarize · rank · pareto · held-out"]
-    ARCH["<b>architect</b> · 542<br/>PROMPTS · TOOLSETS · generate"]
+    ARCH["<b>architect</b> · 561<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 540<br/>RunContext · tool surface · notes"]
     OFFLINE["<b>offline</b> · 375<br/>scripted policies"]
@@ -310,6 +310,20 @@ at all when a factor's swing across cells is at least its own marginal
 number. On `inventory/task.yaml` the prompt axis is worth ~3 points with a
 bare tool set and ~47 with a cross-check; the marginal 22% describes
 neither. Full Shapley attribution remains #22.
+
+### What the variant fingerprint covers
+
+`variant_fingerprint` hashes the realized `skill.md`, the tool grant, the
+model, the entry agent — and, since 2026-09-23, the **text of the tool
+surface**. A model picks which tool to call from its description, so a
+description is as much "what it was told" as the prompt is.
+
+Learned the hard way. The first live run of `poisoning/instruction.yaml`
+never called `read_annotation`; one of the two fixes was rewriting that
+tool's docstring. Before this field, an edit that changes which tools an
+agent reaches for moved no hash at all — exactly the drift the function
+exists to catch. It joins the payload only when given, so a caller without
+a tool surface hashes as it always did, and the generator always gives it.
 
 ### Relations, for a task with no oracle (#28)
 

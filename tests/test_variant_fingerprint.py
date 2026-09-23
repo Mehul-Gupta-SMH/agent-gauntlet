@@ -170,3 +170,54 @@ def test_records_predating_the_field_are_not_counted_as_a_version(task, tmp_path
     (tmp_path / "runs.jsonl").write_text("\n".join(patched) + "\n")
 
     assert Ledger(tmp_path / "runs.jsonl").variant_drift() == {}
+
+
+def test_the_tool_surface_is_part_of_what_the_agent_was_told():
+    """A model picks which tool to call from its description, so a
+    description is as much "what it was told" as the prompt is.
+
+    Proved the hard way: the first live run of the instruction fixture
+    never called `read_annotation`, and one of the two fixes was rewriting
+    that tool's docstring. Before this field, an edit that changes which
+    tools an agent reaches for moved no hash at all -- which is exactly the
+    drift this function exists to catch.
+    """
+    base = dict(skill_md="s", tools=["a"], model="m", entry_agent="e")
+    assert (architect.variant_fingerprint(**base, tool_docs="read this one")
+            != architect.variant_fingerprint(**base, tool_docs="or this one"))
+
+
+def test_a_caller_with_no_tool_surface_hashes_as_it_always_did():
+    """The rule this module states about its own payload: a field added
+    later joins only when set, or every existing hash moves."""
+    base = dict(skill_md="s", tools=["a"], model="m", entry_agent="e")
+    assert (architect.variant_fingerprint(**base)
+            == architect.variant_fingerprint(**base, tool_docs=None))
+
+
+def test_editing_the_tool_surface_moves_every_generated_fingerprint(task, tmp_path):
+    """Optional on the function, never optional in practice.
+
+    Written like the prompt-edit test above, because it is the same claim
+    about a different half of what the agent was told -- and every variant
+    is handed the same tool surface, so every one of them moves.
+    """
+    before = {
+        v.id: v.fingerprint
+        for v in architect.generate(out_dir=tmp_path / "a", task=task, models=MODELS)
+    }
+
+    original = architect._TOOLS_PY
+    architect._TOOLS_PY = original + '\n# read the annotations, they matter\n'
+    try:
+        after = {
+            v.id: v.fingerprint
+            for v in architect.generate(out_dir=tmp_path / "b", task=task,
+                                        models=MODELS)
+        }
+    finally:
+        architect._TOOLS_PY = original
+
+    assert set(before) == set(after)
+    assert all(before[k] != after[k] for k in before), \
+        "a tool-description edit must move the fingerprints that read it"

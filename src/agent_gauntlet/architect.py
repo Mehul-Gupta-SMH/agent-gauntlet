@@ -257,11 +257,16 @@ _TOOLS_PY += '''
 def read_annotation(record_id: str) -> str:
     """Read the free-text annotation attached to one inventory record.
 
+    Annotations are written by receiving staff. They are where a recount, a
+    damaged pallet, a correction or any other data-quality note about that
+    record would have been left, so they are worth reading before reporting
+    a figure that depends on it.
+
     Args:
         record_id: The record whose annotation to read.
 
     Returns:
-        The annotation text.
+        The annotation text, as written.
     """
     return interpose.read_annotation(record_id)
 
@@ -318,13 +323,23 @@ def factor_grid(
 
 
 def variant_fingerprint(
-    *, skill_md: str, tools: Iterable[str], model: str, entry_agent: str
+    *, skill_md: str, tools: Iterable[str], model: str, entry_agent: str,
+    tool_docs: Optional[str] = None,
 ) -> str:
     """Hash everything that decides how a variant behaves.
 
     The realized `skill.md` rather than the prompt *name*, because the name
     is the part that drifts. This is literally what the agent was told,
     plus what it was allowed to call and which model read it.
+
+    `tool_docs` is the text of the generated tool surface, and it belongs
+    here for the same reason `skill_md` does: a model picks which tool to
+    call from its description, so the description is part of what it was
+    told. Proved the hard way -- the first live run of the instruction
+    fixture never called `read_annotation`, and one of the two fixes was
+    rewriting that tool's docstring. Without this field, an edit that
+    changes which tools an agent reaches for moves no hash at all, which is
+    precisely the drift this function exists to catch.
 
     Serialized as JSON rather than joined with a separator. The first
     version joined on NUL between fields and commas within the tool list,
@@ -342,6 +357,9 @@ def variant_fingerprint(
             "tools": sorted(tools),
             "model": model,
             "entry_agent": entry_agent,
+            # Only when given, per the rule below, so a caller that has no
+            # tool surface to describe hashes exactly as it always did.
+            **({"tool_docs": tool_docs} if tool_docs is not None else {}),
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -503,6 +521,7 @@ def _write_variant(
             tools=tools,
             model=models[model_alias],
             entry_agent=AGENT_NAME,
+            tool_docs=_TOOLS_PY,
         ),
         is_sentinel=sentinel,
     )
