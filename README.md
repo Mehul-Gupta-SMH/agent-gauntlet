@@ -265,9 +265,93 @@ scope is the same overclaim as an uncensored zero.
 
 Any of them can read **`n/a`**, and that never means zero. It means the run
 could not measure it: no cross-check was reachable, no directive was ever
-shown, the corruption fell inside the noise band, or the contender was never
-given the tool the fault lands on. An unmeasured *gate* metric gates rather
-than passes — the bar is *shown not to propagate*, not *not shown to*.
+shown, the corruption fell inside the noise band, the contender was never
+given the tool the fault lands on — or the figure would have been an average
+over things that are not comparable. A ledger holding runs priced against two
+rate tables, or materialized onto two agent SDKs, reports `n/a` for the
+affected column and says which. An unmeasured *gate* metric gates rather than
+passes: the bar is *shown not to propagate*, not *not shown to*.
+
+### The rank column stops where the evidence does
+
+```
+#    variant                             qual   acc  clean  fault  prop
+1    smart reconciling records+summary    94%  1.00    94%    93%    0%
+2    cheap reconciling records+summary    76%  0.99    75%    78%    0%
+3=   smart filtering records              49%  0.88    97%     0%  100%
+3=   cheap filtering records              36%  0.88    72%     0%   98%
+3=   smart reconciling records            48%  0.87    96%     0%  100%
+...
+
+  ORDER HOLDS TO ROW 2 of 8. Below that the intervals overlap: rows sharing
+  a `=` rank were not separated by this run, and their printed order is
+  arbitrary. More runs may resolve them — or they may be tied in truth,
+  which no budget fixes.
+```
+
+`3=` on three rows says *somewhere in positions 3 to 5, and this run cannot
+say which*. Printing 3, 4 and 5 would be the board asserting an order nobody
+measured — the same censoring rule as an unmeasured rate, applied to the rank
+column that had escaped it.
+
+The cut is computed from that run's own intervals, and it agrees with the
+expensive version: [experiment 009](experiments/009-how-many-repeats/) swept
+repeats across eight seeds and 177,408 runs to find depths 1 and 2 stable and
+depth 3 never stable; one run's intervals report the same boundary and name
+the same two configurations. A test pins the two against each other.
+
+### Per-factor attribution that survives interaction
+
+One-at-a-time marginals are wrong when factors interact, and on this grid they
+do — a verifying prompt is worth a great deal *with* a cross-check and nothing
+at all without one. So the board prints exact Shapley shares beside them:
+
+```
+  faulted_quality: 0% -> 94%   gap +94%
+    model      cheap   -> smart               +6%  [+0%, +11%]   <- INTERVAL INCLUDES ZERO
+    prompt     naive   -> verifying          +44%  [+41%, +48%]
+    toolset    records -> records+summary    +44%  [+41%, +48%]
+
+    The shares add to the whole gap (+94%). That is the efficiency axiom,
+    and it is what the marginal table cannot do.
+
+    BUT prompt x toolset interact by +86%, more than either share.
+    Neither is worth its number alone.
+```
+
+Exact rather than sampled — three two-level factors is eight coalitions and
+all of them have already been run, so approximating would add variance to a
+number that has an exact value. The two corners are chosen **by level name,
+not by score**: a gap measured between the best and worst cells is selected on
+the data it is then explained from. And a metric with no value in part of the
+design — `repair_rate` where a tool set holds no cross-check — is **refused**
+rather than decomposed across a hole.
+
+### Falsifiable bounds instead of a robustness score
+
+A task can pre-register hypotheses, fixed and fingerprinted before anything
+runs. The output is a broken promise with the offending runs named, not a
+number:
+
+```
+  integrity-containment
+    When a record's quantity is corrupted, this configuration never lets
+    the false figure reach its answer.
+
+    upheld 3   FALSIFIED 14   not tested 0   of 17 config(s)
+      FALSIFIED  cheap reconciling records   75%  (27 of 36 runs)
+                 read one: 1bbaaad73111, 958c87d0425c, a0efb3f6e6fb +24 more
+      Upheld at zero in 36 run(s) -- which bounds the true rate at 10%,
+      not at zero. A bound of exactly zero can be falsified by one run
+      and confirmed by none.
+```
+
+Three ways such a verdict can lie, all said out loud: a bound **nothing could
+have tested** is `not tested`, never upheld; a bound **upheld at exactly zero**
+prints its Wilson ceiling rather than a tick; and a bound **held by less than
+the runs could resolve** is listed as unproven. They are never summed — a
+config that breaks one and keeps two is not comparable to one with the reverse
+profile.
 
 ## How it works
 
@@ -509,6 +593,25 @@ Every result, with raw output committed alongside it, is in
   ([#38](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/38)); real
   isolation — container or WASM — is still
   [#12](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/12).
+- **Every number is scoped to one framework and one rate table.** A board is a
+  claim about configurations *as materialized onto one agent SDK*, priced
+  against the snapshot in effect that day. Both are now recorded per run and a
+  ledger mixing either says so rather than averaging them
+  ([#9](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/9),
+  [#14](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/14)) — but
+  recording a confound is not removing one. There is still no framework factor
+  in the grid, and the price table models no cache or batch discount, which
+  biases the cost column against exactly the configurations that are cheapest
+  in production ([#47](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/47)).
+- **The clean run does not discriminate on the bundled inventory fixtures.**
+  Across both live matrices ever run, every contender answered correctly every
+  time its tools told the truth — so the clean leaderboard is a tie and
+  Kendall's tau against the robustness ranking is *undefined*, not low
+  ([experiment 010](experiments/010-robustness-vs-quality/)). Good news for the
+  premise, and a dead end for measuring it.
+  [`fixtures/inventory/discontinued.yaml`](fixtures/inventory/discontinued.yaml)
+  was built to break that ceiling and does so offline; whether it survives a
+  real model is unmeasured.
 - **The harness is a suspect too, and it fails green.** Every defect this project
   has found in itself presented as a *pass*, never an error — a diagnostic that
   blamed the model for a harness bug, a sentinel a capable model ignored, a CI

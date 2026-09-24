@@ -106,7 +106,15 @@ flowchart TB
     subgraph Judge
         SCORE["<b>score</b><br/>outcomes · repair · propagation · compliance"]
         ANALYZE["<b>analyze</b><br/>Kendall tau · stability"]
-        BOARD["<b>board</b><br/>rank · Pareto · attribution · held-out"]
+        BOARD["<b>board</b><br/>rank · Pareto · decidable depth · held-out"]
+        ATTR["<b>attribution</b><br/>exact Shapley · interaction"]
+        HYP["<b>hypotheses</b><br/>falsifiable bounds · verdicts"]
+        PRICE["<b>pricing</b><br/>rate snapshot · drift"]
+    end
+    subgraph Watch["Watch (does anything still hold?)"]
+        CERT["<b>certify</b><br/>certificate · expiry · regression"]
+        CANARY["<b>canary</b><br/>behavioural fingerprint · blind spot"]
+        META["<b>metamorphic</b><br/>relations without an oracle"]
     end
     subgraph Operate["Operate (the UI layer)"]
         PROJECT["<b>project</b><br/>one project at a time"]
@@ -125,6 +133,12 @@ flowchart TB
     MATRIX --> LEDGER
     LEDGER --> SCORE --> BOARD
     LEDGER --> ANALYZE --> BOARD
+    MATRIX -.->|pins rates| PRICE --> BOARD
+    LEDGER --> ATTR & HYP
+    BOARD --> CERT --> CANARY
+    LEDGER --> CANARY
+    SPEC --> HYP
+    SPEC --> META --> MATRIX
 
     PROJECT --> RUNNER --> MATRIX
     USERTOOLS --> RUNNER
@@ -154,7 +168,13 @@ need, that surfaces as `n/a` rather than as a special case.
 | `ledger` | Immutable records, drift detection, re-scoring | Aggregate |
 | `score` | Grading one run against known truth | Contain a judge |
 | `analyze` | Rank-stability statistics | Render a verdict |
-| `board` | Ranking, frontier, attribution, held-out winner | Invent a scalar |
+| `board` | Ranking, frontier, held-out winner, and **how far down the order the evidence reaches** | Invent a scalar, or print a rank the intervals do not support |
+| `attribution` | Exact Shapley shares over a complete factorial, with intervals and pairwise interaction | Approximate when it can be exact, or decompose a censored metric |
+| `hypotheses` | Pre-registered falsifiable bounds, and three ways a verdict can lie | Sum them into a score |
+| `pricing` | The rate table a dollar figure was computed against | Invent a date upstream does not publish |
+| `certify` | What a config scored, when, and over how much evidence | Let a claim age silently |
+| `canary` | A cheap pinned fingerprint, and the shift it admits it cannot see | Report "unchanged" without its blind spot |
+| `metamorphic` | Relations that hold without any oracle | Average them into coverage |
 | `project` | One operator's intake, tools, models and run state, on disk | Run anything |
 | `usertools` | Reading an upload without importing it; calibrating it into a value table | Trust a tool that disagrees with itself |
 | `runner` | Turning a project into a real, fingerprinted `TaskSpec` and its variants | Have its own scorer |
@@ -203,11 +223,15 @@ flowchart LR
     S --> R["rank<br/><i>tiers, ties kept</i>"]
     S --> P["pareto<br/><i>accuracy × cost</i>"]
     S --> FX["factor_effects<br/><i>+ interaction caveat</i>"]
+    S --> DD["decidable_depth<br/><i>where the order stops</i>"]
+    L --> AT["attribute<br/><i>Shapley + interaction</i>"]
+    L --> HY["hypotheses<br/><i>upheld · FALSIFIED · not tested</i>"]
     L --> ST["stability<br/><i>tau, top-1</i>"]
     ST --> G{"gate<br/><i>pre-registered bar</i>"}
     S --> HO["held_out_winner<br/><i>select ≠ score</i>"]
     G -->|pass| V["verdict + exported winner"]
     G -->|fail| STOP["stop. fix measurement."]
+    V --> C["certificate<br/><i>dated, expires</i>"] --> CN["canary<br/><i>did the world move?</i>"]
 
     style G fill:#5b21b6,stroke:#4c1d95,color:#fff
     style STOP fill:#7f1d1d,stroke:#991b1b,color:#fff
@@ -222,6 +246,20 @@ cannot detect a fault; a run that never detected has no latency; an unpriced run
 is not free; an errored run is not a wrong answer. Each is censored out of its
 denominator and reported as `n/a`, never as `0`. A zero in those places reads as
 the best possible result.
+
+**An aggregate over incomparable things is not an aggregate.** Two runs priced
+against different rate tables, or materialized onto different agent SDKs, are
+each truthful and jointly meaningless. The ledger records the rate table and the
+framework per run, and a variant whose runs span two of them reports `n/a` for
+the affected figure rather than their average — the censoring rule above, applied
+to a number that *was* measured, just not of one thing.
+
+**Say what the run could not have seen.** A verdict without a resolution is a
+claim about the world dressed as a claim about the evidence. Every gate prints
+the difference it could have caught, every Shapley share carries an interval,
+every canary prints the shift it is blind below, and a bound upheld at exactly
+zero prints the Wilson ceiling rather than a tick — "never, in n runs" is not
+"never".
 
 **The record carries evidence, not conclusions.** A stored run keeps the answer,
 the tool calls, the schedule, the resolved model and a fingerprint of the variant

@@ -1,9 +1,20 @@
 # agent-gauntlet — Plan
 
-> **Status: design only.** Nothing here is implemented yet. This document is the
-> argument for what to build and, just as importantly, what to prove before
-> building it. Decisions marked *settled* are settled; everything in
-> [Open questions](#open-questions) is not.
+> **Status: M0 is built and has passed, live.** This line said *"design only,
+> nothing here is implemented yet"* long after that stopped being true, which is
+> the documentation version of the failure mode this project is about.
+>
+> What exists: the full pipeline (`spec` → `architect` → `matrix` → `score` →
+> `board`), the live path through CommonADK, the UI, and every result in
+> [`experiments/`](experiments/). The M0 gate was run live and **passed**
+> ([experiment 007](experiments/007-m0-gate-passed/)) against a bar
+> pre-registered in the fixture beforehand — after failing once, for reasons
+> worth reading ([experiment 003](experiments/003-live-m0-gate/)).
+>
+> What this document still is: the argument for what to build and what to prove
+> before building it. Milestones past M0 are largely unbuilt, and the per-issue
+> comment threads are more current than the prose here. Decisions marked
+> *settled* are settled; everything in [Open questions](#open-questions) is not.
 
 ## Hypothesis
 
@@ -462,6 +473,30 @@ flowchart TD
     style M0 fill:#1e3a5f,stroke:#1e40af,color:#fff
     style UP fill:#3f3f46,stroke:#52525b,color:#fff,stroke-dasharray: 4 4
 ```
+
+#### Where the milestones actually stand
+
+The graph above is the plan. This is the state, as of 2026-09-24 — kept short
+on purpose, because the per-issue comment threads carry the detail and this
+table only has to stop the graph being read as a status report.
+
+| | State |
+|---|---|
+| **M0** | **Passed, live.** [Experiment 007](experiments/007-m0-gate-passed/), after failing once ([003](experiments/003-live-m0-gate/)). The instrument check passed separately ([006](experiments/006-live-instrument-check/)). |
+| **M1** — honest reporting | Largely landed. Held-out winner (#20), cost and latency on the board, resolution beside every verdict (#34), rank bands where the evidence stops (#44), the rate table a dollar figure used (#14), the framework a number is scoped to (#9). |
+| **M2** — chaos depth | Partly. Detection latency (#16), falsifiable bounds (#17), the fault taxonomy measured rather than assumed (#5, [experiment 011](experiments/011-is-a-timeout-as-informative/)). Prior-art reconciliation (#25) open. |
+| **M3** — generation | Mostly open. The reward-hacking refusal (#6) landed; tool synthesis is deliberately not on. |
+| **M4** — search | Attribution landed as exact Shapley with intervals and refusals (#22). The budget model (#10) is open, and is what the search strategy waits on. |
+| **M5** — scoring depth | Metamorphic relations built and on the board (#28, #43). The judge protocol (#3) and proper scoring rules (#21) are open. |
+| **M6** — the board | Partly, via M1's work. The presentation question (#11) is open. |
+| **M7** — product | The certificate and its expiry exist, and `gauntlet canary` is the trigger half (#19). Scheduling is deliberately absent. |
+| **M8** — workflows | Open, and still blocked upstream (#24). |
+
+Two caveats the table cannot carry. Most of the above is validated **offline**,
+against scripted policies — that tests the machinery, never the agents. And the
+open question that matters most is not on any milestone: no bundled fixture
+discriminates on the *clean* run, so the premise in #4 can be bounded but not
+measured ([experiment 010](experiments/010-robustness-vs-quality/), #45).
 
 Three things this makes visible that the milestone table does not:
 

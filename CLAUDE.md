@@ -30,6 +30,24 @@ for a variant that could not call the faulted tool — all `None`, all the
 way to the page. Guard the *value*, not just the CSS class; a formatter
 called on `None` has bitten twice.
 
+**2b. An average over incomparable things is not an average.**
+Two runs priced against different rate tables (`prices.fingerprint`), or
+materialized onto different agent SDKs (`target`), are each truthful and
+jointly meaningless. `cost_per_run` returns `None` when a variant spans
+two rate tables, and the run header names the one framework every number
+is scoped to. Gate on the *property*, not at the print, so `best_under`
+and the frontier censor it too without knowing prices can drift.
+
+**2c. Say what the run could not have seen.**
+A verdict without a resolution is a claim about the world dressed as a
+claim about the evidence. Every Shapley share carries a bootstrap
+interval; every canary prints the shift it is blind below; a hypothesis
+upheld at exactly zero prints the Wilson ceiling, because "never, in n
+runs" is not "never"; the board prints where its ranking stops
+(`decidable_depth`). Use **Wilson for a per-run boolean**, never a
+bootstrap — a bootstrap over n identical observations returns a
+*zero-width* interval, which reads as infinite sensitivity.
+
 **3. An unmeasured gate metric gates.**
 The bar is *shown not to propagate*, not *not shown to propagate*. But
 distinguish **not applicable** (an instruction fault corrupts no number)
@@ -51,6 +69,16 @@ does not use it and detaches historical run records. These must not change:
 | `fixtures/poisoning/memory.yaml` | `8f7d94a1568e6696` |
 
 A failing gate is a **finding**. Record it; do not tune the threshold.
+
+A task that writes its own answer into its statement is refused at
+generation time (`architect.leaks_answer`): every variant would score
+1.00 without calling a tool, and the board would rank a field that never
+did the work.
+
+Two hashes have moved, both deliberately and both documented in the
+fixture header. `discontinued.yaml` was re-registered the day it was
+created, when its hypotheses block was added and no run record existed
+against the first hash.
 
 The instruction fixture's hash moved once, on 2026-09-23, and the reason
 is in the file: its first live run put no directive in front of the agent
