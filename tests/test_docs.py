@@ -55,11 +55,24 @@ def test_the_hld_component_table_lists_every_module():
     map (already checked above).
     """
     text = HLD.read_text(encoding="utf-8")
+    # The TABLE, not the whole file. The first version of this check looked
+    # anywhere in `hld.md` and passed while the table was missing an entry,
+    # because the diagram above it mentioned the module -- a guard that
+    # cannot fail, which is this project's own favourite defect. Scoped to
+    # the rows that start with a backticked module name.
+    # Every backticked name in the FIRST cell of a table row. One cell can
+    # hold two: `live` / `offline` share a row, being two executors with one
+    # signature, and a stricter pattern reported them missing.
+    rows = {
+        name
+        for line in text.splitlines() if line.startswith("| `")
+        for name in re.findall(r"`([a-z_]+)`", line.split("|")[1])
+    }
+    assert rows, "hld.md has no component table to check"
+
     exempt = {"_calibrate", "replay", "events", "server", "runner", "project",
               "secrets", "usertools", "stats", "faults", "cli"}
-    missing = [m for m in modules()
-               if m not in exempt and f"`{m}`" not in text
-               and f"<b>{m}</b>" not in text]
+    missing = [m for m in modules() if m not in exempt and m not in rows]
     assert not missing, f"hld.md's component table is missing: {missing}"
 
 
