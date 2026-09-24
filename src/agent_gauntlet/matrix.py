@@ -145,6 +145,15 @@ def run_matrix(
     fingerprint = task.fingerprint()
     produced: list[RunRecord] = []
 
+    # Taken once, before anything runs, over the models this grid will
+    # actually use. Offline runs spend nothing and are priced by nobody, so
+    # they carry no snapshot -- an absent fingerprint is not drift (#14).
+    prices: dict = {}
+    if not offline:
+        from .pricing import snapshot as _price_snapshot
+
+        prices = _price_snapshot(v.model for v in variants).model_dump(mode="json")
+
     events.emit(
         "matrix.start",
         task=task.id,
@@ -286,6 +295,7 @@ def run_matrix(
                         rollup=rollup,
                         tool_calls=list(ctx.calls),
                         offline=offline,
+                        prices=prices,
                     )
                     ledger.append(record)
                     produced.append(record)

@@ -800,6 +800,24 @@ def _run(args) -> int:
         for reason, count in sorted(seen.items(), key=lambda kv: -kv[1])[:5]:
             print(f"  {count:>4}x  {reason[:96]}")
 
+    from .pricing import drift as price_drift
+
+    priced = price_drift(records)
+    if len(priced) > 1:
+        print(f"\nWARNING: this ledger holds runs priced against "
+              f"{len(priced)} different rate")
+        print("tables. Each dollar figure is truthful about its own run and "
+              "none of them")
+        print("are comparable, so the cost column reads n/a for any variant "
+              "that spans")
+        print("more than one (#14).")
+        for fp, variants in priced.items():
+            print(f"  {fp}: {len(variants)} variant(s)")
+    elif priced:
+        (only,) = priced
+        print(f"prices      {only}  (rates pinned at run time; there is no "
+              f"upstream date to show)")
+
     drift = ledger_drift(records)
     if drift:
         print(f"\nWARNING: {len(drift)} variant(s) appear under more than one")

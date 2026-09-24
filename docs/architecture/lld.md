@@ -36,7 +36,8 @@ flowchart TD
     META["<b>metamorphic</b> · 314<br/>relations · perturbations"]
     ATTR["<b>attribution</b> · 442<br/>exact Shapley · interaction · refusals"]
     HYP["<b>hypotheses</b> · 229<br/>falsifiable bounds · verdicts"]
-    CAN["<b>canary</b> · 289<br/>behavioural fingerprint · blind spot"]
+    CAN["<b>canary</b> · 304<br/>behavioural fingerprint · blind spot"]
+    PRICE["<b>pricing</b> · 133<br/>rate snapshot · drift"]
 
     CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP & CAN
     META --> SPEC & INTER & MATRIX & META
@@ -52,7 +53,8 @@ flowchart TD
     USERT --> INTER & CALIB
     CALIB --> USERT
     BOARD --> LEDGER & ANALYZE & STATS
-    MATRIX --> LEDGER & SCORE & LIVE & OFFLINE & INTER & FAULTS & EVENTS
+    MATRIX --> LEDGER & SCORE & LIVE & OFFLINE & INTER & FAULTS & EVENTS & PRICE
+    BOARD --> PRICE
     LEDGER --> SCORE & FAULTS & SPEC
     LIVE --> SCORE & SPEC
     OFFLINE --> INTER & SCORE
@@ -628,6 +630,8 @@ test_hypotheses  falsifiable bounds, and the three ways a verdict lies:
                  censored, confirmed-at-zero, held by a hair
 test_canary      the fingerprint that triggers a re-run, and the shifts
                  it admits it cannot see
+test_pricing     the rate table a dollar figure was computed against, and
+                 the cost that goes n/a when two of them meet
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

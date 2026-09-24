@@ -98,6 +98,14 @@ class VariantResult(BaseModel):
     readily to correlate across seeds (#17 vs #29 correction 3)."""
     cost_usd: float
     total_tokens: int = 0
+    price_fingerprints: list[str] = Field(default_factory=list)
+    """Every rate table this variant's runs were priced against (#14).
+
+    More than one means the dollar figures below are individually truthful
+    and jointly meaningless: they were computed from different numbers.
+    Empty for offline runs, which spend nothing.
+    """
+
     cost_complete: bool = False
     """Whether every LLM call in this variant's runs reported a price.
 
@@ -164,9 +172,24 @@ class VariantResult(BaseModel):
         return " ".join(known + rest) or self.variant_id
 
     @property
+    def prices_mixed(self) -> bool:
+        """Were these runs priced against more than one rate table?"""
+        return len(self.price_fingerprints) > 1
+
+    @property
     def cost_per_run(self) -> Optional[float]:
-        """Spend per run, or None when nothing priced it."""
-        if not self.cost_complete or not self.n_runs:
+        """Spend per run, or None when nothing priced it -- or when the
+        runs were not all priced the same way.
+
+        The third case is #14's: averaging dollars across two rate tables
+        produces a figure computed from numbers that were never
+        simultaneously true. "Not measured" and "measured against something
+        else" are both "not a number you can compare", and both render
+        n/a. Gating it here rather than at the print means `best_under` and
+        the frontier censor it too, without either of them knowing that
+        prices can drift.
+        """
+        if not self.cost_complete or not self.n_runs or self.prices_mixed:
             return None
         return self.cost_usd / self.n_runs
 
@@ -517,6 +540,9 @@ def summarize(
                 # runs never priced anything (offline) is False too.
                 cost_complete=bool(runs) and all(
                     _llm(r).get("cost_complete") for r in runs
+                ),
+                price_fingerprints=sorted(
+                    {f for f in (_pinned_price(r) for r in runs) if f}
                 ),
                 median_detect_latency=(
                     median(_latencies(runs)) if _latencies(runs) else None
@@ -975,6 +1001,13 @@ def factor_effects(results: Sequence[VariantResult]) -> list[FactorEffect]:
             )
         )
     return sorted(effects, key=lambda e: e.spread, reverse=True)
+
+
+def _pinned_price(record) -> Optional[str]:
+    """The rate table this run was priced against, or None offline."""
+    from .pricing import pinned
+
+    return pinned(record)
 
 
 def _conditional_spreads(

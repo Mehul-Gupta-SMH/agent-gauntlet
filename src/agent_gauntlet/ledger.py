@@ -104,6 +104,18 @@ class RunRecord(BaseModel):
     """True when produced by a scripted policy rather than a real model.
     Offline runs test the harness; they are never evidence about agents."""
 
+    prices: dict[str, Any] = Field(default_factory=dict)
+    """The rate table `rollup["cost_usd"]` was computed against (#14).
+
+    A `pricing.PriceSnapshot`, flattened. Empty for offline runs, which
+    spend nothing and are priced by nobody -- so an absent fingerprint is
+    not drift.
+
+    This is what the module docstring above promised and did not deliver:
+    the price table the cost was computed against, pinned into the record.
+    Without it, two matrices run a month apart average into one cost column
+    with no way to tell the rates moved underneath them."""
+
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
