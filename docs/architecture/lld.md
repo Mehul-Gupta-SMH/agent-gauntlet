@@ -21,7 +21,7 @@ flowchart TD
 
     CLI["<b>cli</b> · 1855<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 1029<br/>summarize · rank · pareto · held-out"]
-    ARCH["<b>architect</b> · 585<br/>PROMPTS · TOOLSETS · generate"]
+    ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 540<br/>RunContext · tool surface · notes"]
     OFFLINE["<b>offline</b> · 457<br/>scripted policies"]
@@ -632,6 +632,8 @@ test_canary      the fingerprint that triggers a re-run, and the shifts
                  it admits it cannot see
 test_pricing     the rate table a dollar figure was computed against, and
                  the cost that goes n/a when two of them meet
+test_reward_hacking  the answer written into the statement it is graded
+                 against, refused before a matrix exists
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

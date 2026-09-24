@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
+import re
 from pathlib import Path
 from typing import Iterable, Mapping, Optional, Union
 
@@ -395,6 +396,56 @@ def variant_id(factors: Mapping[str, str]) -> str:
     return "__".join(f"{k}-{factors[k]}" for k in sorted(factors))
 
 
+MIN_LEAKABLE = 10
+"""Below this, a number in a statement is not evidence of a leak.
+
+"Respond with the total as a single integer" and "say so within 3 steps"
+are ordinary prose. A single digit colliding with a scenario's total is a
+coincidence a refusal should not fire on; three digits is not.
+"""
+
+
+def leaks_answer(task: TaskSpec) -> Optional[str]:
+    """Does the task statement hand the agent a figure it should compute?
+
+    The reward-hacking failure that is reachable TODAY (#6). Tool synthesis
+    is not on -- variants are assembled from a fixed catalogue of prompts
+    and tool sets, so the classic "a variant writes a tool that returns
+    what the check wants" attack has nowhere to happen. What an operator
+    CAN do, by accident, in one line, is write an answer into the statement
+    they are about to grade against.
+
+    Every variant then scores 1.00 without calling anything, the board
+    prints a full leaderboard with a winner, and nothing anywhere says the
+    task was answerable from the prompt. The same fail-green shape as a
+    fault that cannot fire, so it is refused at generation time for the
+    same reason and in the same place.
+
+    The statement is the only surface an operator controls that reaches the
+    model: `skill.md` is a prompt strategy plus this text plus the answer
+    format, and the scenario itself is served through tools at run time.
+    """
+    text = task.statement
+    for scenario in task.scenarios:
+        for label, value in (("the answer", scenario.expected_total),
+                             ("the audited figure", scenario.audited_total)):
+            if abs(value) < MIN_LEAKABLE:
+                continue
+            # Not preceded or followed by a digit, and not sitting inside a
+            # decimal. A sentence-ending full stop must still match -- the
+            # first version excluded any adjacent '.', so "the total is 128."
+            # slipped through, which is the most natural way to write the
+            # leak this refuses.
+            if re.search(rf"(?<!\d)(?<!\d\.){value}(?!\d)(?!\.\d)", text):
+                return (
+                    f"scenario {scenario.id!r} has {label} {value}, and the "
+                    f"task statement contains that number. Every variant can "
+                    f"read it off the prompt without calling a tool, and the "
+                    f"board would rank a field that never did the work"
+                )
+    return None
+
+
 def generate(
     *,
     out_dir: Union[str, Path],
@@ -440,6 +491,10 @@ def generate(
     # is there anywhere for this fault to LAND, and can any variant reach
     # the tool it lands in. Both fail the same way when unasked -- a full
     # leaderboard over a matrix where nothing was ever injected.
+    leak = leaks_answer(task)
+    if leak:
+        raise ValueError(f"task {task.id!r} leaks its own answer: {leak}")
+
     why = interpose.unreachable(task.fault_tool, FaultKind(task.fault_kind))
     if why:
         raise ValueError(
