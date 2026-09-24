@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "agent_gauntlet"
 LLD = ROOT / "docs" / "architecture" / "lld.md"
 HLD = ROOT / "docs" / "architecture" / "hld.md"
+HLD = ROOT / "docs" / "architecture" / "hld.md"
 README = ROOT / "README.md"
 
 
@@ -39,6 +40,27 @@ def test_the_module_map_lists_every_module():
     text = LLD.read_text(encoding="utf-8")
     missing = [m for m in modules() if f"<b>{m}</b>" not in text]
     assert not missing, f"lld.md module map is missing: {missing}"
+
+
+def test_the_hld_component_table_lists_every_module():
+    """The architecture diagram is read as the shape of the system.
+
+    Four modules shipped before this was checked -- attribution,
+    hypotheses, pricing, canary -- and the HLD described a pipeline that
+    size smaller than the one that exists. A diagram missing a component
+    is worse than no diagram: it implies the thing it omits is not there.
+
+    The UI-layer modules and the private ones are exempt: the HLD's
+    component table is about the pipeline, and `lld.md` carries the full
+    map (already checked above).
+    """
+    text = HLD.read_text(encoding="utf-8")
+    exempt = {"_calibrate", "replay", "events", "server", "runner", "project",
+              "secrets", "usertools", "stats", "faults", "cli"}
+    missing = [m for m in modules()
+               if m not in exempt and f"`{m}`" not in text
+               and f"<b>{m}</b>" not in text]
+    assert not missing, f"hld.md's component table is missing: {missing}"
 
 
 def test_the_module_map_line_counts_are_current():

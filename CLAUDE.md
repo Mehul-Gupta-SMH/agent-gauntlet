@@ -139,12 +139,18 @@ happened if it had done nothing.
   and their docstrings carry the argument.
 - Exit codes: `0` pass, `3` gate FAIL (a measurement, not a crash), anything
   else is a crash. CI's `set +e` is load-bearing.
-- New public behaviour gets a test *and* a note on the issue board.
+- New public behaviour gets a test, a note on the issue board, **and the
+  docs updated in the same commit**. `plan.md` spent weeks opening with
+  "nothing here is implemented yet" above a passing live gate; that is the
+  same failure mode as a green tick nobody checked. `test_docs.py` guards
+  what it can — the module map, its line counts, the test layout, every CLI
+  command in the README, the fixture fingerprints — but it cannot check
+  whether prose is still true.
 
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 556 tests, ~38s
+.venv/bin/python -m pytest -q                       # 557 tests, ~35s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli canary fixtures/inventory/audited.yaml \
