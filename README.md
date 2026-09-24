@@ -429,11 +429,26 @@ smart note_taking records+notes  44%  0.68   89%    0%  100%    0% det   [GATED:
 **1. Chaos is scored, not smoke-tested.** Fault injection is the measurement, not
 a robustness check bolted on afterwards. It is what creates the oracle.
 
-**2. The framework is a searchable variable.** Built on
+**2. The framework is materializable — not yet searchable.** Built on
 [CommonADK](https://github.com/Mehul-Gupta-SMH/CommonADK), which materializes one
 framework-neutral project definition onto six agent SDKs (Google ADK, OpenAI
-Agents, Claude Agent SDK, CrewAI, AutoGen, LangGraph). "The same agent on CrewAI
-vs LangGraph, measured" is just another axis.
+Agents, Claude Agent SDK, CrewAI, AutoGen, LangGraph). Every variant is written
+for all of them; `--target` picks one, and **one board holds one framework**.
+
+This used to read *"the same agent on CrewAI vs LangGraph, measured — just
+another axis"*, which the tool could not do and still cannot. There is no
+framework factor in the grid, so a cross-SDK comparison would mean two matrices
+merged by hand — and the merge is the confound, not the measurement (#9).
+
+What is fixed rather than promised: the target is now recorded on every run, and
+a ledger holding two of them says so instead of averaging them into one column.
+The reason a framework axis is hard is real and worth stating — CommonADK's
+adapters do not map interaction edges with equal fidelity, so a CrewAI variant
+losing to a LangGraph one has at least three explanations competing. On today's
+grid that confound is exactly zero, because every generated project is a single
+agent declaring no edges and there is nothing for an adapter to coarsen. It
+stops being zero the moment multi-agent topologies land, which is why a test
+asserts it rather than a comment claiming it.
 
 **3. It answers with knowledge, not a champion.** A tournament tells you variant
 #7 won and nothing else — the variables were confounded. agent-gauntlet treats

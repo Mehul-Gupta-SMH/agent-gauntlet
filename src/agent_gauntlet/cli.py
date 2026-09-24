@@ -28,6 +28,7 @@ from .ledger import Ledger, write_summary
 from .stats import detectable_difference
 from .ledger import duplicate_cells as ledger_duplicates
 from .ledger import errors as ledger_errors
+from .ledger import target_drift as ledger_targets
 from .ledger import variant_drift as ledger_drift
 from .matrix import run_matrix
 from .spec import TaskSpec
@@ -770,6 +771,7 @@ def _run(args) -> int:
                 repeats=args.repeats,
                 fault_kind=FaultKind(args.fault or task.fault_kind),
                 executor=executor, offline=offline,
+                target=args.target if args.live else None,
             ))
         if log is not None:
             log.emit("board", **replay.board_event(records, seeds=len(seeds)))
@@ -817,6 +819,20 @@ def _run(args) -> int:
         (only,) = priced
         print(f"prices      {only}  (rates pinned at run time; there is no "
               f"upstream date to show)")
+
+    frameworks = ledger_targets(records)
+    if len(frameworks) > 1:
+        print(f"\nWARNING: this ledger mixes {len(frameworks)} agent SDKs. Every")
+        print("aggregate below averages across frameworks, and a framework is "
+              "not a")
+        print("factor in this grid -- so the mixture is a confound rather than a")
+        print("measurement (#9).")
+        for name, variants in frameworks.items():
+            print(f"  {name}: {len(variants)} variant(s)")
+        print("Start a fresh --out directory per target.")
+    elif frameworks:
+        (only,) = frameworks
+        print(f"framework   {only}  (every number below is scoped to this SDK)")
 
     drift = ledger_drift(records)
     if drift:
@@ -1710,7 +1726,7 @@ def _canary(args) -> int:
         task=task, variants=[chosen], ledger=Ledger(out / "runs.jsonl"),
         base_seed=args.seed, repeats=args.repeats,
         fault_kind=FaultKind(task.fault_kind), executor=executor,
-        offline=not args.live,
+        offline=not args.live, target=args.target if args.live else None,
     )
     now = canary_mod.take(
         records, variant_id=chosen.id, task_fingerprint=task.fingerprint(),

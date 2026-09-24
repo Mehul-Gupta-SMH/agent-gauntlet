@@ -166,3 +166,51 @@ def test_the_censoring_reaches_the_budget_pick(task, grid, tmp_path):
     pick, unpriced = board.best_under(board.summarize(moved), 1.00)
     assert pick is None, "a pick under a ceiling needs a comparable price"
     assert unpriced, "and the rows are handed back rather than dropped"
+
+
+# --- the other confound the ledger could not see (#9) ---------------------
+
+
+def test_the_target_is_recorded_on_a_live_run(task, grid, tmp_path):
+    """`model` was pinned per run and the framework was not, so two live
+    matrices against different SDKs appended to one ledger and averaged
+    into one column. Every number this board prints is scoped to a
+    framework, and until now nothing said which."""
+    from agent_gauntlet.ledger import target_drift
+
+    records = run_matrix(task=task, variants=grid,
+                         ledger=Ledger(tmp_path / "t.jsonl"),
+                         base_seed="s", repeats=1,
+                         executor=_metered(), offline=False, target="langgraph")
+    assert {r.target for r in records} == {"langgraph"}
+    assert set(target_drift(records)) == {"langgraph"}
+
+
+def test_an_offline_run_has_no_target(task, grid, tmp_path):
+    """No framework was involved, so an absent target is not drift -- the
+    same rule as the absent price table."""
+    from agent_gauntlet.ledger import target_drift
+
+    records = run_matrix(task=task, variants=grid,
+                         ledger=Ledger(tmp_path / "o.jsonl"),
+                         base_seed="s", repeats=1)
+    assert all(r.target is None for r in records)
+    assert target_drift(records) == {}
+
+
+def test_two_frameworks_in_one_ledger_are_visible(task, grid, tmp_path):
+    """The confound a framework axis is supposed to resolve rather than
+    contain. It cannot be resolved while it is invisible."""
+    from agent_gauntlet.ledger import target_drift
+
+    a = run_matrix(task=task, variants=grid,
+                   ledger=Ledger(tmp_path / "a.jsonl"), base_seed="s",
+                   repeats=1, executor=_metered(), offline=False,
+                   target="langgraph")
+    b = run_matrix(task=task, variants=grid,
+                   ledger=Ledger(tmp_path / "b.jsonl"), base_seed="s",
+                   repeats=1, executor=_metered(), offline=False,
+                   target="crewai")
+    seen = target_drift([*a, *b])
+    assert set(seen) == {"crewai", "langgraph"}
+    assert all(seen[k] for k in seen)

@@ -104,6 +104,17 @@ class RunRecord(BaseModel):
     """True when produced by a scripted policy rather than a real model.
     Offline runs test the harness; they are never evidence about agents."""
 
+    target: Optional[str] = None
+    """Which agent SDK this run was materialized onto (#9).
+
+    None offline, where no framework is involved. Recorded because it is
+    the one confound the board could not see: `model` was pinned per run
+    and the framework was not, so two live matrices against different
+    targets appended to one ledger and averaged into one column. Every
+    number this board prints is scoped to a framework, and until now
+    nothing said which.
+    """
+
     prices: dict[str, Any] = Field(default_factory=dict)
     """The rate table `rollup["cost_usd"]` was computed against (#14).
 
@@ -253,6 +264,25 @@ def rescore(record: "RunRecord", task: Any) -> Score:
         task=task, scenario=scenario, schedule=record.schedule,
         ctx=ctx, answer=record.answer,
     )
+
+
+def target_drift(records: Iterable["RunRecord"]) -> dict[str, list[str]]:
+    """Frameworks seen, mapped to the variants run on them (#9).
+
+    More than one key means this ledger mixes agent SDKs. The numbers are
+    each truthful about their own run and the aggregate is about a
+    mixture -- and a mixture is exactly the confound the framework axis is
+    supposed to resolve rather than contain.
+
+    Offline runs have no target and are not drift, for the same reason
+    they have no price table: no framework was involved.
+    """
+    seen: dict[str, set[str]] = {}
+    for r in records:
+        if not r.target:
+            continue
+        seen.setdefault(r.target, set()).add(r.variant_id)
+    return {k: sorted(v) for k, v in sorted(seen.items())}
 
 
 def duplicate_cells(records: Iterable[RunRecord]) -> dict[tuple, int]:

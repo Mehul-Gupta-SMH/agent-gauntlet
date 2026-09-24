@@ -121,6 +121,7 @@ def run_matrix(
     project_inputs: Optional[Sequence] = None,
     decidable_faults: bool = False,
     budget: Optional[Any] = None,
+    target: Optional[str] = None,
 ) -> list[RunRecord]:
     """Run the full matrix and append every run to `ledger`."""
     if repeats < 1:
@@ -296,6 +297,7 @@ def run_matrix(
                         tool_calls=list(ctx.calls),
                         offline=offline,
                         prices=prices,
+                        target=None if offline else target,
                     )
                     ledger.append(record)
                     produced.append(record)

@@ -19,7 +19,7 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 1855<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 2055<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 1029<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
@@ -29,7 +29,7 @@ flowchart TD
     FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
     SPEC["<b>spec</b> · 387<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 290<br/>executor · parsing · classification"]
-    LEDGER["<b>ledger</b> · 296<br/>RunRecord · rescore"]
+    LEDGER["<b>ledger</b> · 325<br/>RunRecord · rescore"]
     ANALYZE["<b>analyze</b> · 193<br/>kendall_tau · stability"]
     CERT["<b>certify</b> · 414<br/>Certificate · compare · 3 verdicts"]
     STATS["<b>stats</b> · 204<br/>wilson · bootstrap · MDE"]

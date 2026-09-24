@@ -565,3 +565,39 @@ def test_concurrent_edits_do_not_overwrite_each_other(project):
     assert final.fault_kind == "instruction"
     assert final.repeats == 7
     assert final.scratchpad is True
+
+
+# --- the framework axis, and why it is not one yet (#9) -------------------
+
+
+def test_generated_projects_declare_no_interaction_edges(tmp_path):
+    """The adapter-fidelity confound is zero today, and this is why.
+
+    CommonADK's adapters map interaction edges with different fidelity --
+    LangGraph honours edge targets precisely, CrewAI coarsens them to
+    crew-wide delegation, Google ADK rejects graph shapes the others
+    accept. So a CrewAI variant losing to a LangGraph one would have three
+    explanations competing (#9).
+
+    None of that can bite while every generated project is a single agent
+    with an empty edge list: all three adapters express no edges
+    identically. Asserted rather than assumed, so the day a multi-agent
+    topology lands this fails and the README's claim gets revisited with
+    it rather than quietly becoming false.
+    """
+    import yaml
+
+    from agent_gauntlet import TaskSpec, architect
+
+    root = Path(__file__).resolve().parents[1]
+    task = TaskSpec.from_yaml(root / "fixtures" / "inventory" / "audited.yaml")
+    variants = architect.generate(out_dir=tmp_path / "v", task=task,
+                                  models={"cheap": "m", "smart": "s"})
+    assert variants
+    for variant in variants:
+        declared = yaml.safe_load(
+            (Path(variant.common_dir) / "interactions.yaml").read_text())
+        assert declared["edges"] == [], (
+            f"{variant.id} declares edges, so adapter fidelity is now a live "
+            "confound on the framework axis (#9)"
+        )
