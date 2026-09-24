@@ -1,0 +1,32 @@
+{
+  "task": "d11a0b2a6801ee74",
+  "classes": {
+    "integrity": {
+      "spread": 0.8875,
+      "tiers": 3,
+      "depth": 2,
+      "gated": 6,
+      "prop_spread": 1.0,
+      "median_tau": 0.8391426214676105,
+      "outcomes": {
+        "undetected_propagated": 921,
+        "undetected_degraded": 519,
+        "surfaced_and_repaired": 392,
+        "surfaced_but_degraded": 88
+      }
+    },
+    "availability": {
+      "spread": 0.8875,
+      "tiers": 3,
+      "depth": 2,
+      "gated": 0,
+      "prop_spread": 0.0,
+      "median_tau": 0.8391426214676105,
+      "outcomes": {
+        "undetected_degraded": 1440,
+        "surfaced_and_repaired": 392,
+        "surfaced_but_degraded": 88
+      }
+    }
+  }
+}

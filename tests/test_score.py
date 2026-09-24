@@ -317,3 +317,90 @@ def test_severity_is_not_a_ranking_key():
     src = inspect.getsource(board.rank) + inspect.getsource(board.pareto)
     assert "severity" not in src
     assert "worst_outcome" not in src
+
+
+# --- the category an availability fault exposed (#5) ----------------------
+
+
+def test_harmless_now_means_the_answer_was_right():
+    """The word was doing work it had not earned.
+
+    `UNDETECTED_HARMLESS` used to cover any faulted run where no falsehood
+    reached the figure -- including runs that reported the wrong number.
+    Under a TIMEOUT there is no false value to propagate at all, so every
+    config that silently dropped the record it could not read landed there:
+    "the fault did no harm", printed about a run that was never right.
+
+    Not fail-green -- `faulted_quality` read 0% in the next column -- but
+    `worst_outcome` read harmless, and that column is the one an operator
+    scans (#5, experiment 011).
+    """
+    assert Outcome.UNDETECTED_DEGRADED in set(Outcome)
+    assert (Outcome.UNDETECTED_DEGRADED.severity
+            > Outcome.UNDETECTED_HARMLESS.severity)
+
+
+def test_a_wrong_figure_is_a_wrong_figure_however_it_got_wrong():
+    """Same rank as propagation, deliberately.
+
+    The caller receives a wrong number with no warning either way. Inventing
+    a gap between "wrong because it believed a lie" and "wrong because it
+    lost a record" would be precision nobody has measured. The categories
+    differ because the REMEDY differs -- a cross-check versus retry and
+    fallback handling -- not because one is worse.
+    """
+    assert (Outcome.UNDETECTED_DEGRADED.severity
+            == Outcome.UNDETECTED_PROPAGATED.severity)
+
+
+def test_no_outcome_claims_propagation_a_run_denies(tmp_path):
+    """The invariant the split exists to hold (#5).
+
+    `SURFACED_BUT_PROPAGATED` was assigned to every faulted run that
+    surfaced and did not repair, whether or not anything propagated -- and
+    on the inventory grid that was ALL of them: an outcome whose name
+    asserts propagation, printed beside a `propagated=False` record.
+
+    Checked across both injectable fault kinds rather than on one crafted
+    run, because the defect was invisible exactly where it was densest.
+    """
+    from pathlib import Path
+
+    from agent_gauntlet import Ledger, TaskSpec, VariantSpec, run_matrix
+    from agent_gauntlet.faults import FaultKind
+
+    fixture = (Path(__file__).resolve().parents[1]
+               / "fixtures" / "inventory" / "audited.yaml")
+    task = TaskSpec.from_yaml(fixture)
+    grid = [
+        VariantSpec(id=f"{p}-{t}", factors={"model": "cheap", "prompt": p,
+                                            "toolset": t})
+        for p in ("naive", "verifying") for t in ("records", "records+summary")
+    ]
+    seen = set()
+    for kind in (FaultKind.WRONG_VALUE, FaultKind.TIMEOUT):
+        records = run_matrix(
+            task=task, variants=grid,
+            ledger=Ledger(tmp_path / f"{kind.value}.jsonl"),
+            base_seed="seed-a", repeats=10, fault_kind=kind,
+        )
+        for r in records:
+            seen.add(r.score.outcome)
+            if "propagated" in r.score.outcome.value:
+                assert r.score.propagated, (
+                    f"{r.score.outcome.value} on a run with propagated=False"
+                )
+
+    assert Outcome.SURFACED_BUT_DEGRADED in seen, (
+        "the branch under test was never reached, so this proves nothing"
+    )
+
+
+def test_surfacing_a_wrong_answer_ranks_like_surfacing_a_lie():
+    """Same reasoning one class over: the agent demonstrated it knew
+    something was wrong and shipped the wrong figure anyway. Knowing and
+    shipping is worse than not knowing, falsehood or no falsehood."""
+    assert (Outcome.SURFACED_BUT_DEGRADED.severity
+            > Outcome.UNDETECTED_DEGRADED.severity)
+    assert (Outcome.SURFACED_BUT_DEGRADED.severity
+            == Outcome.SURFACED_BUT_PROPAGATED.severity)

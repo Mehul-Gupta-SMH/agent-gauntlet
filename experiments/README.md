@@ -25,6 +25,7 @@ Two rules this directory follows:
 | [008](008-catching-a-regression/) | Does the check catch a regression? | $0.00 | **CAUGHT** — a prompt edit moved propagation 0% → 100% and the certificate refused it |
 | [009](009-how-many-repeats/) | How many repeats does a stable board need? | $0.00 | **MEASURED** — k=4 on this fixture; `--repeats 3` was one short, and depth 3 never settles at any k |
 | [010](010-robustness-vs-quality/) | Does robustness rank differently from quality? | $0.00 | **BET HOLDS** — across both live matrices the clean ranking is an 8-way tie, so tau is undefined: the faulted half is the only axis that ranked anything |
+| [011](011-is-a-timeout-as-informative/) | Is a timeout as informative as a lie? | $0.00 | **MEASURED** — identical on correctness to 3 decimals, incomparable on safety; found two outcomes whose names were not true |
 
 ## Where that leaves the question
 

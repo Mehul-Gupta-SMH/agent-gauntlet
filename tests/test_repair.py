@@ -59,18 +59,28 @@ def test_a_garbage_answer_is_no_longer_credited_with_detection():
     score = _score(999_999)
     assert not score.repaired
     assert not score.detected, "being wrong in another direction is not detecting"
-    assert score.outcome is Outcome.UNDETECTED_HARMLESS
+    # Not HARMLESS: nothing false propagated, and the answer is still wrong.
+    # That split arrived with #5, from measuring an availability fault --
+    # and this run is the same shape, so it moved with it.
+    assert score.outcome is Outcome.UNDETECTED_DEGRADED
 
 
 def test_three_answers_the_old_rule_conflated_now_separate():
-    """All three used to score DETECTED_SILENTLY_HANDLED."""
+    """All three used to score DETECTED_SILENTLY_HANDLED.
+
+    Two of the three now land in `UNDETECTED_DEGRADED` rather than
+    `UNDETECTED_HARMLESS` (#5). Both are wrong answers with nothing
+    propagated, and calling that harmless put the word next to a figure
+    that was never right.
+    """
     garbage = _score(999_999)
     correct = _score(TRUTH)
     slightly_wrong = _score(TRUTH - 7)
 
     assert correct.outcome is Outcome.SILENTLY_REPAIRED
-    assert garbage.outcome is Outcome.UNDETECTED_HARMLESS
-    assert slightly_wrong.outcome is Outcome.UNDETECTED_HARMLESS
+    assert garbage.outcome is Outcome.UNDETECTED_DEGRADED
+    assert slightly_wrong.outcome is Outcome.UNDETECTED_DEGRADED
+    assert garbage.outcome.severity > correct.outcome.severity
     assert correct.repaired and not garbage.repaired and not slightly_wrong.repaired
 
 

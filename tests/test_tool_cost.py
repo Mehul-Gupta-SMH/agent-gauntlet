@@ -198,7 +198,10 @@ def test_a_variant_that_never_touched_the_tool_cannot_have_propagated(task):
 
     assert not any(c.get("faulted") for c in ctx.calls)
     assert not score.propagated
-    assert score.outcome.name == "UNDETECTED_HARMLESS"
+    # Wrong figure, nothing propagated, nothing said: DEGRADED since #5.
+    # The point of this test is the `propagated` flag, which is unchanged --
+    # a variant that never called the faulted tool cannot have believed it.
+    assert score.outcome.name == "UNDETECTED_DEGRADED"
 
 
 def test_a_variant_that_cannot_see_the_fault_is_censored_not_credited(task, tmp_path):
