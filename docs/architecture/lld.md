@@ -35,13 +35,15 @@ flowchart TD
     STATS["<b>stats</b> · 204<br/>wilson · bootstrap · MDE"]
     META["<b>metamorphic</b> · 314<br/>relations · perturbations"]
     ATTR["<b>attribution</b> · 442<br/>exact Shapley · interaction · refusals"]
-    HYP["<b>hypotheses</b> · 246<br/>falsifiable bounds · verdicts"]
+    HYP["<b>hypotheses</b> · 229<br/>falsifiable bounds · verdicts"]
+    CAN["<b>canary</b> · 289<br/>behavioural fingerprint · blind spot"]
 
-    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP
+    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP & CAN
     META --> SPEC & INTER & MATRIX & META
     META --> SPEC & INTER & MATRIX
     ATTR --> LEDGER & STATS
     HYP --> ATTR & SPEC & STATS
+    CAN --> ATTR & CERT & LEDGER & STATS
     CERT --> BOARD & STATS
     SERVER --> PROJECT & RUNNER & SECRETS & EVENTS & BOARD & REPLAY
     REPLAY --> BOARD & EVENTS & STATS
@@ -624,6 +626,8 @@ test_discontinued  the fixture whose clean answer is a subset of the world,
                  and the ceiling and floor it has to avoid
 test_hypotheses  falsifiable bounds, and the three ways a verdict lies:
                  censored, confirmed-at-zero, held by a hair
+test_canary      the fingerprint that triggers a re-run, and the shifts
+                 it admits it cannot see
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

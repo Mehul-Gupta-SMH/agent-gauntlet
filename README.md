@@ -44,6 +44,10 @@ gauntlet check certificate.json --max-quality-drop 0.20
 
 # No oracle? Score the relations between runs instead of the answers.
 gauntlet relations fixtures/inventory/task.yaml
+
+# Did anything move underneath it? A cheap pinned probe, honest about its limits.
+gauntlet canary fixtures/inventory/audited.yaml --save base.json
+gauntlet canary fixtures/inventory/audited.yaml --baseline base.json
 ```
 
 Add `--max-cost-per-run 0.02` to get the constrained answer — the best config
@@ -291,6 +295,44 @@ a judge — no rubric, no similarity threshold, no LLM grading an LLM. That sing
 property is what the rest of the design is arranged around.
 
 Full detail: [**architecture docs**](docs/architecture/) — [HLD](docs/architecture/hld.md) · [LLD](docs/architecture/lld.md).
+
+## Noticing that the world moved
+
+A certificate expires because robustness is a property of an agent against a
+world, and both move. But a provider can change a model's behaviour **without
+changing the model string** — there is no version to diff and no event to
+trigger on, so polling version strings cannot see the common case.
+
+`gauntlet canary` takes a behavioural fingerprint instead: one config, pinned
+seeds, a handful of runs, and error bars on every number. Run it again later
+and a metric counts as **moved** only when the two intervals do not overlap —
+non-overlap implies a real difference, overlap does not imply sameness. For a
+trigger whose failure mode is crying wolf, that is the right direction to be
+conservative in.
+
+It also watches `mean_steps`, which is the point of calling it *behavioural*:
+a provider can change how an agent works before it changes what it gets right,
+and a canary watching only correctness finds out last.
+
+The part worth reading is what it says when nothing moved:
+
+```
+  Nothing moved that 48 runs could have seen.
+  This canary is blind below 27%, and you asked about 10%.
+
+  SO THIS IS NOT A REGRESSION CHECK. It is a trigger. Catching a
+  10% drop takes about 393 runs per side; this took 48.
+  Read 'unchanged' as 'no reason to spend the real budget today'.
+```
+
+A cheap canary is arithmetically incapable of detecting a small drop. Printing
+a green tick instead of that paragraph would be the same failure this project
+keeps finding in itself — an unmeasured thing rendered as a measurement —
+arriving in the one place built to catch it.
+
+It refuses rather than guesses when the comparison is not like for like: a
+different task, a different config, or a variant whose fingerprint changed.
+That last one is somebody editing a prompt, which is not the world moving.
 
 ## Scoring a task nobody knows the answer to
 

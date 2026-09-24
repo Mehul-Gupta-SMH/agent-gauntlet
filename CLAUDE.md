@@ -116,9 +116,11 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 526 tests, ~32s
+.venv/bin/python -m pytest -q                       # 536 tests, ~32s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
+.venv/bin/python -m agent_gauntlet.cli canary fixtures/inventory/audited.yaml \
+  --save base.json                                  # a cheap pinned fingerprint
 .venv/bin/python -m agent_gauntlet.cli ui --port 8420
 node --check src/agent_gauntlet/ui/*.js             # the page has no server-side signal
 python tools/build_demo.py                          # republish docs/demo after a UI edit

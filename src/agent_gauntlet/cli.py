@@ -117,6 +117,40 @@ def build_parser() -> argparse.ArgumentParser:
              "roughly multiply the matrix by k+1 (#43). Without it the "
              "relation cells read n/a, never ok",
     )
+    canary = sub.add_parser(
+        "canary",
+        help="a tiny pinned probe of one config, to notice the world moving "
+             "under it (#19)",
+    )
+    canary.add_argument("task", type=Path)
+    canary.add_argument("--out", type=Path, default=Path("runs-canary"))
+    canary.add_argument("--prompt", default="verifying")
+    canary.add_argument("--toolset", default="records+summary")
+    canary.add_argument("--model", default="smart", choices=sorted(DEFAULT_MODELS))
+    canary.add_argument(
+        "--repeats", type=int, default=8,
+        help="how many pairs per scenario. Cheap on purpose -- and the "
+             "report says what a canary this cheap is blind to rather than "
+             "printing a green tick",
+    )
+    canary.add_argument(
+        "--seed", default="canary",
+        help="pinned, so the next take re-runs the same cells. A canary "
+             "drawn against fresh seeds moves for two reasons at once",
+    )
+    canary.add_argument("--baseline", type=Path, default=None,
+                        help="a canary file to compare against")
+    canary.add_argument("--save", type=Path, default=None,
+                        help="write this take to a canary file")
+    canary.add_argument(
+        "--budget", type=float, default=0.10,
+        help="the quality drop you would want a regression check to catch. "
+             "Used only to say whether a canary this size could have caught "
+             "it",
+    )
+    canary.add_argument("--live", action="store_true")
+    canary.add_argument("--target", default="langgraph")
+
     probe = sub.add_parser(
         "probe",
         help="one live run, printing the raw reply -- proves the path before a matrix",
@@ -230,6 +264,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _check(args)
     if args.command == "relations":
         return _relations(args)
+    if args.command == "canary":
+        return _canary(args)
     if args.command == "ui":
         from .server import serve
 
@@ -1601,6 +1637,133 @@ def _certify(args) -> int:
         print(f"resolution  {worst:.0%} -- a later check cannot conclude on")
         print(f"            anything smaller than this without more runs")
     print(f"written     {args.out}")
+    return 0
+
+
+def _canary(args) -> int:
+    """Take a behavioural fingerprint, and say what it could not have seen.
+
+    #19's open question is what triggers a re-run, and its comment thread
+    answers it: a provider can change behaviour without changing the model
+    string, so there is no version to poll and a periodic canary is the
+    only reliable detector. Which makes the binding constraint cost, and
+    the binding risk a cheap canary that reports "unchanged" about a shift
+    it could never have resolved.
+
+    So every verdict here carries its own blind spot, and the exit code
+    distinguishes "nothing moved" from "nothing moved that I could see".
+    """
+    from . import canary as canary_mod
+    from .certify import RegressionBudget
+
+    task = TaskSpec.from_yaml(args.task)
+    out = Path(args.out)
+    models = parse_models(getattr(args, "models", None))
+    variants = architect.generate(
+        out_dir=out / "variants", task=task, models=models,
+        prompts=[args.prompt], toolsets=[args.toolset], include_sentinel=False,
+    )
+    chosen = next((v for v in variants if v.factors.get("model") == args.model),
+                  None)
+    if chosen is None:
+        print(f"no variant at model={args.model!r} for "
+              f"prompt={args.prompt!r} toolset={args.toolset!r}")
+        return 2
+
+    executor = None
+    if args.live:
+        from .live import MissingCredentials, live_executor, preflight
+
+        try:
+            preflight([chosen], target=args.target)
+        except MissingCredentials as exc:
+            print(f"PREFLIGHT FAILED\n{exc}")
+            return 2
+        executor = live_executor(args.target)
+
+    print(f"task        {task.id}  ({task.fingerprint()})")
+    print(f"config      {chosen.id}")
+    print(f"            {chosen.fingerprint}")
+    print(f"cells       seed={args.seed!r}, {args.repeats} repeat(s) x "
+          f"{len(task.scenarios)} scenario(s) x 2 conditions")
+    print(f"mode        {'LIVE -- this spends money' if args.live else 'offline'}")
+
+    records = run_matrix(
+        task=task, variants=[chosen], ledger=Ledger(out / "runs.jsonl"),
+        base_seed=args.seed, repeats=args.repeats,
+        fault_kind=FaultKind(task.fault_kind), executor=executor,
+        offline=not args.live,
+    )
+    now = canary_mod.take(
+        records, variant_id=chosen.id, task_fingerprint=task.fingerprint(),
+        base_seed=args.seed, repeats=args.repeats,
+        variant_fingerprint=chosen.fingerprint,
+    )
+    print(f"\n--- fingerprint " + "-" * 56)
+    for name, value in sorted(now.metrics.items()):
+        ci = now.intervals.get(name)
+        width = f"  [{ci.low:.2f}, {ci.high:.2f}]" if ci else "  (no interval)"
+        print(f"  {name:<20}{value:>8.3f}{width}")
+    print(f"  over {now.n_runs} run(s)")
+
+    if args.save:
+        canary_mod.save([now], args.save)
+        print(f"\nwrote       {args.save}")
+
+    if not args.baseline:
+        print("\n  No baseline given, so nothing is compared. Save this one "
+              "and\n  pass it as --baseline next time.")
+        return 0
+
+    before = next((c for c in canary_mod.load(args.baseline)
+                   if c.variant_id == chosen.id), None)
+    if before is None:
+        print(f"\n  {args.baseline} holds no canary for {chosen.id}.")
+        return 2
+
+    report = canary_mod.compare(before, now)
+    print(f"\n--- against {before.taken_at} " + "-" * 40)
+    if report.refusal:
+        print(f"  REFUSED -- {report.refusal}")
+        return 2
+
+    for shift in report.shifts:
+        delta = "" if shift.delta is None else f"{shift.delta:+8.3f}"
+        blind = ("" if shift.blind_below is None
+                 else f"   (blind below {shift.blind_below:.2f})")
+        print(f"  {shift.metric:<20}{shift.shift.value:<16}{delta}{blind}")
+
+    sens = canary_mod.sensitivity(report, RegressionBudget(
+        max_quality_drop=args.budget))
+    print()
+    if report.moved:
+        print("  SOMETHING MOVED. These intervals do not overlap, which "
+              "means a real")
+        print("  difference rather than run-to-run variance. Re-certify "
+              "before shipping.")
+        return 3
+
+    # The sentence this whole command exists to be able to say honestly.
+    blind = report.blind_below
+    print(f"  Nothing moved that {now.n_runs} runs could have seen.")
+    if blind is not None:
+        print(f"  This canary is blind below {blind:.0%}, and you asked about "
+              f"{sens['needed']:.0%}.")
+        if not sens["adequate"]:
+            need = sens["runs_needed"]
+            print(f"\n  SO THIS IS NOT A REGRESSION CHECK. It is a trigger. "
+                  f"Catching a\n  {sens['needed']:.0%} drop takes about "
+                  f"{need} runs per side; this took {now.n_runs}.")
+            print("  Read 'unchanged' as 'no reason to spend the real "
+                  "budget today'.")
+            return 0
+        print("\n  And that is enough to have caught the drop you asked "
+              "about.")
+    steps = report.blind_below_steps
+    if steps is not None:
+        print(f"\n  Behaviour: mean steps blind below {steps:.2f} step(s). "
+              "Steps move\n  before correctness does, which is why they are "
+              "watched at all.")
     return 0
 
 
