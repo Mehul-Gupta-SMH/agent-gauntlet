@@ -51,6 +51,9 @@ gauntlet canary fixtures/inventory/audited.yaml --baseline base.json
 
 # Before spending: what can this task actually measure? Costs nothing.
 gauntlet coverage fixtures/inventory/audited.yaml
+
+# One config, in full: intervals, how it fails, its detection curve.
+gauntlet explain runs/runs.jsonl --variant "smart verifying records+summary"
 ```
 
 Add `--max-cost-per-run 0.02` to get the constrained answer — the best config
@@ -432,6 +435,50 @@ of the two gates.** A `wrong_value` fault corrupts a number and gives no
 instruction, so compliance is not applicable; an `instruction` fault gives an
 order and corrupts no number, so propagation is not applicable. "Passes the
 gate" means "passes the one gate this task's fault kind can reach".
+
+## One config, in full
+
+The board ranks and filters. Three of the things worth knowing about a
+configuration do not fit in a row: hypothesis verdicts that are deliberately
+not aggregated, a Shapley decomposition that belongs to the grid rather than any
+single row, and a detection curve that collapses to two numbers only at a real
+loss. `gauntlet explain` is where those live — so the frontier is the index, not
+the whole product.
+
+It is also where the intervals go. A width beside all thirteen board columns is
+unreadable; beside one config it is the reason to open it.
+
+```
+--- what it scored, with intervals -------------------------------------
+  quality              0.958  [0.90, 0.98]  n=96
+  propagation_rate     0.000  [0.00, 0.10]  n=36
+  detection_rate       1.000  [0.93, 1.00]  n=48
+  compliance_rate        n/a
+  ...
+
+--- P(noticed by step k) -----------------------------------------------
+  step  0     0%
+  step  1     0%
+  step  2   100%  ########################################
+
+  over 48 run(s) where noticing was possible at all
+```
+
+The curve's denominator is the interesting part. It **keeps the runs that never
+noticed** — at every k they genuinely are *not yet* — which is the opposite of
+what the median latency must do, since a run that never detected is
+right-censored and substituting a latency would reward an agent that gives up
+immediately. So the curve's ceiling *is* the detection rate, and its shape is
+what the two summary numbers cannot say: two configs with the same rate and the
+same median can still differ in whether they mostly notice at once or mostly
+notice late.
+
+A config with no reachable cross-check gets **no curve at all**, rather than a
+flat line at 0% — which would read as "looked and missed".
+
+Pass `--task` and it also checks that task's pre-registered hypotheses against
+this config, refusing if the fingerprints disagree: a bound from a different
+task is not a bound on this one.
 
 ## Scoring the confidence it stated
 

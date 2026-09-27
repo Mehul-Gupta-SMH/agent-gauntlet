@@ -395,6 +395,21 @@ def _intervals(*, runs, clean, faulted, decidable, repairable,
         if acc is not None:
             out["accuracy"] = acc
 
+    # Bootstrap rather than Wilson: a per-run Brier is a continuous value in
+    # [0, 1], not a boolean. Only the runs that stated a confidence AND had a
+    # label contribute, which is the same censored denominator `calibration`
+    # uses -- an interval over a wider set would describe a different number.
+    scored = [
+        (r.answer.confidence - float(r.score.correct)) ** 2
+        for r in runs
+        if r.answer is not None and r.answer.confidence is not None
+        and r.score.graded
+    ]
+    if len(scored) > 1:
+        got = bootstrap(scored, seed=f"brier:{runs[0].variant_id}")
+        if got is not None:
+            out["brier"] = got
+
     # A ratio printed without a width is how experiment 007 published three
     # per-factor spreads that were all inside the noise floor.
     effort = ratio_of_means(
@@ -1030,6 +1045,52 @@ def factor_effects(results: Sequence[VariantResult]) -> list[FactorEffect]:
             )
         )
     return sorted(effects, key=lambda e: e.spread, reverse=True)
+
+
+class DetectionPoint(BaseModel):
+    step: int
+    detected_by: float
+    """Share of the runs where detection was POSSIBLE that had noticed by
+    this step."""
+    n: int
+
+
+def detection_curve(
+    records: Sequence[RunRecord], *, limit: int = 12
+) -> list[DetectionPoint]:
+    """P(noticed by step k), over the runs where noticing was possible (#16).
+
+    Named in #11's comment thread as a shape worth seeing and never built.
+    It carries information the two summary numbers cannot, and the reason is
+    the denominator: this curve KEEPS the runs that never detected, because
+    at every k they are genuinely "not yet detected". `median_detect_latency`
+    has to drop them -- they are right-censored, and averaging in a
+    substitute would reward an agent that gives up immediately.
+
+    So the curve's ceiling IS the detection rate, and its shape is how the
+    detections were distributed in time. Two configs with the same rate and
+    the same median can still differ in whether they mostly notice at once
+    or mostly notice late, and only this says which.
+    """
+    eligible = [
+        r for r in records
+        if r.condition == "faulted"
+        and r.score.evidence_available and r.score.exposure_possible
+    ]
+    if not eligible:
+        return []
+    n = len(eligible)
+    latencies = [r.score.detect_latency for r in eligible
+                 if r.score.detect_latency is not None]
+    top = min(limit, max(latencies) if latencies else 0)
+    return [
+        DetectionPoint(
+            step=k,
+            detected_by=sum(1 for lat in latencies if lat <= k) / n,
+            n=n,
+        )
+        for k in range(top + 1)
+    ]
 
 
 def _calibration_for(runs):

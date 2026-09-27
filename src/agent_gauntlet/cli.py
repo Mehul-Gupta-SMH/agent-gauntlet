@@ -118,6 +118,19 @@ def build_parser() -> argparse.ArgumentParser:
              "roughly multiply the matrix by k+1 (#43). Without it the "
              "relation cells read n/a, never ok",
     )
+    ex = sub.add_parser(
+        "explain",
+        help="one config's whole profile: intervals, how it fails, its "
+             "detection curve, its calibration (#11)",
+    )
+    ex.add_argument("ledger", type=Path, help="a runs.jsonl written by `run`")
+    ex.add_argument("--variant", default=None,
+                    help="substring of the config's label or id; omit to list "
+                         "what the ledger holds")
+    ex.add_argument("--task", type=Path, default=None,
+                    help="the task spec, to also check its pre-registered "
+                         "hypotheses against this config")
+
     cov = sub.add_parser(
         "coverage",
         help="what this task can and cannot measure, before spending "
@@ -281,6 +294,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _canary(args)
     if args.command == "coverage":
         return _coverage(args)
+    if args.command == "explain":
+        return _explain(args)
     if args.command == "ui":
         from .server import serve
 
@@ -1790,6 +1805,177 @@ def _print_coverage(task, *, toolsets=None, live: bool = False) -> None:
         print("  what surviving cost in work do not. A task with no ground "
               "truth is")
         print("  still worth running (#2).")
+
+
+def _explain(args) -> int:
+    """One config, in full (#11).
+
+    The board ranks and filters; this is the detail view its comment thread
+    argued for. Three artifacts this project has added are hostile to a
+    table -- hypothesis verdicts that are deliberately not aggregated, a
+    Shapley decomposition that belongs to the grid rather than a row, and a
+    detection curve that collapses to two numbers only at a real loss. They
+    live here, which resolves the frontier-versus-scalar tension differently
+    from choosing between them: the frontier is the index, not the product.
+
+    It is also where intervals go. Printing a width beside all thirteen
+    board columns is unreadable; printing them beside one config is the
+    whole point of opening it.
+    """
+    from . import calibration as cal
+
+    ledger = Ledger(args.ledger)
+    records = ledger.records()
+    if not records:
+        print(f"{args.ledger} holds no runs.")
+        return 2
+
+    results = board.summarize(records)
+    labels = {
+        r.variant_id: " ".join(str(r.factors[k]) for k in sorted(r.factors))
+                      or r.variant_id
+        for r in results
+    }
+    if not args.variant:
+        print(f"{args.ledger} holds {len(records)} run(s) across "
+              f"{len(results)} config(s):\n")
+        for r in results:
+            print(f"  {labels[r.variant_id]:<40}  {r.n_runs:>4} runs")
+        print("\nPass --variant with a substring of one of those.")
+        return 0
+
+    needle = args.variant.lower()
+    matches = [r for r in results
+               if needle in labels[r.variant_id].lower()
+               or needle in r.variant_id.lower()]
+    if not matches:
+        print(f"nothing in {args.ledger} matches {args.variant!r}.")
+        return 2
+    if len(matches) > 1:
+        print(f"{args.variant!r} matches {len(matches)} configs:")
+        for r in matches:
+            print(f"  {labels[r.variant_id]}")
+        print("\nNarrow it.")
+        return 2
+
+    row = matches[0]
+    mine = [r for r in records if r.variant_id == row.variant_id]
+    _explain_one(row, mine, results, labels, task_path=args.task)
+    return 0
+
+
+def _explain_one(row, runs, results, labels, *, task_path=None) -> None:
+    from . import calibration as cal
+
+    print(f"config      {labels[row.variant_id]}")
+    print(f"            {row.variant_id}")
+    first = runs[0]
+    print(f"task        {first.task_id}  ({first.task_fingerprint})")
+    print(f"variant     {first.variant_fingerprint}")
+    print(f"model       {first.model or 'n/a (offline)'}")
+    print(f"framework   {first.target or 'n/a (offline)'}")
+    print(f"runs        {row.n_runs}"
+          + (f"  ({row.n_errored} errored)" if row.n_errored else ""))
+    if row.is_sentinel:
+        print("            [SENTINEL] built to lose; it is the instrument "
+              "check, not a contender")
+
+    # --- every figure with its width -----------------------------------
+    print("\n--- what it scored, with intervals " + "-" * 37)
+    print("  A width, not a point. Printing these beside all thirteen board")
+    print("  columns is unreadable; beside one config it is the point (#11).\n")
+    for name in ("quality", "accuracy", "clean_quality", "faulted_quality",
+                 "propagation_rate", "detection_rate", "repair_rate",
+                 "compliance_rate", "false_alarm_rate", "brier"):
+        value = getattr(row, name, None)
+        if value is None:
+            # n/a carries its reason on the board already; here it is enough
+            # that it is absent rather than zero.
+            print(f"  {name:<18}     n/a")
+            continue
+        ci = row.intervals.get(name)
+        width = f"  [{ci.low:.2f}, {ci.high:.2f}]  n={ci.n}" if ci else \
+                "  (no interval computed)"
+        print(f"  {name:<18}{value:>8.3f}{width}")
+    if row.cost_per_run is not None:
+        print(f"  {'cost_per_run':<18}{row.cost_per_run:>8.4f}")
+    else:
+        print(f"  {'cost_per_run':<18}     n/a")
+
+    # --- where it sits --------------------------------------------------
+    bands = board.rank_labels(results, metric="accuracy")
+    frontier = {r.variant_id for r in board.pareto(
+        [r for r in results if not r.is_sentinel],
+        objectives=("accuracy", "cost_usd"), maximize=(True, False))}
+    print("\n--- where it sits " + "-" * 54)
+    place = bands.get(row.variant_id)
+    print(f"  rank        {place or 'unranked (sentinel, or no interval)'}"
+          + ("   -- shares this band with others; the run could not order them"
+             if place and place.endswith("=") else ""))
+    print(f"  frontier    {'yes' if row.variant_id in frontier else 'no'}")
+    if row.gated:
+        print("  GATED       see the board for which bound it broke")
+
+    # --- how it fails ---------------------------------------------------
+    if row.outcome_counts:
+        print("\n--- how it fails, not just how often " + "-" * 35)
+        for name, count in row.outcome_counts.items():
+            print(f"  {count:>5}  {name}")
+        print(f"\n  worst: {row.worst_outcome}")
+
+    # --- the curve ------------------------------------------------------
+    curve = board.detection_curve(runs)
+    if curve:
+        print("\n--- P(noticed by step k) " + "-" * 47)
+        print("  Keeps the runs that never noticed -- at every k they really")
+        print("  are 'not yet'. So the ceiling IS the detection rate, and the")
+        print("  shape is what the median cannot say.\n")
+        for point in curve:
+            bar = "#" * int(round(point.detected_by * 40))
+            print(f"  step {point.step:>2}  {point.detected_by:>5.0%}  {bar}")
+        print(f"\n  over {curve[0].n} run(s) where noticing was possible at all")
+
+    # --- calibration ----------------------------------------------------
+    report = cal.from_runs(runs)
+    if report.n:
+        print("\n--- what its stated confidence was worth " + "-" * 31)
+        print(f"  brier        {report.brier:.4f}   over {report.n} run(s)"
+              + (f", {report.n_censored} censored" if report.n_censored else ""))
+        print(f"  base rate    {report.reference:.4f}   what predicting the "
+              f"observed accuracy would score")
+        print(f"  skill        "
+              + ("n/a -- it was wrong on every run, so no confidence could "
+                 "have helped" if report.skill is None
+                 else f"{report.skill:+.3f}"))
+        print(f"  reliability  {report.reliability:.4f}   lower is better "
+              f"('calibrated')")
+        print(f"  resolution   {report.resolution:.4f}   HIGHER is better "
+              f"('knows which ones')")
+
+    # --- hypotheses -----------------------------------------------------
+    if task_path is None:
+        print("\n  Pass --task to also check the pre-registered hypotheses "
+              "against this config.")
+        return
+    from . import hypotheses as hyp
+
+    task = TaskSpec.from_yaml(task_path)
+    if task.fingerprint() != first.task_fingerprint:
+        print(f"\n  NOT CHECKING HYPOTHESES: {task_path} fingerprints "
+              f"{task.fingerprint()},")
+        print(f"  these runs were scored against {first.task_fingerprint}. A "
+              "bound from a")
+        print("  different task is not a bound on this one.")
+        return
+    if not task.hypotheses:
+        print("\n  The task pre-registers no hypotheses.")
+        return
+    print("\n--- the promises it was held to " + "-" * 40)
+    for result in hyp.check_all(task.hypotheses, runs):
+        print(f"  {result.verdict.value.upper():<13} {result.hypothesis_id}")
+        for bound in result.bounds:
+            got = "n/a" if bound.observed is None else f"{bound.observed:.0%}"
+            print(f"      {bound.says:<42} was {got}  (n={bound.n})")
 
 
 def _coverage(args) -> int:

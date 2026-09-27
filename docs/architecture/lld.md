@@ -19,8 +19,8 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 2216<br/>argparse · board rendering · probe · ui"]
-    BOARD["<b>board</b> · 1121<br/>summarize · rank · pareto · held-out"]
+    CLI["<b>cli</b> · 2398<br/>argparse · board rendering · probe · ui"]
+    BOARD["<b>board</b> · 1158<br/>summarize · rank · pareto · depth · curve"]
     ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 592<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 540<br/>RunContext · tool surface · notes"]
@@ -643,6 +643,8 @@ test_coverage    what a task can measure before it is run, and the audit
                  that catches the prediction being wrong
 test_calibration  that the rule is proper, and the three ways a
                  calibration figure lies
+test_explain     the detail view, and the curve that keeps the runs the
+                 median has to drop
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

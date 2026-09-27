@@ -172,7 +172,7 @@ need, that surfaces as `n/a` rather than as a special case.
 | `ledger` | Immutable records, drift detection, re-scoring | Aggregate |
 | `score` | Grading one run against known truth | Contain a judge |
 | `analyze` | Rank-stability statistics | Render a verdict |
-| `board` | Ranking, frontier, held-out winner, and **how far down the order the evidence reaches** | Invent a scalar, or print a rank the intervals do not support |
+| `board` | Ranking, frontier, held-out winner, how far down the order the evidence reaches, and P(noticed by step k) | Invent a scalar, or print a rank the intervals do not support |
 | `attribution` | Exact Shapley shares over a complete factorial, with intervals and pairwise interaction | Approximate when it can be exact, or decompose a censored metric |
 | `hypotheses` | Pre-registered falsifiable bounds, and three ways a verdict can lie | Sum them into a score |
 | `pricing` | The rate table a dollar figure was computed against | Invent a date upstream does not publish |
@@ -230,6 +230,7 @@ flowchart LR
     S --> P["pareto<br/><i>accuracy × cost</i>"]
     S --> FX["factor_effects<br/><i>+ interaction caveat</i>"]
     S --> DD["decidable_depth<br/><i>where the order stops</i>"]
+    S --> EX["explain<br/><i>one config, in full</i>"]
     L --> AT["attribute<br/><i>Shapley + interaction</i>"]
     L --> HY["hypotheses<br/><i>upheld · FALSIFIED · not tested</i>"]
     L --> ST["stability<br/><i>tau, top-1</i>"]
