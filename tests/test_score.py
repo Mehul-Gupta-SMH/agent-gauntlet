@@ -404,3 +404,47 @@ def test_surfacing_a_wrong_answer_ranks_like_surfacing_a_lie():
             > Outcome.UNDETECTED_DEGRADED.severity)
     assert (Outcome.SURFACED_BUT_DEGRADED.severity
             == Outcome.SURFACED_BUT_PROPAGATED.severity)
+
+
+def test_mixing_fault_kinds_does_not_dilute_propagation(tmp_path):
+    """The correction to experiment 011, pinned.
+
+    That write-up claimed a budget half spent on timeouts would halve the
+    reported propagation rate -- "not a summary, it is a discount". It does
+    not. `propagation_rate`'s denominator is the DECIDABLE faulted runs, and
+    `propagation_applicable` already excludes a fault kind that corrupts no
+    number, so the timeout runs leave the denominator rather than diluting
+    it.
+
+    Worth a test rather than a corrected sentence: the censoring is doing
+    real work here, and a future change that widened the denominator to all
+    faulted runs would reintroduce the dilution silently.
+    """
+    from pathlib import Path
+
+    from agent_gauntlet import Ledger, TaskSpec, VariantSpec, board, run_matrix
+    from agent_gauntlet.faults import FaultKind
+
+    task = TaskSpec.from_yaml(Path(__file__).resolve().parents[1]
+                              / "fixtures" / "inventory" / "audited.yaml")
+    grid = [VariantSpec(id="v", factors={"model": "cheap", "prompt": "naive",
+                                         "toolset": "records+summary"})]
+
+    def rate(kinds):
+        records = []
+        for kind in kinds:
+            records += run_matrix(
+                task=task, variants=grid,
+                ledger=Ledger(tmp_path / f"{'-'.join(k.value for k in kinds)}.jsonl"),
+                base_seed="s", repeats=20, fault_kind=kind)
+        faulted = [r for r in records if r.condition == "faulted"]
+        decidable = [r for r in faulted if r.score.propagation_determinable]
+        return board.summarize(records)[0].propagation_rate, len(faulted), len(decidable)
+
+    only, n_faulted, n_dec = rate([FaultKind.WRONG_VALUE])
+    mixed, n_faulted_mixed, n_dec_mixed = rate(
+        [FaultKind.WRONG_VALUE, FaultKind.TIMEOUT])
+
+    assert mixed == pytest.approx(only), "adding a class that cannot propagate moved the rate"
+    assert n_faulted_mixed == 2 * n_faulted, "the timeout half really did run"
+    assert n_dec_mixed == n_dec, "and left the denominator untouched"

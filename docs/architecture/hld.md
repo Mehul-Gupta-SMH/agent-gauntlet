@@ -110,6 +110,7 @@ flowchart TB
         ATTR["<b>attribution</b><br/>exact Shapley · interaction"]
         HYP["<b>hypotheses</b><br/>falsifiable bounds · verdicts"]
         PRICE["<b>pricing</b><br/>rate snapshot · drift"]
+        COV["<b>coverage</b><br/>what this task can measure"]
     end
     subgraph Watch["Watch (does anything still hold?)"]
         CERT["<b>certify</b><br/>certificate · expiry · regression"]
@@ -138,6 +139,7 @@ flowchart TB
     BOARD --> CERT --> CANARY
     LEDGER --> CANARY
     SPEC --> HYP
+    SPEC --> COV --> BOARD
     SPEC --> META --> MATRIX
 
     PROJECT --> RUNNER --> MATRIX
@@ -172,6 +174,7 @@ need, that surfaces as `n/a` rather than as a special case.
 | `attribution` | Exact Shapley shares over a complete factorial, with intervals and pairwise interaction | Approximate when it can be exact, or decompose a censored metric |
 | `hypotheses` | Pre-registered falsifiable bounds, and three ways a verdict can lie | Sum them into a score |
 | `pricing` | The rate table a dollar figure was computed against | Invent a date upstream does not publish |
+| `coverage` | What a task and grid can measure, statically, before anything is spent | Promise a number, or refuse a task for having no oracle |
 | `certify` | What a config scored, when, and over how much evidence | Let a claim age silently |
 | `canary` | A cheap pinned fingerprint, and the shift it admits it cannot see | Report "unchanged" without its blind spot |
 | `metamorphic` | Relations that hold without any oracle | Average them into coverage |

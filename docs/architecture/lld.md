@@ -19,7 +19,7 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 2055<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 2156<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 1029<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
@@ -38,12 +38,14 @@ flowchart TD
     HYP["<b>hypotheses</b> · 229<br/>falsifiable bounds · verdicts"]
     CAN["<b>canary</b> · 304<br/>behavioural fingerprint · blind spot"]
     PRICE["<b>pricing</b> · 133<br/>rate snapshot · drift"]
+    COV["<b>coverage</b> · 246<br/>what a task can measure · audit"]
 
-    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP & CAN
+    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP & CAN & COV
     META --> SPEC & INTER & MATRIX & META
     META --> SPEC & INTER & MATRIX
     ATTR --> LEDGER & STATS
     HYP --> ATTR & SPEC & STATS
+    COV --> SPEC & META & FAULTS
     CAN --> ATTR & CERT & LEDGER & STATS
     CERT --> BOARD & STATS
     SERVER --> PROJECT & RUNNER & SECRETS & EVENTS & BOARD & REPLAY
@@ -634,6 +636,8 @@ test_pricing     the rate table a dollar figure was computed against, and
                  the cost that goes n/a when two of them meet
 test_reward_hacking  the answer written into the statement it is graded
                  against, refused before a matrix exists
+test_coverage    what a task can measure before it is run, and the audit
+                 that catches the prediction being wrong
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

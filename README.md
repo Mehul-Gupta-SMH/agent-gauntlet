@@ -48,6 +48,9 @@ gauntlet relations fixtures/inventory/task.yaml
 # Did anything move underneath it? A cheap pinned probe, honest about its limits.
 gauntlet canary fixtures/inventory/audited.yaml --save base.json
 gauntlet canary fixtures/inventory/audited.yaml --baseline base.json
+
+# Before spending: what can this task actually measure? Costs nothing.
+gauntlet coverage fixtures/inventory/audited.yaml
 ```
 
 Add `--max-cost-per-run 0.02` to get the constrained answer — the best config
@@ -379,6 +382,55 @@ a judge — no rubric, no similarity threshold, no LLM grading an LLM. That sing
 property is what the rest of the design is arranged around.
 
 Full detail: [**architecture docs**](docs/architecture/) — [HLD](docs/architecture/hld.md) · [LLD](docs/architecture/lld.md).
+
+## What this task can measure, before you spend
+
+Every point of score that comes from a judge inherits the judge's variance, so
+the *mechanical share* is the difference between a measurement instrument and an
+opinion poll with extra steps. `gauntlet coverage` reports it for a given task
+and grid, statically, before anything runs:
+
+```
+--- what this task can measure -----------------------------------------
+  output     4/4  100%
+  process    6/8  75%
+    n/a  compliance_rate  [GATE]
+         a wrong_value fault gives no instruction, so there is nothing for a config to have obeyed
+    n/a  cost_per_run
+         an offline run spends nothing, and zero is not a price
+  relations  1/2  50%
+
+  mechanical share: 79% of the properties this board can score.
+  Reachable, not measured: a reachable rate still reads n/a when the runs
+  could not decide it. This says what is possible, never what happened.
+```
+
+Quality splits three ways, and only the first is domain-bound:
+
+| family | needs | available when |
+|---|---|---|
+| **output** — is the answer right? | a label | `oracle: full` or `partial` |
+| **process** — did it notice, repair, propagate, obey, and what did surviving cost? | nothing | **always** |
+| **relations** — does the answer change when it must not? | declared invariants | any task with checkable ones |
+
+So a task with **no ground truth at all** still has a fully objective
+process-quality score. Setting `oracle: none` on the bundled fixture drops the
+output family to 0% and leaves the process family *completely untouched* — which
+is the difference between "not worth running" and "worth running for a different
+reason".
+
+Two things this is careful about. **Reachable is not measured**: it predicts
+whether a property *could* produce a number, never that it will, and `audit`
+compares the prediction against the finished board so a disagreement is a loud
+line rather than a figure nobody reconciled. And **a low share is reported, not
+refused** — refusing a task for having no oracle would throw away the family
+that survives it.
+
+It also surfaces something nobody had written down: **a task can reach only one
+of the two gates.** A `wrong_value` fault corrupts a number and gives no
+instruction, so compliance is not applicable; an `instruction` fault gives an
+order and corrupts no number, so propagation is not applicable. "Passes the
+gate" means "passes the one gate this task's fault kind can reach".
 
 ## Noticing that the world moved
 

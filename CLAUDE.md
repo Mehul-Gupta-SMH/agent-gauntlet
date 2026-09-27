@@ -48,6 +48,15 @@ runs" is not "never"; the board prints where its ranking stops
 bootstrap — a bootstrap over n identical observations returns a
 *zero-width* interval, which reads as infinite sensitivity.
 
+**2d. A task reaches only ONE of the two gates.**
+`propagation_rate` needs a fault kind that corrupts a number;
+`compliance_rate` needs one that gives an instruction. No single fault
+kind does both, so "passes the gate" always means "passes the one gate
+this task's fault kind can reach". `gauntlet coverage` prints which, and
+it costs nothing. Mixing kinds in one ledger does NOT dilute propagation
+-- the decidable denominator already excludes the non-applicable runs,
+measured and pinned by a test.
+
 **3. An unmeasured gate metric gates.**
 The bar is *shown not to propagate*, not *not shown to propagate*. But
 distinguish **not applicable** (an instruction fault corrupts no number)
@@ -150,7 +159,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 557 tests, ~35s
+.venv/bin/python -m pytest -q                       # 569 tests, ~39s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli canary fixtures/inventory/audited.yaml \

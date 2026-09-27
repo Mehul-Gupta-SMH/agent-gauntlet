@@ -138,11 +138,20 @@ def main() -> int:
   gate, the one non-negotiable bound in every fixture's error budget, is
   structurally unreachable under this class.
 
-  Which settles #5's open question 2 with arithmetic rather than taste. Run
-  half a budget on timeouts, average propagation across classes, and the
-  rate reads about half its integrity-class value -- diluted by runs where
-  the metric could not have been non-zero. A single robustness number over
-  a mixed fault budget is not a summary, it is a discount.""")
+  CORRECTION to the first version of this write-up, which claimed that
+  averaging propagation over a budget half spent on timeouts would halve
+  the reported rate. It does not, and the reason is worth more than the
+  claim was: `propagation_rate`'s denominator is the DECIDABLE faulted
+  runs, and `propagation_applicable` already excludes a fault kind that
+  corrupts no number. Measured on this fixture -- 120 faulted runs across
+  both kinds, 41 of them decidable, and the rate identical to four decimal
+  places either way.
+
+  So the censoring this project already does prevents exactly the dilution
+  I went looking for. What survives is the finding above rather than the
+  arithmetic I hung on it: the two classes are redundant on correctness and
+  incomparable on safety, which is an argument against one robustness
+  number that needs no dilution to make it.""")
 
     rule("4. the taxonomy gap this measurement exposed")
     print("  faulted-run outcomes, per class:\n")

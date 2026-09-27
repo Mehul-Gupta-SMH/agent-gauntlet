@@ -118,6 +118,18 @@ def build_parser() -> argparse.ArgumentParser:
              "roughly multiply the matrix by k+1 (#43). Without it the "
              "relation cells read n/a, never ok",
     )
+    cov = sub.add_parser(
+        "coverage",
+        help="what this task can and cannot measure, before spending "
+             "anything (#2)",
+    )
+    cov.add_argument("task", type=Path)
+    cov.add_argument("--toolsets", default=None,
+                     help="comma-separated, to ask about a grid the task does "
+                          "not declare")
+    cov.add_argument("--live", action="store_true",
+                     help="assume a live run, which makes cost measurable")
+
     canary = sub.add_parser(
         "canary",
         help="a tiny pinned probe of one config, to notice the world moving "
@@ -267,6 +279,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _relations(args)
     if args.command == "canary":
         return _canary(args)
+    if args.command == "coverage":
+        return _coverage(args)
     if args.command == "ui":
         from .server import serve
 
@@ -747,6 +761,14 @@ def _run(args) -> int:
     else:
         print("mode        offline (scripted policies, no spend)")
 
+    # From the variants that were actually generated, not from the flags:
+    # this is a statement about the grid that is about to run.
+    grid_toolsets = sorted(
+        {v.factors["toolset"] for v in variants
+         if not v.is_sentinel and "toolset" in v.factors}
+    )
+    _print_coverage(task, toolsets=grid_toolsets or None, live=bool(args.live))
+
     ledger = Ledger(out / "runs.jsonl")
     carried_over = len(ledger.records())
     seeds = [f"seed{i}" for i in range(max(1, args.seeds))]
@@ -856,6 +878,18 @@ def _run(args) -> int:
     _print_search_cost(results, len(seeds), args)
     if args.max_cost_per_run is not None:
         _print_under_budget(results, args.max_cost_per_run)
+    mismatch = _coverage_audit(task, results, toolsets=grid_toolsets or None,
+                               live=bool(args.live))
+    if mismatch:
+        print("\nWARNING: the coverage prediction and the board disagree.")
+        print("Either the prediction is wrong or the run could not produce what "
+              "it")
+        print("promised -- both are defects, and a coverage figure nobody "
+              "reconciled")
+        print("is the same comfortable lie as an uncensored zero (#2).")
+        for line in mismatch:
+            print(f"  {line}")
+
     _print_hypotheses(task, records, variants)
     _print_relations(task, variants, executor,
                      enabled=args.with_relations, live=args.live)
@@ -1671,6 +1705,73 @@ def _certify(args) -> int:
         print(f"resolution  {worst:.0%} -- a later check cannot conclude on")
         print(f"            anything smaller than this without more runs")
     print(f"written     {args.out}")
+    return 0
+
+
+def _coverage_audit(task, results, *, toolsets=None, live: bool = False):
+    from .coverage import assess, audit
+
+    return audit(assess(task, toolsets=toolsets, live=live), results)
+
+
+def _print_coverage(task, *, toolsets=None, live: bool = False) -> None:
+    """How much of this task's quality is mechanical (#2).
+
+    Printed before a run rather than after, because the decision it informs
+    is whether to spend at all. A task with no oracle still has a fully
+    objective process-quality score, and that is worth knowing before
+    concluding the task is not worth running.
+    """
+    from .coverage import Family, assess
+
+    report = assess(task, toolsets=toolsets, live=live)
+    print("\n--- what this task can measure " + "-" * 41)
+    for family in Family:
+        rows = report.of(family)
+        share = report.share(family)
+        print(f"  {family.value:<10} "
+              f"{sum(p.reachable for p in rows)}/{len(rows)}  {share:.0%}")
+        for prop in rows:
+            if prop.reachable:
+                continue
+            gate = "  [GATE]" if prop.gates else ""
+            print(f"    n/a  {prop.name}{gate}")
+            print(f"         {prop.why_not}")
+    print(f"\n  mechanical share: {report.share():.0%} of the properties this "
+          f"board can score.")
+    print("  Reachable, not measured: a reachable rate still reads n/a when "
+          "the runs")
+    print("  could not decide it. This says what is possible, never what "
+          "happened.")
+
+    blocked = report.unreachable_gates
+    if blocked:
+        print(f"\n  UNREACHABLE GATE(S): {', '.join(p.name for p in blocked)}.")
+        print("  A gate that cannot be measured cannot be cleared -- the bar is")
+        print("  *shown not to propagate*, not *not shown to*. This task's "
+              "fault kind")
+        print("  decides which of the two gates it can reach, and it cannot "
+              "reach both.")
+
+    if report.share(Family.OUTPUT) == 0:
+        print("\n  No output oracle, and the process family is untouched by "
+              "that.")
+        print("  Correctness reads n/a; noticing, repairing, propagating, "
+              "obeying and")
+        print("  what surviving cost in work do not. A task with no ground "
+              "truth is")
+        print("  still worth running (#2).")
+
+
+def _coverage(args) -> int:
+    task = TaskSpec.from_yaml(args.task)
+    toolsets = ([t.strip() for t in args.toolsets.split(",") if t.strip()]
+                if args.toolsets else None)
+    print(f"task        {task.id}  ({task.fingerprint()})")
+    print(f"oracle      {task.oracle.value}")
+    print(f"fault       {task.fault_kind} on {task.fault_tool}")
+    _print_coverage(task, toolsets=toolsets, live=args.live)
+    print("\n  Nothing was run. This costs nothing and spends nothing.")
     return 0
 
 

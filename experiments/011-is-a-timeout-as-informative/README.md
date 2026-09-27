@@ -37,9 +37,22 @@ So the intuition is **half right, and the half that is wrong is the interesting 
 
 An availability fault **cannot propagate a falsehood**. There is no false value to believe — the read simply did not return. The propagation gate, the one non-negotiable bound in every fixture's error budget, is *structurally unreachable* under this class.
 
-Which settles #5's open question 2 with arithmetic rather than taste. Run half your budget on timeouts, average propagation across classes, and the rate reads about **half** its integrity-class value — diluted by runs where the metric could not have been non-zero.
+### Correction, 2026-09-27
 
-> A single robustness number over a mixed fault budget is not a summary, it is a discount.
+The first version of this section claimed that averaging propagation over a budget half spent on timeouts would halve the reported rate — *"not a summary, it is a discount."* **That is wrong**, and it was wrong when it was written.
+
+`propagation_rate`'s denominator is the **decidable** faulted runs, and `Score.propagation_applicable` already excludes a fault kind that corrupts no number. Measured on this fixture:
+
+```
+wrong_value only : prop=0.9756  faulted=60   decidable denominator=41
+mixed half/half  : prop=0.9756  faulted=120  decidable denominator=41
+```
+
+Identical to four decimal places. The timeout runs leave the denominator entirely.
+
+So the censoring this project already does prevents exactly the dilution I went looking for — which is a better result than the claim was, and an argument for the censoring rule rather than against mixed budgets.
+
+What survives is the finding above rather than the arithmetic hung on it: the two classes are **redundant on correctness and incomparable on safety**. That is an argument against collapsing them into one robustness number, and it needs no dilution to make it.
 
 ## Result 3 — two defects in the taxonomy, found by counting
 
