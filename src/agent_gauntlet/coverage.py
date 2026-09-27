@@ -177,6 +177,14 @@ def assess(
         # cried wolf or did not, and every run has a step count.
         Property(name="false_alarm_rate", family=Family.PROCESS, reachable=True),
         Property(name="effort_ratio", family=Family.PROCESS, reachable=True),
+        # Needs BOTH a stated confidence and a label to score it against.
+        # The elicitation is uniform across variants, so the first half is
+        # always there; the second is the caveat #21 names -- a confidence
+        # has nothing to be scored against where there is no right answer.
+        Property(name="brier", family=Family.PROCESS, reachable=labelled,
+                 why_not=None if labelled else
+                 "a stated confidence has nothing to be scored against "
+                 "without a label, so calibration disappears with the oracle"),
         Property(name="cost_per_run", family=Family.PROCESS, reachable=live,
                  why_not=None if live else
                  "an offline run spends nothing, and zero is not a price"),

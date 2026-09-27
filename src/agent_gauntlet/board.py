@@ -98,6 +98,27 @@ class VariantResult(BaseModel):
     readily to correlate across seeds (#17 vs #29 correction 3)."""
     cost_usd: float
     total_tokens: int = 0
+    brier: Optional[float] = None
+    """Mean squared error of this config's own stated confidences (#21).
+
+    None when no run stated one, or when there was nothing to be right
+    about. Never 0.0 as a stand-in: a config that ignored the elicitation
+    has expressed no belief."""
+    brier_skill: Optional[float] = None
+    """How much the stated confidences beat predicting the base rate.
+
+    The only interpretable form -- a raw Brier is excellent on a task nobody
+    gets right and terrible on one everybody does. None when the reference
+    is zero, which is the ceiling effect: a config wrong on every run offers
+    no room for a confidence to have added information, and that reads n/a
+    rather than as perfect skill."""
+    calibration_resolution: Optional[float] = None
+    """How much the stated confidences varied WITH the outcome -- "knows
+    which ones". Zero for a config that says the same number every time,
+    however well calibrated it is."""
+    n_confident: int = 0
+    """Runs that stated a confidence and had a label to score it against."""
+
     price_fingerprints: list[str] = Field(default_factory=list)
     """Every rate table this variant's runs were priced against (#14).
 
@@ -448,6 +469,10 @@ def summarize(
             if any(c.get("faulted") for c in r.tool_calls)
         ]
 
+        # Once per variant: the decomposition walks every run, and four
+        # fields below read from it.
+        calibrated = _calibration_for(runs)
+
         results.append(
             VariantResult(
                 variant_id=vid,
@@ -541,6 +566,10 @@ def summarize(
                 cost_complete=bool(runs) and all(
                     _llm(r).get("cost_complete") for r in runs
                 ),
+                brier=calibrated.brier,
+                brier_skill=calibrated.skill,
+                calibration_resolution=calibrated.resolution,
+                n_confident=calibrated.n,
                 price_fingerprints=sorted(
                     {f for f in (_pinned_price(r) for r in runs) if f}
                 ),
@@ -1001,6 +1030,13 @@ def factor_effects(results: Sequence[VariantResult]) -> list[FactorEffect]:
             )
         )
     return sorted(effects, key=lambda e: e.spread, reverse=True)
+
+
+def _calibration_for(runs):
+    """Proper-scoring report for one variant's runs (#21)."""
+    from .calibration import from_runs
+
+    return from_runs(runs)
 
 
 def _pinned_price(record) -> Optional[str]:

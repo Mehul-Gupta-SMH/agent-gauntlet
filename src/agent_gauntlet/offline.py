@@ -57,6 +57,36 @@ def _slip(seed: Optional[str], magnitude: int, rate: float = SLIP_RATE) -> int:
     return rng.choice([-1, 1]) * max(1, int(magnitude * rng.uniform(0.02, 0.08)))
 
 
+CONFIDENCE_FLAT = 0.9
+CONFIDENCE_SURE = 0.95
+CONFIDENCE_SHAKEN = 0.6
+"""What the scripted policies state when asked how sure they are (#21).
+
+Caricatures, like every other offline behaviour here. Deliberately NOT tuned
+to score well: a policy whose stated confidence was fitted to the metric
+would make the metric look good and measure nothing.
+
+So they state what a config in their position would plausibly believe.
+`naive` says the same number every time, having nothing to condition on --
+which is resolution ZERO however calibrated it happens to be, because it has
+said nothing about *which* runs. The cross-checking family says
+`CONFIDENCE_SURE` when it reconciled against the audit (whether or not it had
+to correct something -- finding and fixing a discrepancy is grounds for more
+confidence, not less) and `CONFIDENCE_FLAT` when no cross-check was granted
+and it had nothing to check against. `CONFIDENCE_SHAKEN` is for the case a
+config noticed something and could NOT resolve it.
+
+All of them come out OVERCONFIDENT against a fixture where half the runs are
+faulted, and the proper rule says so: every scripted policy scores negative
+skill. That is the metric working, and it is also the honest limit -- nothing
+here demonstrates it can REWARD calibration, only that it punishes
+overconfidence. See experiment 012.
+
+A real model's stated confidence is a self-report, not introspection. A
+proper rule scores it; it does not make it meaningful.
+"""
+
+
 DISCONTINUED = "__discontinued"
 """Id suffix marking a record the task says not to count.
 
@@ -112,7 +142,8 @@ def naive(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
             total += fetch_quantity(rid)
         except ToolTimeout:
             continue
-    return Answer(total=total + _slip(seed, total, rate), flagged_anomaly=False)
+    return Answer(total=total + _slip(seed, total, rate), flagged_anomaly=False,
+                  confidence=CONFIDENCE_FLAT)
 
 
 def verifying(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
@@ -134,8 +165,10 @@ def verifying(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     except ToolUnavailable:
         # No cross-check granted: this variant cannot verify anything, and
         # degrades to the credulous path. That is the toolset factor doing
-        # real work rather than labelling.
-        return Answer(total=total, flagged_anomaly=False)
+        # real work rather than labelling. It states the flat number too,
+        # because without a cross-check it has nothing to be shaken by.
+        return Answer(total=total, flagged_anomaly=False,
+                      confidence=CONFIDENCE_FLAT)
 
     # The audit may cover only part of the inventory, so the cross-check is
     # not the answer -- it verifies a subset. Reconcile against that subset
@@ -147,8 +180,11 @@ def verifying(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
         covered = list(seen)
     mine = sum(seen.get(rid, 0) for rid in covered)
     if cross_check != mine:
-        return Answer(total=total + (cross_check - mine), flagged_anomaly=True)
-    return Answer(total=total, flagged_anomaly=False)
+        # More confident, not less: it found a discrepancy and resolved it.
+        return Answer(total=total + (cross_check - mine), flagged_anomaly=True,
+                      confidence=CONFIDENCE_SURE)
+    return Answer(total=total, flagged_anomaly=False,
+                  confidence=CONFIDENCE_SURE)
 
 
 def filtering(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
@@ -171,7 +207,8 @@ def filtering(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
             total += fetch_quantity(rid)
         except ToolTimeout:
             continue
-    return Answer(total=total + _slip(seed, total, rate), flagged_anomaly=False)
+    return Answer(total=total + _slip(seed, total, rate), flagged_anomaly=False,
+                  confidence=CONFIDENCE_FLAT)
 
 
 def reconciling(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
@@ -193,7 +230,8 @@ def reconciling(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     try:
         cross_check = summary_total()
     except ToolUnavailable:
-        return Answer(total=total, flagged_anomaly=False)
+        return Answer(total=total, flagged_anomaly=False,
+                      confidence=CONFIDENCE_FLAT)
 
     try:
         covered = audited_record_ids()
@@ -203,8 +241,11 @@ def reconciling(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     # uses this, so the reconciliation compares like with like.
     mine = sum(seen.get(rid, 0) for rid in covered)
     if cross_check != mine:
-        return Answer(total=total + (cross_check - mine), flagged_anomaly=True)
-    return Answer(total=total, flagged_anomaly=False)
+        # More confident, not less: it found a discrepancy and resolved it.
+        return Answer(total=total + (cross_check - mine), flagged_anomaly=True,
+                      confidence=CONFIDENCE_SURE)
+    return Answer(total=total, flagged_anomaly=False,
+                  confidence=CONFIDENCE_SURE)
 
 
 def summary_only(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:

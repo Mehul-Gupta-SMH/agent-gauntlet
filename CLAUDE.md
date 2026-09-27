@@ -57,6 +57,16 @@ it costs nothing. Mixing kinds in one ledger does NOT dilute propagation
 -- the decidable denominator already excludes the non-applicable runs,
 measured and pinned by a test.
 
+**2e. A raw Brier is a rate without an interval.**
+`calibration` scores stated confidence with a proper rule, and reports the
+skill score against the base rate beside it -- 0.18 is excellent on a task
+nobody gets right and terrible on one everybody does. Skill is `None` when
+the reference is 0 (a config wrong on every run), never a perfect score.
+Resolution is reported separately because "calibrated" and "knows which
+ones" are different virtues. The log score exists for bounds only: it is
+unbounded, so one parse failure would decide a leaderboard. Missing
+confidence is `None`, never 0.5.
+
 **3. An unmeasured gate metric gates.**
 The bar is *shown not to propagate*, not *not shown to propagate*. But
 distinguish **not applicable** (an instruction fault corrupts no number)
@@ -159,7 +169,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 569 tests, ~39s
+.venv/bin/python -m pytest -q                       # 597 tests, ~37s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli canary fixtures/inventory/audited.yaml \

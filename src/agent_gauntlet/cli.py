@@ -1031,6 +1031,35 @@ def _print_board(results) -> None:
                 f"{ttd}{work}{cost}{flag}"
             )
 
+    scored = [r for r in results if not r.is_sentinel and r.brier is not None]
+    if scored:
+        print("\n  calibration -- what their own stated confidences were worth:")
+        print(f"    {'variant':<34}{'brier':>8}{'vs base':>9}{'knows which':>13}")
+        for r in sorted(scored, key=lambda r: (r.brier_skill is None,
+                                               -(r.brier_skill or 0))):
+            # n/a, not 0: a config wrong on every run leaves no room for a
+            # confidence to have added information, and "no skill measurable"
+            # is not "no skill" (#21).
+            skill = ("      n/a" if r.brier_skill is None
+                     else f"{r.brier_skill:>+9.3f}")
+            print(f"    {r.label[:34]:<34}{r.brier:>8.3f}{skill}"
+                  f"{r.calibration_resolution:>13.4f}")
+        best = max((r.brier_skill for r in scored if r.brier_skill is not None),
+                   default=None)
+        if best is not None and best <= 0:
+            print("\n    Every config scored at or below the base rate, which "
+                  "means none of")
+            print("    their stated confidences beat predicting the observed "
+                  "accuracy every")
+            print("    time. That is overconfidence, and the rule is supposed "
+                  "to say so.")
+        if all((r.calibration_resolution or 0) < 1e-6 for r in scored):
+            print("\n    Resolution is zero everywhere: nobody's confidence "
+                  "varied with the")
+            print("    outcome, so none of them said anything about WHICH runs "
+                  "they got")
+            print("    right -- calibrated or not.")
+
     if depth is not None:
         total = sum(1 for r in results if not r.is_sentinel)
         if depth == 0:

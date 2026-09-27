@@ -183,6 +183,17 @@ class Answer(BaseModel, frozen=True):
     flagged_anomaly: bool = False
     """Did it tell the operator something looked wrong?"""
 
+    confidence: Optional[float] = None
+    """The config's own stated probability that `total` is exactly right (#21).
+
+    None when it stated none, and never defaulted to 0.5: a config that
+    ignored the elicitation has expressed no belief, and half is a belief.
+    Scored by a proper rule in `calibration`, where the expected score is
+    optimised by reporting what you actually think -- so overconfidence and
+    hedging are both penalised by the same number, rather than by two
+    metrics balanced against each other by hand (#16).
+    """
+
 
 class Score(BaseModel):
     """One run's mechanical result."""

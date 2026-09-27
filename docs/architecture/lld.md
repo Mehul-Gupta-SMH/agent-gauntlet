@@ -19,16 +19,16 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 2156<br/>argparse · board rendering · probe · ui"]
-    BOARD["<b>board</b> · 1029<br/>summarize · rank · pareto · held-out"]
+    CLI["<b>cli</b> · 2216<br/>argparse · board rendering · probe · ui"]
+    BOARD["<b>board</b> · 1121<br/>summarize · rank · pareto · held-out"]
     ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
-    SCORE["<b>score</b> · 528<br/>Outcome · score_run"]
+    SCORE["<b>score</b> · 592<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 540<br/>RunContext · tool surface · notes"]
-    OFFLINE["<b>offline</b> · 457<br/>scripted policies"]
+    OFFLINE["<b>offline</b> · 493<br/>scripted policies"]
     MATRIX["<b>matrix</b> · 401<br/>run_matrix · _attempt · budget"]
     FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
     SPEC["<b>spec</b> · 387<br/>TaskSpec · VariantSpec · GridSpec"]
-    LIVE["<b>live</b> · 290<br/>executor · parsing · classification"]
+    LIVE["<b>live</b> · 337<br/>executor · parsing · classification"]
     LEDGER["<b>ledger</b> · 325<br/>RunRecord · rescore"]
     ANALYZE["<b>analyze</b> · 193<br/>kendall_tau · stability"]
     CERT["<b>certify</b> · 414<br/>Certificate · compare · 3 verdicts"]
@@ -38,14 +38,17 @@ flowchart TD
     HYP["<b>hypotheses</b> · 229<br/>falsifiable bounds · verdicts"]
     CAN["<b>canary</b> · 304<br/>behavioural fingerprint · blind spot"]
     PRICE["<b>pricing</b> · 133<br/>rate snapshot · drift"]
-    COV["<b>coverage</b> · 246<br/>what a task can measure · audit"]
+    COV["<b>coverage</b> · 250<br/>what a task can measure · audit"]
+    CALIB["<b>calibration</b> · 216<br/>Brier · skill · Murphy"]
 
-    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP & CAN & COV
+    CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP & CAN & COV & CALIB
     META --> SPEC & INTER & MATRIX & META
     META --> SPEC & INTER & MATRIX
     ATTR --> LEDGER & STATS
     HYP --> ATTR & SPEC & STATS
     COV --> SPEC & META & FAULTS
+    BOARD --> CALIB
+    ATTR --> CALIB
     CAN --> ATTR & CERT & LEDGER & STATS
     CERT --> BOARD & STATS
     SERVER --> PROJECT & RUNNER & SECRETS & EVENTS & BOARD & REPLAY
@@ -638,6 +641,8 @@ test_reward_hacking  the answer written into the statement it is graded
                  against, refused before a matrix exists
 test_coverage    what a task can measure before it is run, and the audit
                  that catches the prediction being wrong
+test_calibration  that the rule is proper, and the three ways a
+                 calibration figure lies
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

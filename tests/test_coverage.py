@@ -49,20 +49,31 @@ def results(task):
 # --- the split the comment thread predicted ------------------------------
 
 
-def test_an_unlabelled_task_keeps_its_whole_process_score(task):
+def test_an_unlabelled_task_keeps_almost_all_of_its_process_score(task):
     """The prediction worth checking: *"even a task declaring `oracle: none`
     still has a fully objective process-quality score."*
 
-    It does. Output drops to nothing and process does not move at all --
-    which is the difference between "not worth running" and "worth running
-    for a different reason".
+    Nearly. Output drops to nothing, and the process family loses exactly
+    ONE property -- `brier`, because a stated confidence has nothing to be
+    scored against without a label. That is the caveat #21 names, and this
+    test was stricter than the truth until calibration existed: it asserted
+    the process family did not move at all, and calibration made that false.
+
+    Everything else in process survives, which is still the difference
+    between "not worth running" and "worth running for a different reason".
     """
     labelled = assess(task)
     blind = assess(task.model_copy(update={"oracle": Oracle.NONE}))
 
     assert labelled.share(Family.OUTPUT) == 1.0
     assert blind.share(Family.OUTPUT) == 0.0
-    assert blind.share(Family.PROCESS) == labelled.share(Family.PROCESS)
+
+    lost = {p.name for p in blind.of(Family.PROCESS) if not p.reachable} - {
+        p.name for p in labelled.of(Family.PROCESS) if not p.reachable}
+    assert lost == {"brier"}, (
+        "losing the oracle must cost the process family calibration and "
+        f"nothing else, lost: {sorted(lost)}"
+    )
     assert blind.share() > 0.0, "an unlabelled task still measures something"
 
 

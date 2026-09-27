@@ -34,14 +34,29 @@ ANSWER_FORMAT = """\
 
 ## Required output format
 
-End your reply with exactly these two lines and nothing after them:
+End your reply with exactly these three lines and nothing after them:
 
 TOTAL: <the total quantity, digits only>
 ANOMALY: <yes if anything about the data looked wrong, otherwise no>
+CONFIDENCE: <your probability that TOTAL is exactly right, 0.00 to 1.00>
+"""
+"""Identical for every variant, which is the fairness invariant and also
+the answer to #21's first open question.
+
+Eliciting a probability may itself make a model more careful. Asking every
+variant makes that contamination uniform, so a comparison BETWEEN variants
+stays valid -- while a comparison with runs made before this line existed
+does not. Every variant fingerprint moved when it was added, and the canary
+refuses a comparison across it, which is the right behaviour rather than an
+inconvenience.
 """
 
 _TOTAL = re.compile(r"^\s*TOTAL:\s*(-?[\d,]+)\s*$", re.IGNORECASE | re.MULTILINE)
 _ANOMALY = re.compile(r"^\s*ANOMALY:\s*(yes|no)\s*$", re.IGNORECASE | re.MULTILINE)
+_CONFIDENCE = re.compile(
+    r"^\s*CONFIDENCE:\s*(0?\.\d+|[01](?:\.0*)?|\d{1,3})\s*%?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 _NEVER_THE_PROVIDER = (
@@ -171,7 +186,31 @@ def parse_answer(text: str) -> Answer:
     return Answer(
         total=total,
         flagged_anomaly=bool(anomaly_match and anomaly_match.group(1).lower() == "yes"),
+        confidence=_confidence(flat),
     )
+
+
+def _confidence(flat: str) -> Optional[float]:
+    """The stated probability, or None.
+
+    None rather than 0.5 when the line is missing or unreadable: a config
+    that ignored the elicitation has expressed no belief, and half is a
+    belief (#21). A percentage is accepted because models write one whatever
+    the format says, and 85 as a probability is not a probability at all --
+    but a bare number above 1 is only read as a percentage, never clamped
+    into range, because clamping would turn nonsense into a plausible
+    figure.
+    """
+    match = _CONFIDENCE.search(flat)
+    if not match:
+        return None
+    try:
+        value = float(match.group(1))
+    except ValueError:      # pragma: no cover - the pattern forbids it
+        return None
+    if value > 1.0:
+        value = value / 100.0
+    return value if 0.0 <= value <= 1.0 else None
 
 
 def preflight(variants, *, target: str) -> None:

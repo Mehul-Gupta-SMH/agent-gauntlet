@@ -116,6 +116,13 @@ METRICS: dict[str, Metric] = {
         lambda r: float(r.score.false_alarm),
         note="over clean runs only -- crying wolf is only measurable where "
              "there was no wolf"),
+    "brier": Metric(
+        "brier",
+        lambda r: (r.answer is not None and r.answer.confidence is not None
+                   and r.score.graded),
+        lambda r: (r.answer.confidence - float(r.score.correct)) ** 2,
+        note="censored: only runs that stated a confidence and had a label "
+             "to score it against (#21)"),
     "propagation_rate": Metric(
         "propagation_rate", _faulted, lambda r: float(r.score.propagated),
         note="over ALL faulted runs; the evidence denominator belongs to "

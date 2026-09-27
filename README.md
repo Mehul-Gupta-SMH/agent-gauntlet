@@ -413,11 +413,12 @@ Quality splits three ways, and only the first is domain-bound:
 | **process** — did it notice, repair, propagate, obey, and what did surviving cost? | nothing | **always** |
 | **relations** — does the answer change when it must not? | declared invariants | any task with checkable ones |
 
-So a task with **no ground truth at all** still has a fully objective
-process-quality score. Setting `oracle: none` on the bundled fixture drops the
-output family to 0% and leaves the process family *completely untouched* — which
-is the difference between "not worth running" and "worth running for a different
-reason".
+So a task with **no ground truth at all** keeps almost all of its objective
+process score. Setting `oracle: none` on the bundled fixture drops the output
+family to 0% and costs the process family exactly one property — calibration,
+because a stated confidence has nothing to be scored against without a label.
+Everything else survives, which is the difference between "not worth running"
+and "worth running for a different reason".
 
 Two things this is careful about. **Reachable is not measured**: it predicts
 whether a property *could* produce a number, never that it will, and `audit`
@@ -431,6 +432,50 @@ of the two gates.** A `wrong_value` fault corrupts a number and gives no
 instruction, so compliance is not applicable; an `instruction` fault gives an
 order and corrupts no number, so propagation is not applicable. "Passes the
 gate" means "passes the one gate this task's fault kind can reach".
+
+## Scoring the confidence it stated
+
+Every variant is asked, in the same words, for the probability that its answer
+is exactly right. A *proper* scoring rule is one whose expected score is
+optimised by stating what you actually believe — so overconfidence and hedging
+are punished by the same number, rather than by two metrics balanced against
+each other by hand.
+
+The concrete target is live: [experiment 003](experiments/003-live-m0-gate/)
+caught a variant flagging an anomaly on **33% of clean runs** with no
+cross-check tool that could have justified the claim. Hedging, and free, because
+the false-alarm column was folded into nothing.
+
+```
+  calibration -- what their own stated confidences were worth:
+    variant                              brier  vs base  knows which
+    smart verifying records+summary      0.040   -0.002       0.0000
+    cheap verifying records+summary      0.152   -0.098       0.0000
+    ...
+    cheap naive records+summary          0.510   -1.176       0.0000
+```
+
+Three columns because a Brier score alone means nothing — 0.18 is excellent on
+a task nobody gets right and terrible on one everybody does:
+
+- **brier** — mean squared error of the stated probability. Lower is better.
+- **vs base** — the skill score against predicting the observed accuracy every
+  time. This is the interpretable one. It reads `n/a`, never a perfect score,
+  when a config was wrong on *every* run: nothing a confidence said could have
+  added information there.
+- **knows which** — Murphy's resolution. *"Right 80% of the time"* and *"knows
+  which 80%"* are different virtues, and the second is the one worth paying
+  for. A config that states the same number every run scores zero here however
+  well calibrated it is.
+
+The log score is implemented and deliberately not used for ranking: it punishes
+a confident error far harder, which is the right shape for a *bound*, and it is
+unbounded, so one parse failure would decide a leaderboard.
+
+A missing confidence is `None`, never 0.5 — a config that ignored the
+elicitation has expressed no belief, and half is a belief. And calibration
+disappears when the task has no oracle, because a confidence has nothing to be
+scored against; `gauntlet coverage` says so before you spend.
 
 ## Noticing that the world moved
 
