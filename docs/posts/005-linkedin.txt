@@ -1,0 +1,37 @@
+"How many times should I run each config?" I swept it properly instead of guessing. 177,408 runs later, two of the three answers were the opposite of what I expected.
+
+Eight seeds, twelve budgets, one task. The board stops moving with the seed at k=4. I had been using 3.
+
+    k   runs   med tau   top-1  decidable  verdict
+    1     48     0.627     57%    28/28    fail
+    3    144     0.699    100%    15/28    fail
+    4    192     0.717    100%    28/28    PASS
+   50   2400     0.775    100%    28/28    PASS
+
+Three things fall out, and only the first was the question.
+
+1. Rank correlation is the wrong number to watch. It crawls from 0.63 to 0.78 across a 50x budget increase and crosses its bar somewhere you cannot point at. "Is the winner the winner" goes 57% -> 57% -> 100% and stays. One is a slow blur, the other is a decision.
+
+2. No budget fixes a tie. Ranks 3, 4 and 5 are separated by four thousandths:
+
+     3   0.4642
+     4   0.4629
+     5   0.4604
+
+They never settle. Not at k=50, with 2,400 runs behind every cell. They are tied in truth, and a board printing them in order is reporting noise with a confident face — one row below where anyone looks. So the fix is not more runs, it is refusing to claim an order the data does not carry.
+
+3. Quieter agents needed FIVE TIMES more repeats, not fewer.
+
+  slip 0.22/0.08  ->  bar cleared at k=4
+  slip 0.11/0.04  ->  bar cleared at k=20
+  slip 0.44/0.16  ->  bar cleared at k=3
+
+Halving the noise also halved the gap between the configs being compared, because a Bernoulli process cannot move its variance without moving its mean. Which is the real finding: k tracks the separation between adjacent configs relative to their noise, and neither term is knowable before you run.
+
+A k carried over from someone else's benchmark is worth nothing. Sweep it on yours.
+
+The awkward part: this is measured against scripted policies at a declared noise level. It is a property of the measuring machinery, not a claim about real agents. What transfers is the method, and I would rather say that than let the number travel further than the evidence.
+
+github.com/Mehul-Gupta-SMH/agent-gauntlet
+
+#AIAgents #LLM #Evaluation #OpenSource

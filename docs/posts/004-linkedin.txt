@@ -1,0 +1,29 @@
+Across every live run of my agent evaluation tool, the happy-path leaderboard had no winner. Not a close one. No ranking at all.
+
+648 real runs, two different tasks, eight configurations each. Every single one answered correctly every single time its tools told it the truth.
+
+So the clean leaderboard is an eight-way tie, and the rank correlation between it and the robustness leaderboard is not low — it is undefined. You cannot correlate against a ranking that does not exist.
+
+  contenders                 8 (sentinel excluded)
+  distinct clean values      1
+  tau(clean, robustness)     UNDEFINED
+
+I built the tool on a bet: that the config which looks best on the happy path is often the credulous one, and that you only find out by lying to it through its own tools.
+
+The data says something stronger and more awkward. There was no happy-path champion to be credulous. Under fault injection, one config held and six propagated a falsehood into their final answer. That was the only axis carrying information.
+
+It is not an artefact of rounding to pass/fail, either. These tasks demand an exact figure, so a run that counts as correct was exact — which pins the graded score at 1.000 for all eight as well. The tie-breaker ties too.
+
+Where it gets uncomfortable: this is good news for the bet and a dead end for measuring it. A correlation needs two rankings. I have one.
+
+So I built the fixture that breaks the ceiling — a task where the right answer is a subset of the data, not the sum of it, so reading every record is no longer enough. Offline it gives 13 distinct clean values across 16 configs and a correlation of -0.05. The two rankings are finally independent.
+
+Whether that survives a real model is unmeasured. That is one probe call away and I have not spent it yet.
+
+The honest version of the claim: for tasks whose clean version any competent config solves, robustness is the only axis with discriminating power. Most things that reach production are such tasks — but that clause is an argument, not a measurement, and I am not going to pretend otherwise.
+
+Every number above is in a committed console capture, including the ones that embarrass me.
+
+github.com/Mehul-Gupta-SMH/agent-gauntlet
+
+#AIAgents #LLM #Evaluation #OpenSource
