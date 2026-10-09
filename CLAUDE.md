@@ -118,6 +118,17 @@ silence was being read as coverage. A perturbed world is stamped
 `synthetic` by the code that builds it, whatever its parent was -- `scale`
 triples quantities no trace contains.
 
+**A withheld source is only decidable where it was necessary.** #41's
+source-dependence check removes a tool the config called and asks whether
+the answer moved or the agent stopped. Applied to any called tool it
+false-fails on redundancy -- `get_summary` cross-checks a total
+`fetch_record` already yields -- so only `metamorphic.LOAD_BEARING` tools
+are withheld, each declared with why no other granted tool can supply it.
+Offline the check CANNOT FAIL and the block says so: scripted policies read
+their tools honestly, so 17/17 is a property of the test doubles. The
+property that discriminates is `substituted` -- answered anyway, from a
+source that could not support the answer -- and it needs the live path.
+
 **Operator code runs exactly once, in the child, and never again.**
 `usertools.load` is the only function that imports an uploaded module and
 it is reachable from exactly one place -- `_calibrate`, the child process's

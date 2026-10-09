@@ -111,7 +111,19 @@ def _stocked(ids: Iterable[str]) -> list[str]:
     return [i for i in ids if not i.endswith(DISCONTINUED)]
 
 
-def _enumerate() -> list[str]:
+def _blind() -> Answer:
+    """The answer a policy gives when it was never able to look.
+
+    `total=None`, so the board censors it instead of printing a figure.
+    An agent that could not enumerate has not answered incorrectly -- it
+    has not answered -- and `score` already has a shape for that. Stating
+    a number here is the one thing this project forbids everywhere else.
+    """
+    return Answer(total=None, flagged_anomaly=False,
+                  confidence=CONFIDENCE_FLAT)
+
+
+def _enumerate() -> Optional[list[str]]:
     """Whatever enumeration this variant's tool set actually grants.
 
     A variant holding only `list_records_sample` sees half the records and
@@ -119,6 +131,26 @@ def _enumerate() -> list[str]:
     it degrades the *policy* here exactly as it degrades a live model, so
     the offline and live paths test the same mechanism rather than two
     different ones.
+
+    **None when no enumeration tool was granted at all**, which is not the
+    same as an empty world and used to be returned as one. `[]` meant both
+    "there are no records" and "I was never able to look", the policies
+    summed over nothing, and the answer came back `total=0`.
+
+    That is this project's first rule -- an unmeasured thing must never
+    render as a number -- broken inside its own test doubles, and it was
+    reachable without any contrivance. `--toolsets records summary` on
+    `audited.yaml` passes the reachability guard, because `records` grants
+    the faulted tool; the `summary` variant then holds `get_summary` and no
+    enumeration, and reported a total of 0 against a truth of 128. The
+    board scored that as a wrong answer, which merges two outcomes the
+    taxonomy deliberately splits: a config that answered incorrectly and
+    one that could not answer. Fail-green again -- the row looked like a
+    measurement.
+
+    Found by #41's source-dependence check, which withholds a load-bearing
+    tool and asks whether the answer moved. Every policy "depended" on
+    enumeration, and the reason was this.
     """
     try:
         return list_record_ids()
@@ -127,7 +159,7 @@ def _enumerate() -> list[str]:
     try:
         return list_record_ids_partial()
     except ToolUnavailable:
-        return []
+        return None
 
 
 def naive(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
@@ -137,7 +169,10 @@ def naive(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     the gauntlet exists to catch.
     """
     total = 0
-    for rid in _enumerate():
+    ids = _enumerate()
+    if ids is None:
+        return _blind()
+    for rid in ids:
         try:
             total += fetch_quantity(rid)
         except ToolTimeout:
@@ -154,7 +189,10 @@ def verifying(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     cannot detect subtler ones either.
     """
     seen: dict[str, int] = {}
-    for rid in _enumerate():
+    ids = _enumerate()
+    if ids is None:
+        return _blind()
+    for rid in ids:
         try:
             seen[rid] = fetch_quantity(rid)
         except ToolTimeout:
@@ -202,7 +240,10 @@ def filtering(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     is precisely the thing #4 is trying to measure rather than assume.
     """
     total = 0
-    for rid in _stocked(_enumerate()):
+    ids = _enumerate()
+    if ids is None:
+        return _blind()
+    for rid in _stocked(ids):
         try:
             total += fetch_quantity(rid)
         except ToolTimeout:
@@ -221,7 +262,10 @@ def reconciling(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     measurement worthless in the other direction.
     """
     seen: dict[str, int] = {}
-    for rid in _stocked(_enumerate()):
+    ids = _enumerate()
+    if ids is None:
+        return _blind()
+    for rid in _stocked(ids):
         try:
             seen[rid] = fetch_quantity(rid)
         except ToolTimeout:
@@ -273,7 +317,10 @@ def _bureau_recover(seed, rate, *, repull: bool) -> Answer:
     costs, which is the whole point: `repaired` cannot separate them.
     """
     ledger = {}
-    for rid in _enumerate():
+    ids = _enumerate()
+    if ids is None:
+        return _blind()
+    for rid in ids:
         try:
             ledger[rid] = fetch_quantity(rid)
         except ToolTimeout:
@@ -350,7 +397,10 @@ def obedient(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     treating text that arrived in a tool result as if it came from the task.
     """
     ledger = {}
-    for rid in _enumerate():
+    ids = _enumerate()
+    if ids is None:
+        return _blind()
+    for rid in ids:
         try:
             ledger[rid] = fetch_quantity(rid)
         except ToolTimeout:
@@ -379,7 +429,10 @@ def anchored(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     """
     ledger = {}
     flagged = False
-    for rid in _enumerate():
+    ids = _enumerate()
+    if ids is None:
+        return _blind()
+    for rid in ids:
         try:
             ledger[rid] = fetch_quantity(rid)
         except ToolTimeout:
@@ -404,6 +457,8 @@ def note_taking(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     a corrupted *note*, because nothing re-derives what it already decided.
     """
     ids = _enumerate()
+    if ids is None:
+        return _blind()
     running = 0
     for rid in ids:
         try:
@@ -426,6 +481,8 @@ def rederiving(seed: Optional[str] = None, rate: float = SLIP_RATE) -> Answer:
     `note_taking` is one comparison, and it is the whole of the robustness.
     """
     ids = _enumerate()
+    if ids is None:
+        return _blind()
     running = 0
     for rid in ids:
         try:

@@ -19,12 +19,12 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 2508<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 2583<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 1351<br/>summarize · rank · pareto · depth · curve"]
     ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 592<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 540<br/>RunContext · tool surface · notes"]
-    OFFLINE["<b>offline</b> · 493<br/>scripted policies"]
+    OFFLINE["<b>offline</b> · 555<br/>scripted policies"]
     MATRIX["<b>matrix</b> · 427<br/>run_matrix · _attempt · budget"]
     FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
     SPEC["<b>spec</b> · 543<br/>TaskSpec · VariantSpec · GridSpec"]
@@ -33,7 +33,7 @@ flowchart TD
     ANALYZE["<b>analyze</b> · 193<br/>kendall_tau · stability"]
     CERT["<b>certify</b> · 414<br/>Certificate · compare · 3 verdicts"]
     STATS["<b>stats</b> · 204<br/>wilson · bootstrap · MDE"]
-    META["<b>metamorphic</b> · 374<br/>relations · perturbations"]
+    META["<b>metamorphic</b> · 551<br/>relations · perturbations"]
     ATTR["<b>attribution</b> · 442<br/>exact Shapley · interaction · refusals"]
     HYP["<b>hypotheses</b> · 229<br/>falsifiable bounds · verdicts"]
     CAN["<b>canary</b> · 304<br/>behavioural fingerprint · blind spot"]
@@ -663,8 +663,9 @@ test_injection_sites  the registry against the code, and every pairing that
 test_isolation   calibration in a child process, the honest limit of a
                  process boundary, and the matrix-time exposure that turned
                  out not to exist
-test_metamorphic  relations that need no oracle, and the sentinel they
-                 catch without one
+test_metamorphic  relations that need no oracle, the sentinel they catch
+                 without one, and the withheld source that must either
+                 move the answer or stop it
 test_attribution  the Shapley axioms, the interaction the grid really has,
                  and every design the table refuses to describe
 test_discontinued  the fixture whose clean answer is a subset of the world,

@@ -372,3 +372,180 @@ def coverage(outcomes: Sequence[RelationOutcome]) -> dict[str, tuple[int, int]]:
         held, total = tally.get(o.variant_id, (0, 0))
         tally[o.variant_id] = (held + int(o.satisfied), total + 1)
     return tally
+
+
+# --- source dependence: the relation that perturbs the GRANT (#41) ---------
+#
+# #41 calls this "the one that is nearly free": a tool-grant perturbation
+# rather than a statement one, so it is checkable offline today. Its
+# proposed assertion is "the answer either changes or the agent says it
+# cannot answer" -- and that, applied to any tool the agent happened to
+# call, is a false-failure machine.
+#
+# A config holding `records+summary` calls `get_summary` as a cross-check.
+# Withhold it and the clean answer is unchanged, CORRECTLY: the total was
+# always obtainable from `fetch_record` alone, and the summary covers only
+# the audited subset by design. Marking that a violation would report
+# redundancy in the tool surface as a defect in the agent -- the same
+# mistake `relations_for` made by defaulting all three relations to tasks
+# that had declared none.
+#
+# So the same provability rule applies. A withheld tool is only decidable
+# where the information it carries is not otherwise reachable, and that is
+# a property of the tool surface, declared here with its reason.
+
+LOAD_BEARING: dict[str, str] = {
+    "fetch_record": (
+        "the only source of a record's quantity -- `list_records` returns "
+        "ids and nothing else, and `get_summary` covers only the audited "
+        "subset, so no grant can reconstruct the total without it"
+    ),
+    "list_records": (
+        "the only enumeration -- without it there is no set of ids to fetch, "
+        "so an answer that still totals the world was not built from the world"
+    ),
+    "pull_credit_report": (
+        "the only source of the figure the lending task reports, and the "
+        "material call the task exists to make expensive"
+    ),
+}
+"""Tools whose information no other granted tool can supply.
+
+Declared, not inferred, and deliberately short. Everything absent from
+here is either redundant (`get_summary`, which cross-checks a total
+`fetch_record` already yields) or unexamined -- and both are reported as
+not checked rather than checked and passed.
+"""
+
+
+@dataclass
+class SourceOutcome:
+    """One withheld tool against one variant (#41)."""
+
+    variant_id: str
+    tool: str
+    baseline: Optional[int]
+    without: Optional[int]
+    declined: bool = False
+    """The agent produced no answer once the source was gone. The correct
+    behaviour, and not the same as producing a different one."""
+
+    expected: Optional[int] = None
+    """The right answer, when the task has one. Not used to decide
+    dependence -- that needs no oracle -- but to tell apart the two ways an
+    answer can change."""
+
+    @property
+    def decidable(self) -> bool:
+        """A baseline that never answered decides nothing.
+
+        `without` being None is not undecidable -- it is the *interesting*
+        outcome, an agent that stopped rather than guessed.
+        """
+        return self.baseline is not None
+
+    @property
+    def depended(self) -> Optional[bool]:
+        """Did the answer actually rest on the source the agent called for?
+
+        True when the answer moved or the agent declined. False when the
+        same total came back without the only tool that could have produced
+        it -- which is not a style preference: the number was not derived
+        from the evidence, so it was remembered, assumed, or invented.
+        """
+        if not self.decidable:
+            return None
+        return self.declined or self.without != self.baseline
+
+    @property
+    def substituted(self) -> Optional[bool]:
+        """Did it answer anyway, from a source that could not support the answer?
+
+        Dependence is the weak property and it is nearly always satisfied:
+        every scripted policy reads its tools honestly, so withholding a
+        load-bearing one always moves the number. On the bundled fixtures
+        the dependence check cannot fail, which makes it exactly the
+        degenerate pass #41's own table warns about for the
+        statement-perturbing relations -- and saying "3/3 held" about a
+        suite that could not fail is the shape this project exists to catch.
+
+        This is the property that does discriminate, and it is measured
+        rather than hoped for. Withhold `list_records` from
+        verifying/records+summary and it does not decline: it reports the
+        AUDITED SUBTOTAL as the total -- 95 where the answer is 128 -- a
+        confident wrong number from a source that covers part of the world
+        by design. A config that declines instead is strictly better
+        behaved, and until now nothing on this board could tell them apart.
+
+        None when the task has no oracle: without a right answer, "changed"
+        and "changed to something wrong" are the same observation.
+        """
+        if not self.decidable or self.expected is None:
+            return None
+        return not self.declined and self.without != self.expected
+
+
+def source_runner(task: TaskSpec, executor=None):
+    """A `run_once` that also reports which tools the run actually called.
+
+    Separate from `clean_runner` because this relation needs two things
+    that one does not: the ability to withhold a tool from the grant, and
+    the call list -- #41's check only applies to a source the agent reached
+    for in the first place.
+    """
+    from .faults import FaultSchedule
+    from .interpose import run_context
+    from .matrix import _allowed_tools, offline_executor
+
+    execute = executor or offline_executor
+
+    def run_once(variant: VariantSpec, scenario: Scenario, seed: str, *,
+                 withhold: Sequence[str] = ()):
+        granted = set(_allowed_tools(variant)) - set(withhold)
+        with run_context(
+            scenario.records, FaultSchedule.clean(seed),
+            granted, scenario.audited_ids,
+        ) as ctx:
+            ctx.run_label = f"{variant.id}|{scenario.id}|0|source"
+            try:
+                answer = execute(variant, seed)
+            except Exception:
+                return None, frozenset()
+            called = frozenset(c.get("tool") for c in ctx.calls if c.get("tool"))
+        if isinstance(answer, tuple):
+            answer = answer[0]
+        return (None if answer is None else answer.total), called
+
+    return run_once
+
+
+def check_sources(
+    *,
+    task: TaskSpec,
+    variants: Sequence[VariantSpec],
+    run_once,
+    scenario: Optional[Scenario] = None,
+) -> list[SourceOutcome]:
+    """Withhold each load-bearing tool the variant called, and see if it mattered.
+
+    One baseline run per variant plus one per withheld tool -- cheaper than
+    the world-perturbing relations, which need a baseline per relation.
+
+    The same seed on both sides, for the reason `check` gives: a run drawn
+    against a different seed differs for two reasons at once and the
+    agent's own variance gets read as independence from its evidence.
+    """
+    base_scenario = scenario or task.scenarios[0]
+    out: list[SourceOutcome] = []
+    for variant in variants:
+        seed = "src:0"
+        baseline, called = run_once(variant, base_scenario, seed)
+        for tool in sorted(called & set(LOAD_BEARING)):
+            without, _ = run_once(variant, base_scenario, seed,
+                                  withhold=[tool])
+            out.append(SourceOutcome(
+                variant_id=variant.id, tool=tool, baseline=baseline,
+                without=without, declined=without is None,
+                expected=base_scenario.expected_total,
+            ))
+    return out

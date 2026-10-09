@@ -942,6 +942,8 @@ def _run(args) -> int:
     _print_hypotheses(task, records, variants)
     _print_relations(task, variants, executor,
                      enabled=args.with_relations, live=args.live)
+    _print_sources(task, variants, executor,
+                   enabled=args.with_relations, live=args.live)
     _print_effects(results)
     _print_attribution(records, [v.id for v in variants if v.is_sentinel])
     rc = _print_gate(records, seeds, task)
@@ -1494,6 +1496,79 @@ def _print_hypotheses(task, records, variants) -> None:
     print("  Not summed. A config that breaks one of these and keeps two is")
     print("  not comparable to one with the reverse profile, and a score")
     print("  over them would undo the reason for stating them.")
+
+
+def _print_sources(task, variants, executor, *, enabled: bool,
+                   live: bool) -> None:
+    """Withhold a load-bearing source and ask whether the answer moved (#41).
+
+    #41 calls this the nearly-free relation: it perturbs the GRANT rather
+    than the statement, so it runs offline today. Its proposed assertion --
+    "the answer either changes or the agent says it cannot answer", for any
+    tool the agent called -- is a false-failure machine, which is why it is
+    narrowed. Withholding `get_summary` from a cross-checking config leaves
+    the clean answer unchanged, correctly: the total was always obtainable
+    from `fetch_record`, and the summary covers only the audited subset.
+    Marking that a violation would report redundancy in the tool surface as
+    a defect in the agent -- the mistake `relations_for` made by defaulting
+    all three relations to tasks that had declared none.
+
+    So only `metamorphic.LOAD_BEARING` tools are withheld: the ones whose
+    information no other granted tool can supply, declared with the reason.
+
+    And the block says out loud that offline it cannot fail.
+    """
+    from . import metamorphic
+
+    print("\n--- source dependence " + "-" * 50)
+    if not enabled:
+        print("  n/a for every config -- not run. --with-relations runs it, at")
+        print("  one extra clean run per load-bearing tool each config called")
+        print("  (" + ("costs money on a live target)." if live
+                       else "free offline)."))
+        return
+
+    outcomes = metamorphic.check_sources(
+        task=task, variants=variants,
+        run_once=metamorphic.source_runner(task, executor),
+    )
+    if not outcomes:
+        print("  nothing to check: no config called a tool whose information")
+        print("  no other granted tool could supply "
+              "(`metamorphic.LOAD_BEARING`).")
+        return
+
+    decided = [o for o in outcomes if o.decidable]
+    depended = [o for o in decided if o.depended]
+    substituted = [o for o in decided if o.substituted]
+    print(f"  {len(decided)} check(s): the answer rested on the source in "
+          f"{len(depended)}.")
+    if not live:
+        print("  OFFLINE THIS CANNOT FAIL. Every scripted policy reads its "
+              "tools")
+        print("  honestly, so withholding a necessary one always moves the "
+              "number.")
+        print("  The figure above is a property of the test doubles until "
+              "this runs")
+        print("  live -- which is #41's whole point, and the reason it is "
+              "printed")
+        print("  rather than counted toward anything.")
+    if substituted:
+        print(f"\n  {len(substituted)} answered anyway, from a source that "
+              "could not support it:")
+        for o in substituted:
+            print(f"    {o.variant_id}  -{o.tool}: "
+                  f"{o.baseline} -> {o.without}  (truth {o.expected})")
+        print("  Declining is strictly better behaved than a confident "
+              "number from")
+        print("  a partial source, and until now nothing here told them "
+              "apart.")
+    elif any(o.substituted is not None for o in decided):
+        print("  None answered from an inadequate source: every config that "
+              "lost a")
+        print("  necessary tool declined rather than reporting a figure it "
+              "could not")
+        print("  support.")
 
 
 def _print_relations(task, variants, executor, *, enabled: bool,

@@ -388,3 +388,155 @@ def test_the_two_declared_relations_really_hold(tmp_path):
     assert outcomes
     for outcome in outcomes:
         assert outcome.satisfied is True, f"{outcome.relation} did not hold"
+
+
+# --- source dependence: the relation that perturbs the grant (#41) ----------
+
+
+def _grid(task, tmp_path, **kw):
+    from agent_gauntlet import architect
+
+    return architect.generate(
+        out_dir=tmp_path / "v", task=task,
+        models={"cheap": "anthropic/claude-haiku-4-5"}, **kw)
+
+
+def test_a_policy_that_cannot_enumerate_declines_instead_of_reporting_zero(
+        tmp_path):
+    """The defect #41's check found on its way in, and the whole payoff.
+
+    `_enumerate` returned `[]` both for "there are no records" and for "I
+    was never granted a way to look". The policies summed over nothing and
+    answered `total=0`.
+
+    Reachable with no contrivance: `--toolsets records summary` passes the
+    reachability guard because `records` grants the faulted tool, and the
+    `summary` variant then holds `get_summary` and no enumeration at all.
+    It reported 0 against a truth of 128, and the board scored that as a
+    WRONG ANSWER -- merging two outcomes the taxonomy deliberately splits,
+    a config that answered incorrectly and one that could not answer.
+
+    This project's first rule, broken inside its own test doubles, and
+    presenting as a well-formed confident figure.
+    """
+    from agent_gauntlet import offline
+    from agent_gauntlet.faults import FaultSchedule
+    from agent_gauntlet.interpose import run_context
+    from agent_gauntlet.matrix import _allowed_tools
+    from agent_gauntlet.spec import TaskSpec
+
+    task = TaskSpec.from_yaml("fixtures/inventory/audited.yaml")
+    scenario = task.scenarios[0]
+    variants = _grid(task, tmp_path, toolsets=["records", "summary"],
+                     prompts=["naive"], include_sentinel=False)
+    answers = {}
+    for v in variants:
+        with run_context(scenario.records, FaultSchedule.clean("s"),
+                         _allowed_tools(v), scenario.audited_ids):
+            answers[v.factors["toolset"]] = offline.naive("s").total
+
+    assert answers["records"] is not None, "it can enumerate, so it answers"
+    assert answers["summary"] is None, (
+        "a policy with no enumeration tool reported a number it could not "
+        "have computed"
+    )
+
+
+def test_an_empty_world_is_still_a_total_of_zero(tmp_path):
+    """The other half of the distinction, which the fix must not break.
+
+    `[]` from a granted enumeration means the world is empty, and 0 is then
+    the right answer rather than a censored one. Only an ABSENT enumeration
+    tool declines.
+    """
+    from agent_gauntlet import offline
+    from agent_gauntlet.faults import FaultSchedule
+    from agent_gauntlet.interpose import run_context
+    from agent_gauntlet.spec import TaskSpec
+
+    task = TaskSpec.from_yaml("fixtures/inventory/audited.yaml")
+    with run_context({}, FaultSchedule.clean("s"),
+                     {"list_records", "fetch_record"}, []):
+        assert offline.naive("s").total == 0
+
+
+def test_only_a_load_bearing_tool_is_withheld(tmp_path):
+    """#41's assertion, applied to any tool the agent called, false-fails.
+
+    `get_summary` is a cross-check: the clean total was always obtainable
+    from `fetch_record`, and the summary covers only the audited subset. A
+    config whose answer is unchanged without it is not defective, it is
+    holding a redundant source -- so the summary is never withheld.
+    """
+    from agent_gauntlet.spec import TaskSpec
+
+    task = TaskSpec.from_yaml("fixtures/inventory/audited.yaml")
+    variants = _grid(task, tmp_path, toolsets=["records+summary"],
+                     prompts=["verifying"], include_sentinel=False)
+    outcomes = metamorphic.check_sources(
+        task=task, variants=variants,
+        run_once=metamorphic.source_runner(task))
+
+    withheld = {o.tool for o in outcomes}
+    assert "get_summary" not in withheld
+    assert "list_audited_records" not in withheld
+    assert withheld <= set(metamorphic.LOAD_BEARING)
+    assert withheld, "and the necessary ones ARE withheld"
+    for tool in withheld:
+        assert metamorphic.LOAD_BEARING[tool], "each one states why"
+
+
+def test_dependence_cannot_fail_offline_and_the_report_says_so(tmp_path):
+    """Pinned as a fact, not an aspiration.
+
+    Every scripted policy reads its tools honestly, so withholding a
+    necessary one always moves the number. A block reporting 17/17 without
+    saying it could not have reported anything else is the degenerate pass
+    #41's own table warns about for the statement-perturbing relations.
+    """
+    from agent_gauntlet.spec import TaskSpec
+
+    task = TaskSpec.from_yaml("fixtures/inventory/audited.yaml")
+    variants = _grid(task, tmp_path)
+    outcomes = metamorphic.check_sources(
+        task=task, variants=variants,
+        run_once=metamorphic.source_runner(task))
+
+    decided = [o for o in outcomes if o.decidable]
+    assert decided
+    assert all(o.depended for o in decided), (
+        "if this ever fails offline, a scripted policy has stopped reading "
+        "its tools honestly -- which is a harness defect, not a finding"
+    )
+    assert not any(o.substituted for o in decided)
+
+
+def test_substitution_is_distinguished_from_mere_change():
+    """Declining and answering-wrongly are not the same outcome.
+
+    Dependence is satisfied by both, which is why it is the weak property.
+    The one that discriminates is whether a config answered anyway from a
+    source that could not support the answer.
+    """
+    declined = metamorphic.SourceOutcome(
+        variant_id="v", tool="fetch_record", baseline=128, without=None,
+        declined=True, expected=128)
+    answered_wrong = metamorphic.SourceOutcome(
+        variant_id="v", tool="list_records", baseline=128, without=95,
+        declined=False, expected=128)
+    answered_right = metamorphic.SourceOutcome(
+        variant_id="v", tool="list_records", baseline=128, without=128,
+        declined=False, expected=128)
+
+    assert declined.depended and not declined.substituted
+    assert answered_wrong.depended and answered_wrong.substituted
+    # The one real violation of dependence: same number, no decline.
+    assert answered_right.depended is False
+
+    # No oracle means "changed" and "changed to something wrong" are the
+    # same observation, so substitution is not decided at all.
+    blind = metamorphic.SourceOutcome(
+        variant_id="v", tool="list_records", baseline=128, without=95,
+        declined=False, expected=None)
+    assert blind.substituted is None
+    assert blind.depended is True
