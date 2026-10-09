@@ -133,6 +133,7 @@ flowchart TB
         HYP["<b>hypotheses</b><br/>falsifiable bounds · verdicts"]
         PRICE["<b>pricing</b><br/>rate snapshot · drift"]
         COV["<b>coverage</b><br/>what this task can measure"]
+        EXPL["<b>explore</b><br/>the whole fault space, one config"]
         CALIB["<b>calibration</b><br/>proper scoring · skill · resolution"]
     end
     subgraph Watch["Watch (does anything still hold?)"]
@@ -199,6 +200,7 @@ need, that surfaces as `n/a` rather than as a special case.
 | `hypotheses` | Pre-registered falsifiable bounds, and three ways a verdict can lie | Sum them into a score |
 | `pricing` | The rate table a dollar figure was computed against | Invent a date upstream does not publish |
 | `coverage` | What a task and grid can measure, statically, before anything is spent | Promise a number, or refuse a task for having no oracle |
+| `explore` | Exhaustive sweep of one config's reachable fault space (#18) | Call itself discovery — the space is a registry, so this is coverage |
 | `calibration` | Scoring a config's own stated confidence with a proper rule | Print a Brier without its reference, or read a missing confidence as half |
 | `certify` | What a config scored, when, and over how much evidence | Let a claim age silently |
 | `canary` | A cheap pinned fingerprint, and the shift it admits it cannot see | Report "unchanged" without its blind spot |

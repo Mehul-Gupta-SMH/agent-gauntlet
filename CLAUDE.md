@@ -118,6 +118,16 @@ silence was being read as coverage. A perturbed world is stamped
 `synthetic` by the code that builds it, whatever its parent was -- `scale`
 triples quantities no trace contains.
 
+**Coverage is not discovery, and `explore` is coverage.** #18 asks for
+an exploration mode because chaos engineering finds unknown unknowns. Its
+own argument rules that out here: the adversity is a registry of five tools
+and an enum of kinds, so there is nothing open-ended. Per config the space
+is 4-10 cells, which is covered rather than searched -- and that buys the
+one property no board number has, an EXACT fraction with no sampling error,
+because the denominator is the whole space. It cannot find a fault CLASS
+nobody implemented. One run per cell, no repeats: exact over the space,
+silent about run-to-run noise. The board is the other way round.
+
 **A registry pairs tools with kinds and says nothing about keys.**
 `INJECTION_SITES` asserts that a tool may carry a kind; it cannot assert
 that the site's own lookup matches the schedule's key. `list_records` was

@@ -54,7 +54,20 @@ gauntlet coverage fixtures/inventory/audited.yaml
 
 # One config, in full: intervals, how it fails, its detection curve.
 gauntlet explain runs/runs.jsonl --variant "smart verifying records+summary"
+
+# Every adversity one config can meet, exhaustively. Findings, not a ranking.
+gauntlet explore fixtures/inventory/audited.yaml --variant records+summary
 ```
+
+`explore` is [#18](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/18)'s
+exploration mode under a more honest name. #18 wants discovery, and its own
+argument rules that out here: the adversity available is a registry of five
+tools and an enum of kinds, so there is nothing open-ended to explore. What
+there is, per config, is **4 to 10 cells** — small enough to cover completely.
+That buys a property no number on the board has: the fraction is **exact**,
+because the denominator is the whole space rather than a draw from it. It
+cannot find a fault *class* nobody implemented, and it says so.
+
 
 Add `--max-cost-per-run 0.02` to get the constrained answer — the cheapest
 config inside the band this run could not order, beside the unconstrained

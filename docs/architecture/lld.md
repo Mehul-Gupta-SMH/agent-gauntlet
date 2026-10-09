@@ -39,6 +39,7 @@ flowchart TD
     CAN["<b>canary</b> · 304<br/>behavioural fingerprint · blind spot"]
     PRICE["<b>pricing</b> · 242<br/>pricing authority · drift"]
     COV["<b>coverage</b> · 264<br/>what a task can measure · audit"]
+    EXPL["<b>explore</b> · 263<br/>fault-space sweep · findings"]
     CALIB["<b>calibration</b> · 216<br/>Brier · skill · Murphy"]
 
     CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP & CAN & COV & CALIB
@@ -678,6 +679,8 @@ test_pricing     what actually priced a dollar figure -- a table or the
                  SDK itself -- and the cost that goes n/a when two meet
 test_reward_hacking  the answer written into the statement it is graded
                  against, refused before a matrix exists
+test_explore     the whole fault space of one config, why that is coverage
+                 and not discovery, and the cell that decides nothing
 test_coverage    what a task can measure before it is run, and the audit
                  that catches the prediction being wrong
 test_calibration  that the rule is proper, and the three ways a

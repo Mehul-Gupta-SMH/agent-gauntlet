@@ -154,6 +154,26 @@ def build_parser() -> argparse.ArgumentParser:
     cov.add_argument("--live", action="store_true",
                      help="assume a live run, which makes cost measurable")
 
+    expl = sub.add_parser(
+        "explore",
+        help="sweep every adversity a config can actually meet, exhaustively "
+             "(#18)",
+    )
+    expl.add_argument("task", type=Path)
+    expl.add_argument("--variant", default=None, metavar="SUBSTRING",
+                      help="narrow to the configs whose id contains this. "
+                           "#18's exploration mode is about ONE config, "
+                           "usually the one you already run")
+    expl.add_argument("--scenario", default=None,
+                      help="which scenario's world to sweep (default: the "
+                           "first)")
+    expl.add_argument("--live", action="store_true",
+                      help="run against real models (COSTS MONEY): one call "
+                           "per cell per config")
+    expl.add_argument("--models", nargs="*", metavar="ALIAS=MODEL",
+                      default=None)
+    expl.add_argument("--target", default="claude")
+
     canary = sub.add_parser(
         "canary",
         help="a tiny pinned probe of one config, to notice the world moving "
@@ -311,6 +331,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _coverage(args)
     if args.command == "explain":
         return _explain(args)
+    if args.command == "explore":
+        return _explore(args)
     if args.command == "ui":
         from .server import serve
 
@@ -2237,6 +2259,108 @@ def _explain_one(row, runs, results, labels, *, task_path=None) -> None:
         for bound in result.bounds:
             got = "n/a" if bound.observed is None else f"{bound.observed:.0%}"
             print(f"      {bound.says:<42} was {got}  (n={bound.n})")
+
+
+def _explore(args) -> int:
+    """Exhaustive coverage of one config's reachable fault space (#18).
+
+    Named for the issue's "exploration mode" and deliberately NOT claiming
+    to be it. #18's own argument -- you cannot find an unknown failure mode
+    with a checklist written in advance -- rules out exploration here,
+    because the adversity available is a registry of five tools and an enum
+    of kinds. What that buys instead is a space small enough to cover
+    COMPLETELY, which the comparison board can never do.
+
+    The trade, stated rather than implied: one run per cell and no
+    repeats, so this is exact over the space and silent about run-to-run
+    noise. The board is the other way round.
+    """
+    from tempfile import TemporaryDirectory
+
+    from . import explore
+    from .matrix import _allowed_tools, offline_executor
+
+    task = TaskSpec.from_yaml(args.task)
+    scenario = (task.scenario(args.scenario) if args.scenario
+                else task.scenarios[0])
+    models = parse_models(getattr(args, "models", None))
+
+    print(f"task        {task.id}  (oracle={task.oracle.value})")
+    print(f"fingerprint {task.fingerprint()}")
+    print(f"scenario    {scenario.id}  "
+          f"({len(scenario.records)} records, truth {scenario.expected_total})")
+
+    with TemporaryDirectory() as tmp:
+        variants = architect.generate(
+            out_dir=Path(tmp) / "variants", task=task, models=models,
+            targets=[args.target], include_sentinel=False,
+        )
+        if args.variant:
+            variants = [v for v in variants if args.variant in v.id]
+            if not variants:
+                print(f"\nno config matches {args.variant!r}")
+                return 2
+
+        executor = offline_executor
+        if args.live:
+            from .live import live_executor
+
+            executor = live_executor(task, scenario)
+
+        cells = sum(len(explore.space(task, v, scenario,
+                                      granted=sorted(_allowed_tools(v))))
+                    for v in variants)
+        print(f"space       {cells} cell(s) over {len(variants)} config(s)"
+              + ("  -- LIVE, one model call each" if args.live else ""))
+        print("            Exhaustive, not sampled: this is the whole "
+              "reachable")
+        print("            space, so the fraction below has no interval and "
+              "needs none.")
+        print("            It cannot find a fault CLASS nobody implemented "
+              "(#18).")
+
+        worst = 0
+        for variant in variants:
+            granted = sorted(_allowed_tools(variant))
+            findings = explore.sweep(
+                task=task, variant=variant, scenario=scenario,
+                granted=granted, execute=executor,
+            )
+            label = (variant.id.replace("model-", "").replace("prompt-", "")
+                     .replace("toolset-", ""))
+            if not findings:
+                print(f"\n{label}")
+                print("  NO REACHABLE CELL. Nothing this harness can inject "
+                      "reaches a tool")
+                print("  this config holds, so it cannot be adversely tested "
+                      "at all -- which")
+                print("  is a fact about the grid, not a clean bill of health.")
+                continue
+
+            ok, decided = explore.survived(findings)
+            censored = explore.censored(findings)
+            print(f"\n{label}")
+            print(f"  survived {ok}/{decided} of the cells that decided "
+                  f"anything"
+                  + (f", {len(censored)} censored" if censored else ""))
+            for f in findings:
+                if f.got_through:
+                    worst += 1
+                    print(f"    GOT THROUGH  {f.cell.label:40s} "
+                          f"answer={f.answer} (truth {f.expected})  "
+                          f"{f.outcome}")
+            for f in censored:
+                # n/a, never ok: a cell that decided nothing is not a cell
+                # the config survived. And WHICH reason, per rule 3 -- not
+                # applicable and withheld are different facts.
+                print(f"    n/a          {f.cell.label:40s} {f.why_censored}")
+
+        print(f"\n{worst} finding(s) across {len(variants)} config(s).")
+        print("Findings, not a ranking: there is nothing to be fair between "
+              "when the")
+        print("subject is one config, so no fairness invariant applies here "
+              "(#18).")
+    return 0
 
 
 def _coverage(args) -> int:
