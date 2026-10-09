@@ -131,8 +131,14 @@ def test_a_winner_that_does_not_hold_up_is_flagged():
     assert held.holdout_rank == 2
 
     # And the biased path would have reported something far rosier.
-    naive = board.winner(board.summarize(records))
+    # `point_leader`, not `champion`: the biased path IS point-based
+    # selection, which is what this mechanism exists to correct. `champion`
+    # refuses on this data -- three seeds separate nothing -- and that is
+    # the right answer for a *reported* winner and the wrong tool for
+    # reconstructing the mistake (#44).
+    naive = board.point_leader(board.summarize(records))
     assert naive.accuracy > held.holdout_score
+    assert board.champion(board.summarize(records)).pick is None
 
 
 def test_a_tied_selection_yields_no_winner_to_score():

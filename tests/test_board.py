@@ -590,3 +590,78 @@ def test_a_placed_row_is_never_also_reported_as_unplaced():
     assert chosen.unplaced == []
     assert chosen.pick.variant_id == "near"
     assert "could not tell apart" in chosen.basis
+
+
+def _obj(vid, acc, far, *, low, high, n=20):
+    """A row with an accuracy interval, for the domination objectives."""
+    from agent_gauntlet.stats import Interval
+
+    return board.VariantResult(
+        variant_id=vid, factors={}, n_runs=n, quality=acc, accuracy=acc,
+        clean_quality=acc, faulted_quality=acc, propagation_rate=0.0,
+        detection_rate=None, false_alarm_rate=far, mean_steps=1.0,
+        cost_usd=0.0,
+        intervals={"accuracy": Interval(value=acc, low=low, high=high, n=n,
+                                        method="wilson")},
+    )
+
+
+def test_domination_on_points_named_a_winner_the_run_could_not_order():
+    """The last place in this module that read an order out of noise (#44).
+
+    These are experiment 009's measured ranks 3 and 4 -- 0.4642 against
+    0.4629, a gap of 0.0013, with overlapping Wilson intervals.
+    `decidable_depth` says 0 (the run ordered nothing, even at the top) and
+    `winner` used to name a champion anyway, which the CLI printed under
+    its own heading and exported to disk.
+
+    The same gap turned up on a bundled fixture: on `audited.yaml` at
+    seeds=2 repeats=2, smart-verifying 0.991972 [0.982, 1.000] against
+    cheap-verifying 0.990681 [0.981, 0.998]. The board was recommending
+    the expensive model on thirteen ten-thousandths.
+    """
+    rows = [_obj("a", 0.4642, 0.0, low=0.35, high=0.57),
+            _obj("b", 0.4629, 0.0, low=0.35, high=0.57)]
+    assert board.decidable_depth(rows, metric="accuracy") == 0
+
+    verdict = board.champion(rows)
+    assert verdict.pick is None
+    assert "cannot separate" in verdict.basis
+    assert {r.variant_id for r in verdict.contenders} == {"a", "b"}
+
+    # The point-based selector still answers, because selection is allowed
+    # to be noisy -- that is what the held-out split absorbs.
+    assert board.point_leader(rows).variant_id == "a"
+
+
+def test_a_separated_lead_is_still_a_champion():
+    rows = [_obj("clear", 0.95, 0.0, low=0.88, high=0.99),
+            _obj("behind", 0.40, 0.0, low=0.25, high=0.55)]
+    verdict = board.champion(rows)
+    assert verdict.pick is not None
+    assert verdict.pick.variant_id == "clear"
+    assert "separated" in verdict.basis
+    assert verdict.contenders == []
+
+
+def test_an_objective_with_no_interval_never_breaks_the_tie():
+    """An unmeasured axis must not be the thing that decides a winner.
+
+    `false_alarm_rate` carries no interval on these rows, so separation can
+    only come from accuracy -- and there it does not.
+    """
+    lead = _obj("lead", 0.50, 0.00, low=0.35, high=0.65)
+    rival = _obj("rival", 0.49, 0.40, low=0.34, high=0.64)
+    verdict = board.champion([lead, rival])
+    assert verdict.pick is None, "separated only on an axis with no interval"
+
+
+def test_the_refusal_names_what_is_still_in_contention():
+    """Returning None is a real answer (#11), and an answer needs its set."""
+    # Neither dominates: `a` is more accurate, `b` cries wolf less often.
+    rows = [_obj("a", 0.90, 0.30, low=0.80, high=0.96),
+            _obj("b", 0.85, 0.00, low=0.75, high=0.92)]
+    verdict = board.champion(rows)
+    assert verdict.pick is None
+    assert "non-dominated" in verdict.basis
+    assert {r.variant_id for r in verdict.contenders} == {"a", "b"}

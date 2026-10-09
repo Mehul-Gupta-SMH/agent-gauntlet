@@ -734,7 +734,15 @@ Every result, with raw output committed alongside it, is in
   grading. The design pushes as much as possible onto executable checks precisely
   because a judge would import its own bias into the answer.
 - **One run is not a measurement.** Agent runs are high-variance. Every variant
-  runs k times per scenario, and no winner is declared when the top is tied.
+  runs k times per scenario, and no winner is declared when the top is tied —
+  *or* when the leader's interval overlaps a rival's on every objective. That
+  second half was not true until
+  [#44](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/44): a tie
+  meant an exact tie on point estimates, so a 0.0013 gap counted as a result.
+  It is now a refusal that names what is still in contention. Selecting a
+  winner is still allowed to be noisy, which is precisely why the reported
+  score comes from replications the selection never saw
+  ([#20](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/20)).
 - **This is expensive.** Variants × scenarios × repeats × (clean + faulted) ×
   seeds is multiplicative. Budget ceilings and cheap-check escalation are
   load-bearing parts of the design, not optimizations.

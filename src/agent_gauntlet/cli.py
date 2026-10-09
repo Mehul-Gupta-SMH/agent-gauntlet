@@ -2406,11 +2406,16 @@ def _export(results, variants, out: Path, records=None):
     and gets worse the wider the search -- the winner's curse (#20).
     """
     print("\n--- winner " + "-" * 61)
-    champion = board.winner(results)
+    verdict = board.champion(results)
+    champion = verdict.pick
     if champion is None:
-        print("  NO WINNER -- more than one config is non-dominated, or every")
-        print("  config is gated. That is the honest answer, not a failure to")
-        print("  compute one: the remaining tradeoff is yours to make.")
+        # The reason comes from the computation, not from a list of reasons
+        # kept here that nothing checks against it (#44).
+        print(f"  NO WINNER -- {verdict.basis}.")
+        print("  That is the honest answer, not a failure to compute one.")
+        for r in verdict.contenders:
+            print(f"    {r.label}   accuracy={_score(r.accuracy)}   "
+                  f"false alarms={r.false_alarm_rate:.0%}")
         return None
 
     held = None

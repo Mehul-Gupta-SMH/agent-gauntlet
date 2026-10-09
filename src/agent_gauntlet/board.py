@@ -856,29 +856,160 @@ def search_cost(results: Sequence[VariantResult]) -> dict[str, object]:
     }
 
 
-def winner(
+class Champion(BaseModel):
+    """The single winner this run supports, or the reason there is none (#44).
+
+    Domination on point estimates was the last place in this module that
+    read an order out of a difference no interval supports. The same file
+    computes `decidable_depth`, which says how far down the board the run
+    ordered *anything* -- and the two disagreed. Fed experiment 009's
+    measured ranks 3 and 4 (0.4642 against 0.4629, a gap of 0.0013, with
+    identical Wilson intervals), `decidable_depth` returned 0 and `winner`
+    named a champion, which the CLI then printed under its own heading and
+    exported to disk.
+
+    So domination here is statistical: the champion must be at least as
+    good as every rival on every objective and *separated* from it on at
+    least one. Non-overlap implies a difference; overlap does not imply
+    sameness, so the conservative direction is refusal, which is also the
+    one this project already treats as a real answer.
+
+    An objective with no interval cannot establish separation, so it never
+    contributes one -- an unmeasured axis must not be the thing that breaks
+    a tie.
+    """
+
+    pick: Optional[VariantResult] = None
+    basis: str
+    """Why there is a champion, or why there is not, in the words the board
+    prints. Recorded rather than re-derived at the print site."""
+
+    contenders: list[VariantResult] = Field(default_factory=list)
+    """The configs that remain in contention when there is no champion:
+    the non-dominated set, or those the winner could not be separated
+    from. The tradeoff left for the operator (#11)."""
+
+
+def champion(
+    results: Sequence[VariantResult],
+    *,
+    objectives: Sequence[str] = ("accuracy", "false_alarm_rate"),
+    maximize: Sequence[bool] = (True, False),
+) -> Champion:
+    """The single non-dominated, ungated, *separated* config -- or none.
+
+    Deliberately not "the top of the accuracy ranking". Two configs can tie
+    on accuracy and differ sharply on how often they cry wolf, and a
+    ranking on one axis throws that away. Domination uses the extra axis
+    without inventing weights for it.
+
+    And deliberately not domination on points either, which was the defect
+    (#44): see `Champion`.
+    """
+    eligible = [r for r in results if not r.gated and not r.is_sentinel]
+    if not eligible:
+        return Champion(basis="every config is gated, or none ran")
+
+    front = pareto(eligible, objectives=objectives, maximize=maximize)
+    if not front:
+        return Champion(
+            basis="no config carries every objective, so there is no frontier",
+        )
+    if len(front) > 1:
+        return Champion(
+            basis=(f"{len(front)} configs are non-dominated, so the "
+                   "remaining tradeoff is yours to make"),
+            contenders=front,
+        )
+
+    lead = front[0]
+    unseparated = [
+        r for r in eligible
+        if r.variant_id != lead.variant_id
+        and not _separated(lead, r, objectives=objectives, maximize=maximize)
+    ]
+    if unseparated:
+        return Champion(
+            basis=(f"one config leads on points but this run cannot separate "
+                   f"it from {len(unseparated)} other(s) on any objective -- "
+                   "an order it did not measure"),
+            contenders=[lead, *unseparated],
+        )
+    return Champion(
+        pick=lead,
+        basis=("the only non-dominated config, separated from every rival "
+               "on at least one objective"),
+    )
+
+
+def point_leader(
     results: Sequence[VariantResult],
     *,
     objectives: Sequence[str] = ("accuracy", "false_alarm_rate"),
     maximize: Sequence[bool] = (True, False),
 ) -> Optional[VariantResult]:
-    """The single non-dominated, ungated config -- or None.
+    """The single non-dominated config on POINT estimates -- for selection.
 
-    Deliberately *not* "the top of the accuracy ranking". Two configs can
-    tie on accuracy and differ sharply on how often they cry wolf, and a
-    ranking on one axis throws that away. Domination uses the extra axis
-    without inventing weights for it: a config wins only if nothing is at
-    least as good everywhere and better somewhere.
+    Separate from `champion` on purpose, because selecting and reporting are
+    different jobs and only one of them may be noisy.
 
-    Returns None when several configs remain non-dominated. That is a real
-    answer -- the tradeoff is the user's to make (#11) -- not a failure to
-    compute one.
+    `champion` reports, so it must be separated: naming a best config on a
+    gap no interval supports is the #44 defect. This selects, and its noise
+    is the thing the held-out split exists to absorb -- #20's whole premise
+    is that picking the max of N noisy estimates IS biased, which is why the
+    reported number comes from replications the selection never saw.
+    Requiring separation here would not make the selection better, it would
+    make the honest reporting mechanism unreachable on any board small
+    enough to need it.
+
+    A selection that was noise still shows up: `HeldOutWinner.holdout_rank`
+    is where a winner chosen by a coin flip fails to hold up.
     """
     eligible = [r for r in results if not r.gated and not r.is_sentinel]
     if not eligible:
         return None
     front = pareto(eligible, objectives=objectives, maximize=maximize)
     return front[0] if len(front) == 1 else None
+
+
+def _separated(
+    lead: VariantResult,
+    rival: VariantResult,
+    *,
+    objectives: Sequence[str],
+    maximize: Sequence[bool],
+) -> bool:
+    """Does `lead` beat `rival` by more than this run's noise?
+
+    True when some objective's intervals do not overlap and `lead` is on
+    the better side of it. An objective with no interval on either row
+    contributes nothing: an unmeasured axis must not break a tie.
+    """
+    for obj, mx in zip(objectives, maximize):
+        a, b = lead.intervals.get(obj), rival.intervals.get(obj)
+        if a is None or b is None or not a.excludes(b):
+            continue
+        av, bv = getattr(lead, obj, None), getattr(rival, obj, None)
+        if av is None or bv is None:
+            continue
+        if (av > bv) if mx else (av < bv):
+            return True
+    return False
+
+
+def winner(
+    results: Sequence[VariantResult],
+    *,
+    objectives: Sequence[str] = ("accuracy", "false_alarm_rate"),
+    maximize: Sequence[bool] = (True, False),
+) -> Optional[VariantResult]:
+    """`champion(...).pick`, for callers that want only the config.
+
+    A thin accessor over one computation rather than a second
+    implementation -- a described basis drifts from the real one, which is
+    what #44 was about.
+    """
+    return champion(results, objectives=objectives, maximize=maximize).pick
 
 
 class HeldOutWinner(BaseModel):
@@ -971,7 +1102,9 @@ def held_out_winner(
             row.is_sentinel = row.variant_id in sentinel_ids
         return out
 
-    chosen = winner(_summarize(set(selection)))
+    # Point-based on purpose: see `point_leader`. The selection is allowed
+    # to be noisy; that is what the holdout measures.
+    chosen = point_leader(_summarize(set(selection)))
     if chosen is None:
         return None
 

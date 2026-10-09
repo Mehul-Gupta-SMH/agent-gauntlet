@@ -19,8 +19,8 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 2457<br/>argparse · board rendering · probe · ui"]
-    BOARD["<b>board</b> · 1218<br/>summarize · rank · pareto · depth · curve"]
+    CLI["<b>cli</b> · 2462<br/>argparse · board rendering · probe · ui"]
+    BOARD["<b>board</b> · 1351<br/>summarize · rank · pareto · depth · curve"]
     ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 592<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 540<br/>RunContext · tool surface · notes"]
@@ -324,6 +324,28 @@ config lost to a 70% one and appeared nowhere. Those rows come back as
 refused and handed back the same way: an unpriced run is not a free one
 (#14), and admitting them would make "no price" the cheapest possible
 answer.
+
+**`champion`** reports the single winner, and **`point_leader`** selects
+one. The split is the point. Reporting must be separated — naming a best
+config on a gap no interval supports is #44's defect, and it was live:
+fed experiment 009's measured ranks 3 and 4 (0.4642 against 0.4629, a gap
+of 0.0013, identical intervals) this module's own `decidable_depth`
+returned 0 while `winner` named a champion the CLI then printed and
+exported to disk. The same gap sits on a bundled fixture — `audited.yaml`
+at seeds=2 repeats=2 put smart-verifying 0.991972 [0.982, 1.000] above
+cheap-verifying 0.990681 [0.981, 0.998], so the board was recommending
+the expensive model on thirteen ten-thousandths.
+
+Selection is allowed to be noisy, which is why `point_leader` exists and
+why `held_out_winner` calls it. #20's premise is that picking the max of N
+noisy estimates *is* biased — that is the reason the reported number comes
+from replications the selection never saw. Requiring separation there
+would not improve the selection, it would make the honest reporting
+mechanism unreachable on any board small enough to need it. A selection
+that was noise still surfaces, as `HeldOutWinner.holdout_rank`.
+
+An objective with no interval never contributes separation: an unmeasured
+axis must not be the thing that breaks a tie.
 
 **`search_cost`** reports what finding the answer cost, as opposed to what
 running it will. Without it the escalation ladder — offline, then `probe`,
