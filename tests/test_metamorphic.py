@@ -540,3 +540,110 @@ def test_substitution_is_distinguished_from_mere_change():
         declined=False, expected=None)
     assert blind.substituted is None
     assert blind.depended is True
+
+
+# --- does a relation gate? #43's open point 3 -------------------------------
+
+
+def _outcome(**kw):
+    base = dict(variant_id="v", relation="relabel", baseline=100,
+                observed=100, wanted=100, runs=1, held=1)
+    base.update(kw)
+    return metamorphic.RelationOutcome(**base)
+
+
+def test_a_violation_seen_once_does_not_gate():
+    """#43 point 3, settled by measurement rather than by nerve.
+
+    #27's rule makes a relation gate-shaped: it is a binary property, so a
+    violation is like propagation rather than like a quality drop. The rule
+    is necessary and not sufficient -- the board runs ONE pair per
+    relation, and one violated pair on a live model cannot be told from
+    variance. #37's whole point.
+
+    The exit code used to be `3 if violated else 0`, which gated on exactly
+    that single observation.
+    """
+    once = _outcome(runs=1, held=0)
+    assert once.satisfied is False, "it is a violation"
+    assert not once.gates, "and it is not a property yet"
+    assert metamorphic.gating([once]) == {}
+    assert metamorphic.ungated_violations([once]) == {"v": ["relabel"]}
+
+
+def test_a_violation_reproduced_gates():
+    twice = _outcome(runs=2, held=0)
+    assert twice.gates
+    assert metamorphic.gating([twice]) == {"v": ["relabel"]}
+    assert metamorphic.ungated_violations([twice]) == {}
+
+
+def test_a_violation_that_sometimes_holds_is_variance_not_a_property():
+    """Held once in three is the flake case, and it must not gate.
+
+    This is where #27's inversion bites: CI retries a flaky test until
+    green, and here flakiness IS the measurement. A config that breaks
+    `relabel` one time in three has a number, not a property, and gating
+    on it would delete the number.
+    """
+    flaky = _outcome(runs=3, held=1, observed=90)
+    assert flaky.satisfied is False
+    assert not flaky.gates
+    assert metamorphic.ungated_violations([flaky]) == {"v": ["relabel"]}
+
+
+def test_an_undecidable_relation_never_gates():
+    """A run that produced no answer satisfies and violates nothing."""
+    censored = _outcome(runs=2, held=0, observed=None)
+    assert censored.decidable is False
+    assert censored.satisfied is None
+    assert not censored.gates
+    assert metamorphic.gating([censored]) == {}
+    # And it is not an ungated violation either -- it is not a violation.
+    assert metamorphic.ungated_violations([censored]) == {}
+
+
+def test_gating_and_ungated_are_disjoint_and_cover_the_violations():
+    outcomes = [
+        _outcome(variant_id="gated", runs=3, held=0),
+        _outcome(variant_id="flaky", runs=3, held=2),
+        _outcome(variant_id="once", runs=1, held=0),
+        _outcome(variant_id="clean", runs=3, held=3),
+    ]
+    gated = metamorphic.gating(outcomes)
+    ungated = metamorphic.ungated_violations(outcomes)
+    assert set(gated) == {"gated"}
+    assert set(ungated) == {"flaky", "once"}
+    assert not set(gated) & set(ungated)
+    violations = {o.variant_id for o in outcomes if o.satisfied is False}
+    assert violations == set(gated) | set(ungated)
+    assert "clean" not in violations
+
+
+def test_the_sentinel_is_what_a_relation_catches(tmp_path):
+    """An instrument check that needs no oracle at all.
+
+    `records-partial` enumerates only a sample, so relabelling the records
+    changes which half it sees. It violates `relabel` on every pair --
+    which is the structural sentinel being caught by a check that never
+    consults a known answer, and the strongest case for relations on an
+    unlabelled task (#43).
+    """
+    from agent_gauntlet import architect
+    from agent_gauntlet.spec import TaskSpec
+
+    task = TaskSpec.from_yaml("fixtures/inventory/audited.yaml")
+    variants = architect.generate(
+        out_dir=tmp_path / "v", task=task,
+        models={"cheap": "anthropic/claude-haiku-4-5"})
+    outcomes = metamorphic.check(
+        task=task, variants=variants, execute=None,
+        run_once=metamorphic.clean_runner(task), repeats=3)
+
+    gated = metamorphic.gating(outcomes)
+    sentinels = [v.id for v in variants if v.is_sentinel]
+    assert sentinels
+    assert set(gated) == set(sentinels), (
+        "a relation caught something other than the sentinel, or missed it"
+    )
+    assert "relabel" in gated[sentinels[0]]

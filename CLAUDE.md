@@ -118,6 +118,16 @@ silence was being read as coverage. A perturbed world is stamped
 `synthetic` by the code that builds it, whatever its parent was -- `scale`
 triples quantities no trace contains.
 
+**A relation violation gates only once reproduced.** #27 makes it
+gate-shaped -- binary, so like propagation rather than a quality drop --
+and that rule is necessary, not sufficient. The board runs ONE pair per
+relation, and one violated pair cannot be told from variance (#37).
+`MIN_RUNS_TO_GATE = 2`: `held == 0` over at least two pairs. `gauntlet
+relations` used to exit 3 on any violation, which gated on exactly that
+single observation. `gating()` and `ungated_violations()` are disjoint and
+reported separately, because "violated once in one try" and "violated
+twice in two" are different claims.
+
 **Coverage is not discovery, and `explore` is coverage.** #18 asks for
 an exploration mode because chaos engineering finds unknown unknowns. Its
 own argument rules that out here: the adversity is a registry of five tools

@@ -185,6 +185,16 @@ of the test doubles as a property of the agents. It needs the live path.
 """
 
 
+MIN_RUNS_TO_GATE = 2
+"""How many pairs a violation needs before it blocks a config (#43).
+
+Two, because one violated pair cannot be distinguished from variance and
+the board runs relations at `repeats=1`. Raising it costs a full extra run
+of every variant per relation, which is why the board does not pay it by
+default and `gauntlet relations --repeats 3` is the gating path.
+"""
+
+
 @dataclass
 class RelationOutcome:
     """One relation against one variant."""
@@ -211,6 +221,29 @@ class RelationOutcome:
         if not self.decidable:
             return None
         return self.held == self.runs and self.runs > 0
+
+    @property
+    def gates(self) -> bool:
+        """Does this violation block the config, or only get reported? (#43)
+
+        #27's rule says gate on binary properties and report on statistical
+        ones, and a relation is binary -- so by that rule a violation is
+        gate-shaped, like propagation rather than like a quality drop.
+
+        The rule is necessary and not sufficient. The board runs relations
+        at `repeats=1`, and ONE violated pair on a live model cannot be
+        told from variance; #37's whole point is that one measurement is
+        not a property. So a violation gates only when it was violated
+        EVERY time it was tried, at least twice -- `held == 0` with
+        `runs >= MIN_RUNS_TO_GATE`.
+
+        At n=1 it is reported and explicitly not gated. That is not
+        timidity: gating there would make `--with-relations` reorder a
+        board on a single observation, which is the error this project
+        spends most of its code preventing.
+        """
+        return (self.decidable and self.runs >= MIN_RUNS_TO_GATE
+                and self.held == 0)
 
 
 def declared(task: TaskSpec) -> bool:
@@ -355,6 +388,37 @@ def clean_runner(task: TaskSpec, executor=None):
         return None if answer is None else answer.total
 
     return run_once
+
+
+def gating(outcomes: Sequence[RelationOutcome]) -> dict[str, list[str]]:
+    """Variants blocked by a reproduced relation violation -> which relations.
+
+    Empty when nothing was violated, and ALSO empty when every violation
+    was seen once. Those are different facts and the report says which;
+    this function answers only "what blocks", because a caller that
+    conflates them would gate on an observation.
+    """
+    out: dict[str, list[str]] = {}
+    for o in outcomes:
+        if o.gates:
+            out.setdefault(o.variant_id, []).append(o.relation)
+    return {k: sorted(v) for k, v in sorted(out.items())}
+
+
+def ungated_violations(
+    outcomes: Sequence[RelationOutcome],
+) -> dict[str, list[str]]:
+    """Violations seen, but not enough times to be a property (#37, #43).
+
+    Reported separately rather than merged into `gating`, because "violated
+    once in one try" and "violated twice in two" are different claims and
+    only the second is a property of the config.
+    """
+    out: dict[str, list[str]] = {}
+    for o in outcomes:
+        if o.satisfied is False and not o.gates:
+            out.setdefault(o.variant_id, []).append(o.relation)
+    return {k: sorted(v) for k, v in sorted(out.items())}
 
 
 def coverage(outcomes: Sequence[RelationOutcome]) -> dict[str, tuple[int, int]]:

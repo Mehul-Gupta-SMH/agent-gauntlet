@@ -1747,10 +1747,25 @@ def _print_relations(task, variants, executor, *, enabled: bool,
             relation = next(r for r in chosen if r.name == name)
             print(f"  {vid} breaks {name}: {relation.asks}")
             print(f"    catches: {relation.catches}")
-        print("\n  A violation is a binary property, so by #27 it is")
-        print("  gate-shaped rather than report-shaped. It does NOT gate")
-        print("  today -- that is a bigger claim than a column and #43 keeps")
-        print("  it a separate decision. Read these rows yourself.")
+        # #43 point 3, settled: gate-shaped by #27, and NOT GATED HERE --
+        # for a measurable reason rather than caution. The board runs one
+        # pair per relation, and one violated pair cannot be told from
+        # variance (#37). Reproduction is the condition, not courage.
+        gated = metamorphic.gating(outcomes)
+        if gated:
+            print("\n  GATING: violated on every pair, which is a property:")
+            for vid, names_ in gated.items():
+                print(f"    {label.get(vid, vid)}: {', '.join(names_)}")
+        print(f"\n  A violation is a binary property, so by #27 it is "
+              f"gate-shaped")
+        print("  rather than report-shaped. These rows are ONE pair each, so "
+              "none of")
+        print(f"  them gates: a violation needs "
+              f"{metamorphic.MIN_RUNS_TO_GATE} reproductions before it is a")
+        print("  property rather than an observation (#37). "
+              "`gauntlet relations --repeats 3`")
+        print("  is the path that can gate. Read these rows yourself until "
+              "then.")
     else:
         print("\n  Every declared relation held for every config. One pair each:")
         print("  a relation that holds once is not a relation that holds.")
@@ -2592,7 +2607,38 @@ def _relations(args) -> int:
     print("  rephrase-invariance -- the most universal relation there is --")
     print("  is deliberately not in this suite. It would pass vacuously and")
     print("  report a property of the test doubles as one of the agents.")
-    return 0 if not violated else 3
+
+    # #43 point 3, and the exit code is the gate. It used to return 3 on ANY
+    # violation, including one seen on a single pair -- which gates on an
+    # observation and is the thing #37 is about. Reproduction is the
+    # condition: violated on every pair, at least twice.
+    gated = metamorphic.gating(outcomes)
+    ungated = metamorphic.ungated_violations(outcomes)
+    if gated:
+        print(f"\n  GATING: violated on every pair, {metamorphic.MIN_RUNS_TO_GATE}"
+              f"+ pairs each, so it is a property")
+        print("  rather than an observation. A relation is binary, so by #27 "
+              "this")
+        print("  gates like propagation rather than reading like a quality "
+              "drop.")
+        for vid, names_ in gated.items():
+            spec = next((v for v in variants if v.id == vid), None)
+            shown = (" ".join(str(spec.factors[k]) for k in sorted(spec.factors))
+                     if spec is not None and spec.factors else vid)
+            print(f"    {shown}: {', '.join(names_)}")
+    if ungated:
+        print(f"\n  {len(ungated)} config(s) violated a relation too few "
+              f"times to gate.")
+        print(f"  Reported, not gated: below {metamorphic.MIN_RUNS_TO_GATE} "
+              f"reproductions a violation cannot be")
+        print("  told from variance. Re-run with --repeats "
+              f"{metamorphic.MIN_RUNS_TO_GATE}+ to find out which it is.")
+        for vid, names_ in ungated.items():
+            spec = next((v for v in variants if v.id == vid), None)
+            shown = (" ".join(str(spec.factors[k]) for k in sorted(spec.factors))
+                     if spec is not None and spec.factors else vid)
+            print(f"    {shown}: {', '.join(names_)}")
+    return 3 if gated else 0
 
 
 def _refuse_rerun_cells(records, path) -> Optional[int]:
