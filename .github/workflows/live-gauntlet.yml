@@ -42,8 +42,26 @@ on:
         # every code push to main and daily. Dispatching it here is for
         # probing a fixture or target that workflow does not cover.
 
+# `contents: write` is here for exactly one step: committing the ledger of a
+# paid matrix back to the repository (#46). It was `contents: read` until a
+# measured cost made the case -- experiment 010 had to answer #4 by parsing
+# the printed board out of `console.txt`, because the per-run records had
+# expired with their artifact, and that capped the analysis at whatever the
+# board happened to print. No outcome mix per variant, no per-scenario
+# breakdown, no detection-latency distribution, no clean/faulted pairing at
+# run granularity.
+#
+# A matrix costs ~$5 and half an hour. The ledger is a few hundred KB.
+# Actions artifacts expire on the retention setting, so "it is in the
+# artifact" is a deadline rather than a location -- and the 003 and 007
+# ledgers are about to prove it by vanishing in mid-December.
+#
+# The narrow scope is the mitigation: the commit step touches only
+# `experiments/live/<run id>/`, runs only for `mode == matrix`, and commits
+# only `runs.jsonl` and `summary.json`. It never touches a fixture, a
+# workflow, or anything under `src/`.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   run:
@@ -130,3 +148,64 @@ jobs:
             runs/summary.json
             runs/winner/**
           if-no-files-found: warn
+
+      # The artifact above expires; this does not (#46). Kept as a separate
+      # step rather than folded into the upload so a failure to commit never
+      # loses the artifact -- belt and braces, in that order.
+      - name: Commit the ledger, because the artifact expires
+        if: ${{ always() && inputs.mode == 'matrix' }}
+        env:
+          FIXTURE: ${{ inputs.fixture }}
+          TARGET: ${{ inputs.target }}
+          SEEDS: ${{ inputs.seeds }}
+          REPEATS: ${{ inputs.repeats }}
+        run: |
+          set -euo pipefail
+          test -f runs/runs.jsonl || { echo "no ledger to commit"; exit 0; }
+
+          dest="experiments/live/${GITHUB_RUN_ID}"
+          mkdir -p "$dest"
+          cp runs/runs.jsonl "$dest/"
+          if [ -f runs/summary.json ]; then cp runs/summary.json "$dest/"; fi
+
+          # A ledger carries no model output text -- `answer` holds a total,
+          # a bool and a confidence, nothing else. The one field whose
+          # content comes from outside this repo is `error`, so it is
+          # printed for a human to read rather than vouched for silently.
+          # No heredoc: its terminator cannot be indented inside a YAML
+          # block scalar, which is a bug that only shows up at run time.
+          echo "--- error strings in this ledger, review before trusting it ---"
+          python -c 'import json,sys;rows=[json.loads(l) for l in open(sys.argv[1],encoding="utf-8")];errs=[r["error"] for r in rows if r.get("error")];[print("  "+e[:200]) for e in errs];print(f"  ({len(errs)} of {len(rows)} record(s) carried an error)")' "$dest/runs.jsonl"
+
+          {
+            printf '# Live matrix %s\n\n' "$GITHUB_RUN_ID"
+            printf 'Committed by `live-gauntlet.yml` because Actions artifacts expire\n'
+            printf 'and this one should not (#46).\n\n'
+            printf '| | |\n|---|---|\n'
+            printf '| fixture | `%s` |\n' "$FIXTURE"
+            printf '| target | `%s` |\n' "$TARGET"
+            printf '| seeds | %s |\n' "$SEEDS"
+            printf '| repeats | %s |\n' "$REPEATS"
+            printf '| commit | `%s` |\n' "$GITHUB_SHA"
+            printf '| run | https://github.com/%s/actions/runs/%s |\n\n' \
+              "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf 'The ledger is the evidence, not the summary: it carries the\n'
+            printf 'per-run outcome, the schedule that produced it, the resolved\n'
+            printf 'model, the variant fingerprint, the pricing authority and the\n'
+            printf 'scenario provenance. Re-grade it under rules written after the\n'
+            printf 'fact rather than paying for another matrix.\n'
+          } > "$dest/README.md"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$dest"
+          if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
+          git commit -m "live matrix ${GITHUB_RUN_ID}: the ledger, before the artifact expires (#46)"
+
+          # Rebase rather than force: a human may well have pushed during a
+          # 45-minute matrix, and this commit is purely additive.
+          for i in 1 2 3; do
+            if git pull --rebase origin "$GITHUB_REF_NAME"; then break; fi
+            sleep $((i * 5))
+          done
+          git push origin "HEAD:$GITHUB_REF_NAME"

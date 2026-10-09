@@ -161,11 +161,24 @@ failure.
 
 ## Committing the ledger (#46)
 
-**Every paid run commits its `runs.jsonl` alongside the console.** This is a
-documented manual step in the writeup, not something the workflow does, and
-that is a decision rather than an omission: a workflow that commits to `main`
-needs write permission, which is a wider change than it looks for a
-few-hundred-KB file a human is already touching when they write the README.
+**Every paid matrix commits its own `runs.jsonl`.** `live-gauntlet.yml` does
+it, to `experiments/live/<run id>/`, with a generated README naming the
+fixture, target, seeds, repeats, commit and run URL.
+
+This reverses what this section said first. I had argued for a documented
+manual step on the grounds that `contents: write` is a wider change than it
+looks — the operator is already touching the directory when they write the
+experiment up, so why give a workflow push rights for a few hundred KB. The
+counter-argument won on the evidence: a manual step is exactly what was in
+place for 003 and 007, and both ledgers are **still** only in Actions
+artifacts, now expiring. A step that depends on someone remembering it, when
+forgetting is silent and the cost lands 90 days later, is not a step.
+
+The scope is the mitigation rather than the trust: the commit step writes only
+under `experiments/live/<run id>/`, runs only for `mode == matrix`, commits
+only `runs.jsonl`, `summary.json` and its own README, and rebases rather than
+forces — a human may well have pushed during a 45-minute matrix. It never
+touches a fixture, a workflow, or anything under `src/`.
 
 The offline experiment got this right first — [008](008-catching-a-regression/)
 commits `before.jsonl` and `after.jsonl` — and the expensive live ones did not.
@@ -199,7 +212,17 @@ The only free text a record can carry is:
   could echo it (they print `ANTHROPIC_API_KEY`'s *length*, never its value),
   but "a provider error string is not ours to vouch for" is the right posture.
 
-So the per-run check is: skim `error` on any record that has one, and commit.
+So the workflow **prints every `error` string it is about to commit**, with a
+count, and leaves the judgement to whoever reads the run:
+
+```
+--- error strings in this ledger, review before trusting it ---
+  provider said: 529 overloaded_error
+  (1 of 180 record(s) carried an error)
+```
+
+Automating the commit and automating the *vouching* are different things, and
+only the first is safe to do without a human.
 
 ### Outstanding
 
