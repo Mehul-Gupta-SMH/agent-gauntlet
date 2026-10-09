@@ -92,6 +92,23 @@ tolerance: 0
 # failure, and it was firing on this fixture until the default was fixed.
 relations: [scale, split]
 
+# Declared, and the honest answer is `synthetic` (#15). I wrote these three
+# inventories to exercise a property -- an answer that is a subset of the
+# world -- not because any of them occurred. The board prints it, so a
+# propagation rate from this fixture cannot be read as "how often agents
+# propagate", which is a claim no fixture in this repo can support.
+#
+# Declared HERE and nowhere else, deliberately. Provenance joins
+# `fingerprint()` when set, so declaring it on the five sum fixtures would
+# move five hashes and detach the run records those fixtures were scored
+# under -- including experiment 003's `5c9848747223eaa4`, which is the one
+# record the pre-registration argument rests on. This fixture has never
+# been run (#45), so it has no records to detach; the others stay
+# undeclared, and the board says "undeclared provenance" about them, which
+# is exactly true. Correcting a hash is worth a detached record; saying out
+# loud what everyone already assumes is not.
+provenance: synthetic
+
 # Four prompt levels, one capability each, and that is the point. The clean
 # step (drop the excluded records) and the robustness step (reconcile
 # against the audit) are deliberately carried by DIFFERENT levels. Putting

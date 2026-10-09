@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from .faults import FaultSchedule
 from .score import Answer, Score
+from .spec import GENERALISING
 
 
 class RunRecord(BaseModel):
@@ -126,6 +127,21 @@ class RunRecord(BaseModel):
     the price table the cost was computed against, pinned into the record.
     Without it, two matrices run a month apart average into one cost column
     with no way to tell the rates moved underneath them."""
+
+    provenance: Optional[str] = None
+    """Where this run's scenario world came from, as declared (#15).
+
+    A `spec.Provenance` value, or None when the task declared none. None on
+    every record written before this field existed, which is indistinguishable
+    from undeclared and is treated as such -- the board prints "undeclared"
+    either way, because it is.
+
+    Stored per run rather than looked up from the spec later for the same
+    reason `model` and `prices` are: the ledger has to stay readable without
+    the spec file, and a spec that was edited after the run would otherwise
+    re-label history. The fingerprint detects the edit; this says what the
+    run was actually run under.
+    """
 
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
@@ -283,6 +299,39 @@ def target_drift(records: Iterable["RunRecord"]) -> dict[str, list[str]]:
             continue
         seen.setdefault(r.target, set()).add(r.variant_id)
     return {k: sorted(v) for k, v in sorted(seen.items())}
+
+
+def provenance_mix(records: Iterable["RunRecord"]) -> dict[Optional[str], list[str]]:
+    """Declared scenario provenance -> the scenario ids recorded under it (#15).
+
+    `None` is a key, holding the scenarios whose provenance nobody declared.
+    It is deliberately not filtered out the way `target_drift` drops offline
+    runs: an absent framework means no framework was involved, whereas an
+    absent provenance means an unanswered question, and the two must not be
+    reported the same way.
+
+    More than one key means the aggregate spans worlds of different
+    standing, which is the same class of confound as a mixed price table or
+    a mixed agent SDK -- each number truthful about its own run, the mean
+    about a mixture.
+    """
+    mix: dict[Optional[str], list[str]] = {}
+    for r in records:
+        mix.setdefault(r.provenance, set()).add(r.scenario_id)  # type: ignore[arg-type]
+    return {k: sorted(v) for k, v in mix.items()}
+
+
+def generalises(records: Iterable["RunRecord"]) -> bool:
+    """Whether these records' rates may be read beyond the worlds they ran in.
+
+    True only when every scenario present is declared under a generalising
+    provenance. Mirrors `TaskSpec.generalises()` and is the form the board
+    can reach, since the board reads records and not specs.
+    """
+    mix = provenance_mix(records)
+    return bool(mix) and all(
+        k is not None and k in {p.value for p in GENERALISING} for k in mix
+    )
 
 
 def duplicate_cells(records: Iterable[RunRecord]) -> dict[tuple, int]:

@@ -28,6 +28,8 @@ from .ledger import Ledger, write_summary
 from .stats import detectable_difference
 from .ledger import duplicate_cells as ledger_duplicates
 from .ledger import errors as ledger_errors
+from .ledger import generalises as ledger_generalises
+from .ledger import provenance_mix as ledger_provenance
 from .ledger import target_drift as ledger_targets
 from .ledger import variant_drift as ledger_drift
 from .matrix import run_matrix
@@ -889,7 +891,7 @@ def _run(args) -> int:
             if v.id == r.variant_id:
                 r.is_sentinel = v.is_sentinel
 
-    _print_board(results)
+    _print_board(results, records)
     _print_search_cost(results, len(seeds), args)
     if args.max_cost_per_run is not None:
         _print_under_budget(results, args.max_cost_per_run)
@@ -964,7 +966,7 @@ def _replay_source(args) -> str:
     return " ".join(parts)
 
 
-def _print_board(results) -> None:
+def _print_board(results, records=None) -> None:
     """The leaderboard, with what it costs and how fast it notices.
 
     cost and time-to-detect were both measured from the first run and
@@ -1190,10 +1192,10 @@ def _print_board(results) -> None:
     else:
         print("\n  no run reported a price (offline, or the roll-up carried none)")
 
-    _print_resolution(results)
+    _print_resolution(results, records)
 
 
-def _print_resolution(results) -> None:
+def _print_resolution(results, records=None) -> None:
     """What this many runs could actually have seen.
 
     Printed with the board rather than buried, because a ranking read
@@ -1215,6 +1217,7 @@ def _print_resolution(results) -> None:
     print("  Gaps narrower than that are not evidence. Intervals below are")
     print("  95% Wilson, over seed and repeat variance on this scenario --")
     print("  not over tasks, models drifting, or provider nondeterminism.")
+    _print_scope(records)
 
     # Every pair, not just the top one. The held-out split (#20) polices
     # the winner; people read the whole column, and an ordering the run
@@ -1490,6 +1493,20 @@ def _print_relations(task, variants, executor, *, enabled: bool,
           f"sides.")
     print("  No oracle is used here: each config is compared against its OWN")
     print("  unperturbed answer, so this survives a task with no ground truth.")
+    # A perturbed world is CONSTRUCTED, whatever the task's own scenarios
+    # are (#15). Read off the stamp rather than asserted, so this line
+    # cannot drift away from what the builders actually produce.
+    base = task.scenarios[0]
+    derived = {
+        (p.value if (p := r.perturb(base).provenance) is not None
+         else "undeclared")
+        for r in chosen
+    }
+    print(f"  The perturbed worlds are {'/'.join(sorted(derived))}: this "
+          "block is")
+    print("  evidence about invariance, never about how often production "
+          "sends")
+    print("  inputs like these -- it does not, by construction.")
     if live:
         print(f"  LIVE: {(len(chosen) + 1) * len(variants)} extra model calls.")
     print()
@@ -1533,6 +1550,47 @@ def _print_relations(task, variants, executor, *, enabled: bool,
     else:
         print("\n  Every declared relation held for every config. One pair each:")
         print("  a relation that holds once is not a relation that holds.")
+
+
+def _print_scope(records) -> None:
+    """What the intervals above are intervals *over* (#15).
+
+    The resolution note says the interval covers seed and repeat variance
+    "on this scenario". That sentence is true and was read as more than it
+    says: the scenarios are fixed, so the interval covers no input variance
+    at all, and until this field existed nothing recorded whether those
+    fixed worlds were sampled from anything or invented.
+
+    Printed here rather than as its own section because it qualifies the
+    intervals, and a caveat one screen away from the number it qualifies is
+    a caveat nobody applies.
+    """
+    if not records:
+        return
+    mix = ledger_provenance(records)
+    worlds = sum(len(v) for v in mix.values())
+    if list(mix) == [None]:
+        print(f"  They are also over NO input variance: {worlds} fixed "
+              "world(s), of")
+        print("  undeclared provenance. Nothing recorded whether these were")
+        print("  sampled from traffic or constructed, so these rates are "
+              "facts")
+        print("  about these worlds and claim nothing beyond them.")
+        return
+    parts = ", ".join(
+        f"{len(ids)} {k if k is not None else 'undeclared'}"
+        for k, ids in sorted(mix.items(), key=lambda kv: (kv[0] is None, kv[0] or ""))
+    )
+    print(f"  They are also over NO input variance: {worlds} fixed "
+          f"world(s) ({parts}).")
+    if ledger_generalises(records):
+        print("  Sampled, so the rates are estimates beyond the run to the "
+              "extent")
+        print("  the sampling was unbiased -- which nothing here checks.")
+    else:
+        print("  Not a sample, so the rates are facts about this scenario "
+              "set and")
+        print("  not estimates of anything outside it.")
 
 
 def _print_attribution(records, sentinel_ids) -> None:

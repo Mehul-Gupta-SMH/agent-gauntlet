@@ -82,7 +82,7 @@ does not use it and detaches historical run records. These must not change:
 |---|---|
 | `fixtures/inventory/task.yaml` | `5c9848747223eaa4` |
 | `fixtures/inventory/audited.yaml` | `d11a0b2a6801ee74` |
-| `fixtures/inventory/discontinued.yaml` | `4f03405d3269254e` |
+| `fixtures/inventory/discontinued.yaml` | `61ddcbf035c1b91d` |
 | `fixtures/lending/applicant.yaml` | `2f32ad9fcecc025b` |
 | `fixtures/poisoning/instruction.yaml` | `10347b6eeeba5b0d` |
 | `fixtures/poisoning/memory.yaml` | `8f7d94a1568e6696` |
@@ -94,11 +94,29 @@ generation time (`architect.leaks_answer`): every variant would score
 1.00 without calling a tool, and the board would rank a field that never
 did the work.
 
-Three hashes have moved, all deliberately and all documented in the
-fixture header. `discontinued.yaml` twice: the day it was created, when
-its hypotheses block were added, and again when it declared
-`relations: [scale, split]` to stop `relabel` false-failing on it. No live
-run record has ever existed against either earlier hash.
+Four hashes have moved, all deliberately and all documented in the
+fixture header. `discontinued.yaml` three times: the day it was created,
+when its hypotheses block were added, again when it declared
+`relations: [scale, split]` to stop `relabel` false-failing on it, and
+again when it declared `provenance: synthetic`. No live run record has
+ever existed against any earlier hash -- which is also why it is the only
+fixture that declares provenance. Declaring it on the five sum fixtures
+would be just as true and would detach the records they were scored
+under, experiment 003's `5c9848747223eaa4` among them. They stay
+undeclared, and the board prints "undeclared provenance" about them,
+which is exactly right.
+
+**Where a scenario came from is a declaration, not an inference.**
+`Provenance` is `trace` / `example` / `synthetic`, and undeclared is
+`None` -- there is deliberately no `unstated` member, because that would
+be a value an operator could set to look like a declaration. Only `trace`
+lets a rate be read as an estimate beyond the run, and even then only as
+far as the sampling was unbiased, which nothing here checks. The board
+prints the scope beside the intervals: an interval over seed and repeat
+variance on fixed worlds covers **no input variance at all**, and that
+silence was being read as coverage. A perturbed world is stamped
+`synthetic` by the code that builds it, whatever its parent was -- `scale`
+triples quantities no trace contains.
 
 **A relation is only defaulted where it is provable.** `relations_for`
 used to apply all three to any task that declared none -- which was every

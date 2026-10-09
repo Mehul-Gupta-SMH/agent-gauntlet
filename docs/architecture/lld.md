@@ -27,13 +27,13 @@ flowchart TD
     OFFLINE["<b>offline</b> · 493<br/>scripted policies"]
     MATRIX["<b>matrix</b> · 401<br/>run_matrix · _attempt · budget"]
     FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
-    SPEC["<b>spec</b> · 387<br/>TaskSpec · VariantSpec · GridSpec"]
+    SPEC["<b>spec</b> · 543<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 337<br/>executor · parsing · classification"]
-    LEDGER["<b>ledger</b> · 325<br/>RunRecord · rescore"]
+    LEDGER["<b>ledger</b> · 387<br/>RunRecord · rescore"]
     ANALYZE["<b>analyze</b> · 193<br/>kendall_tau · stability"]
     CERT["<b>certify</b> · 414<br/>Certificate · compare · 3 verdicts"]
     STATS["<b>stats</b> · 204<br/>wilson · bootstrap · MDE"]
-    META["<b>metamorphic</b> · 314<br/>relations · perturbations"]
+    META["<b>metamorphic</b> · 374<br/>relations · perturbations"]
     ATTR["<b>attribution</b> · 442<br/>exact Shapley · interaction · refusals"]
     HYP["<b>hypotheses</b> · 229<br/>falsifiable bounds · verdicts"]
     CAN["<b>canary</b> · 304<br/>behavioural fingerprint · blind spot"]
@@ -645,6 +645,8 @@ test_calibration  that the rule is proper, and the three ways a
                  calibration figure lies
 test_explain     the detail view, and the curve that keeps the runs the
                  median has to drop
+test_provenance  where a scenario's world came from, and the board that
+                 could not tell an invented one from a traced one
 test_ui          the event stream, intake validation, censoring on the wire
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims

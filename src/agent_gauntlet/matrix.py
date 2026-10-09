@@ -298,6 +298,14 @@ def run_matrix(
                         offline=offline,
                         prices=prices,
                         target=None if offline else target,
+                        # Resolved per scenario, not per task: a set that
+                        # mixes traced and constructed worlds records which
+                        # is which, and a task-level label could not (#15).
+                        provenance=(
+                            prov.value
+                            if (prov := task.scenario_provenance(scenario)) is not None
+                            else None
+                        ),
                     )
                     ledger.append(record)
                     produced.append(record)

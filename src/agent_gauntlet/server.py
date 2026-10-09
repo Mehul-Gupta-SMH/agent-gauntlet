@@ -241,7 +241,8 @@ def task_from_intake(intake: dict[str, Any]) -> TaskSpec:
         fault_tool=intake.get("fault_tool") or "fetch_record",
         acceptable_degradation={"propagation_rate": 0},
         grid=GridSpec(prompts=prompts, toolsets=toolsets),
-        scenarios=[Scenario(id="scenario_1", records=records, audited=audited)],
+        scenarios=[Scenario(id="scenario_1", records=records, audited=audited,
+                            provenance=intake.get("provenance") or None)],
     )
 
 

@@ -43,6 +43,56 @@ class Oracle(str, Enum):
     """
 
 
+class Provenance(str, Enum):
+    """Where a scenario's world came from (#15).
+
+    The board prints a rate with a Wilson interval. An interval is a
+    statement about sampling error, which presupposes a sample -- and
+    nothing in this project ever recorded whether the worlds being
+    aggregated over were sampled from anything. A propagation rate of 0.25
+    over three invented inventories and one over three sampled from a
+    month of production traffic rendered identically, to the digit.
+
+    Declared, never inferred. There is no member for "nobody said": an
+    undeclared provenance is `None`, because an absent fact must not render
+    as a value (the same rule that makes an unmeasured metric print `n/a`
+    rather than `0`). A member meaning "unstated" would be a value an
+    operator could set to look like a declaration, which is the one thing
+    this field exists to prevent.
+
+    The ordering is the one issue #15 settled on: real traces beat real
+    examples beat invented ones, and the board marks which.
+    """
+
+    TRACE = "trace"
+    """Sampled from recorded traffic. The only member under which a rate
+    can be read as an estimate of anything outside the run -- and only to
+    the extent the sampling was itself unbiased, which this field does not
+    and cannot check."""
+
+    EXAMPLE = "example"
+    """Real inputs, hand-picked. Every number is about a world that
+    genuinely occurred, and the *selection* is unquantified: picking the
+    three cases you remember is not sampling. Honest for a demonstration,
+    not for an estimate."""
+
+    SYNTHETIC = "synthetic"
+    """Constructed -- by a person, a generator, or this harness. Says
+    nothing about any population, which does not make it useless: a
+    constructed world is how you reach a failure mode production has not
+    produced yet. It makes the resulting rate a fact about the construction.
+    """
+
+
+GENERALISING = (Provenance.TRACE,)
+"""Which provenances support reading a rate as an estimate beyond the run.
+
+A tuple rather than a bare comparison because the boundary is a judgement
+this project should have to state in one place and defend, not scatter
+through report sites.
+"""
+
+
 class Scenario(BaseModel, frozen=True):
     """One concrete input, with its known-correct answer.
 
@@ -74,6 +124,17 @@ class Scenario(BaseModel, frozen=True):
     A project whose task is not a total supplies it here. Absent, and with a
     `full` oracle, the sum stands -- which is what every bundled fixture
     means. Joins `fingerprint()` only when set, so no existing hash moves.
+    """
+
+    provenance: Optional[Provenance] = None
+    """Where this world came from. None means undeclared (see `Provenance`).
+
+    Per-scenario rather than only per-task because a real set mixes: two
+    worlds lifted from traces plus one constructed to reach a case the
+    traces never produced is a *good* scenario set, and a single task-level
+    label would have to lie about one of them.
+
+    Joins `fingerprint()` only when set, so no existing hash moves.
     """
 
     @property
@@ -255,6 +316,20 @@ class TaskSpec(BaseModel):
     hash moves.
     """
 
+    provenance: Optional[Provenance] = None
+    """The default provenance for scenarios that declare none (#15).
+
+    A task-level default, not an override: a scenario that states its own
+    wins. Both absent means undeclared, and the board says so rather than
+    guessing -- an invented world and a traced one are different claims and
+    silence is neither.
+
+    Joins `fingerprint()` only when set. It belongs in the hash because it
+    is part of the claim: upgrading a result's standing to "measured on
+    production traffic" after seeing the numbers is exactly the move
+    pre-registration exists to make detectable.
+    """
+
     gate: Optional[GateCriteria] = None
     """Pre-registered gate thresholds. Absent means the gate reports
     numbers without a verdict -- it never invents a bar."""
@@ -286,6 +361,76 @@ class TaskSpec(BaseModel):
             if s.id == scenario_id:
                 return s
         raise KeyError(f"no scenario {scenario_id!r} in task {self.id!r}")
+
+    def scenario_provenance(self, scenario: Union[str, Scenario]) -> Optional[Provenance]:
+        """What this scenario's world is declared to be, or None.
+
+        Scenario first, task default second, undeclared last. Returns None
+        rather than a stand-in member, so a caller cannot print "unstated"
+        as though somebody had stated it.
+        """
+        s = self.scenario(scenario) if isinstance(scenario, str) else scenario
+        return s.provenance or self.provenance
+
+    def provenance_mix(self) -> dict[Optional[Provenance], list[str]]:
+        """Declared provenance -> the scenario ids under it.
+
+        `None` is a key like any other, holding the scenarios nobody
+        declared. More than one key means the board is aggregating over
+        worlds of different standing, which is reportable in itself.
+        """
+        mix: dict[Optional[Provenance], list[str]] = {}
+        for s in self.scenarios:
+            mix.setdefault(self.scenario_provenance(s), []).append(s.id)
+        return {k: sorted(v) for k, v in mix.items()}
+
+    def generalises(self) -> bool:
+        """Whether a rate from this task may be read as an estimate beyond it.
+
+        True only when EVERY scenario is declared under a generalising
+        provenance. One invented world among traced ones makes the
+        aggregate a fact about the mixture -- the same argument that put
+        `prices_mixed` and `target_drift` in the ledger.
+
+        This is a necessary condition, never a sufficient one. A task can
+        pass it and still generalise to nothing, because nothing here
+        checks that the sampling was unbiased or that three worlds are
+        enough. What it rules out is the case the board could not previously
+        see at all: numbers from worlds somebody made up, presented as
+        measurements of the world.
+        """
+        mix = self.provenance_mix()
+        return bool(mix) and all(p in GENERALISING for p in mix)
+
+    def scope(self) -> str:
+        """One line naming what this task's rates are about.
+
+        Printed beside the intervals, because an interval that covers seed
+        and repeat variance on fixed worlds is silent about the worlds --
+        and that silence read as coverage.
+        """
+        mix = self.provenance_mix()
+        n = len(self.scenarios)
+        if list(mix) == [None]:
+            return (f"{n} scenario(s) of undeclared provenance -- these "
+                    "rates describe these worlds and nothing is recorded "
+                    "about where they came from")
+        parts = []
+        for p, ids in sorted(mix.items(), key=lambda kv: (kv[0] is None, kv[0] or "")):
+            name = p.value if p is not None else "undeclared"
+            parts.append(f"{len(ids)} {name}")
+        joined = ", ".join(parts)
+        if self.generalises():
+            return (f"{joined} scenario(s) -- sampled, so these rates are "
+                    "estimates beyond the run to the extent the sampling "
+                    "was unbiased, which nothing here checks")
+        if len(mix) > 1:
+            return (f"{joined} scenario(s) -- a mixture, so these rates are "
+                    "facts about this scenario set and not estimates of "
+                    "anything outside it")
+        return (f"{joined} scenario(s) -- not a sample, so these rates are "
+                "facts about this scenario set and not estimates of "
+                "anything outside it")
 
     def fingerprint(self) -> str:
         """Stable hash of everything that defines the bar.
@@ -321,6 +466,8 @@ class TaskSpec(BaseModel):
                 **({"fault_kind": self.fault_kind}
                    if self.fault_kind != "wrong_value" else {}),
                 **({"relations": sorted(self.relations)} if self.relations else {}),
+                **({"provenance": self.provenance.value}
+                   if self.provenance is not None else {}),
                 **({"hypotheses": [h.model_dump(mode="json")
                                    for h in self.hypotheses]}
                    if self.hypotheses else {}),
@@ -348,6 +495,8 @@ def _scenario_payload(scenario: Scenario) -> dict[str, Any]:
         payload["audited"] = sorted(scenario.audited)
     if scenario.expected is not None:
         payload["expected"] = scenario.expected
+    if scenario.provenance is not None:
+        payload["provenance"] = scenario.provenance.value
     return payload
 
 

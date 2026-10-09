@@ -321,7 +321,8 @@ def task_for(project: Project, tables: dict[str, dict[str, Any]]) -> TaskSpec:
         fault_kind=project.fault_kind,
         acceptable_degradation={"propagation_rate": 0},
         scenarios=[Scenario(id=scenario.id, records=records,
-                            expected=scenario.expected)],
+                            expected=scenario.expected,
+                            provenance=scenario.provenance)],
     )
 
 

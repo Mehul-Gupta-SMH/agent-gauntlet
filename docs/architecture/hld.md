@@ -277,6 +277,14 @@ stored a verdict instead and lost the ability to re-score its own history.
 so the task fingerprint covers it. Every run record carries that hash; moving a
 threshold afterwards changes it and is therefore detectable rather than deniable.
 
+**A rate says what it is a rate over.** An interval is a statement about
+sampling error, which presupposes a sample. `Provenance` makes a task declare
+whether its worlds were sampled from traffic, hand-picked from real ones, or
+constructed, and only the first lets a rate be read beyond the run. Undeclared
+is `None` rather than a member, so silence cannot be printed as a declaration,
+and a world this harness perturbs is stamped `synthetic` by the code that
+perturbs it.
+
 **The instrument is checked before the measurement.** A deliberately degraded
 sentinel variant runs in every matrix and must rank last. If it does not, the
 board is not read — in either direction. This has already caught a board that

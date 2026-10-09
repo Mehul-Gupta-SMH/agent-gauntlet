@@ -56,6 +56,15 @@ class Scenario(BaseModel):
     """Argument tuples the tools are calibrated over. These are the only
     inputs the gauntlet can serve, because they are the only ones it holds a
     truth for."""
+    provenance: Optional[str] = None
+    """Where this world came from -- a `spec.Provenance` value, or None (#15).
+
+    Optional and undeclared by default, because the operator is the only
+    one who knows and nothing here can find out. Undeclared is reported as
+    undeclared; the harness never guesses that a world typed into a form
+    was drawn from traffic.
+    """
+
     expected: Optional[int] = None
     """The right answer, when the operator knows it.
 

@@ -771,6 +771,19 @@ Every result, with raw output committed alongside it, is in
   [`fixtures/inventory/discontinued.yaml`](fixtures/inventory/discontinued.yaml)
   was built to break that ceiling and does so offline; whether it survives a
   real model is unmeasured.
+- **No bundled fixture's worlds were sampled from anything.** A rate on this
+  board is an average over a handful of fixed scenarios, and a Wilson interval
+  beside it covers seed and repeat variance *on those scenarios* — no input
+  variance at all. Where those scenarios came from is now a declared field
+  (`provenance: trace | example | synthetic`), undeclared by default, and only
+  `trace` lets a rate be read as an estimate of anything outside the run. Every
+  fixture here is either undeclared or `synthetic`, because I wrote them; the
+  board prints that beside the intervals rather than leaving the silence to be
+  read as coverage
+  ([#15](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/15)). The
+  field closes a worse hole than the absence: a spec that said
+  `provenance: trace` used to be accepted, the field dropped, and the
+  fingerprint unmoved — a declaration that looked accepted and was discarded.
 - **The harness is a suspect too, and it fails green.** Every defect this project
   has found in itself presented as a *pass*, never an error — a diagnostic that
   blamed the model for a harness bug, a sentinel a capable model ignored, a CI

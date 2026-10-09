@@ -38,7 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
 
-from .spec import Scenario, TaskSpec, VariantSpec
+from .spec import Provenance, Scenario, TaskSpec, VariantSpec
 
 SCALE_FACTOR = 3
 """What `scale` multiplies by. Three, not two: doubling is the one factor a
@@ -85,6 +85,12 @@ class Relation:
         return abs(observed - self.expect(baseline)) <= self.slack
 
 
+# Every derived world below is stamped SYNTHETIC, whatever its parent was
+# (#15). A perturbation CONSTRUCTS a world: `scale` triples quantities no
+# trace contains, `split` invents a record id. Inheriting a parent's `trace`
+# provenance would let a relation result be read as production evidence
+# about inputs production never produced -- the code that invents a world is
+# the right place to record that it invented it.
 def _relabel(scenario: Scenario) -> Scenario:
     """Rename every record, keeping the quantities.
 
@@ -103,6 +109,7 @@ def _relabel(scenario: Scenario) -> Scenario:
         audited=[mapping[a] for a in scenario.audited_ids
                  if a in mapping] if scenario.audited else [],
         expected=scenario.expected,
+        provenance=Provenance.SYNTHETIC,
     )
 
 
@@ -113,6 +120,7 @@ def _scale(scenario: Scenario) -> Scenario:
         audited=list(scenario.audited),
         expected=(None if scenario.expected is None
                   else scenario.expected * SCALE_FACTOR),
+        provenance=Provenance.SYNTHETIC,
     )
 
 
@@ -131,7 +139,8 @@ def _split(scenario: Scenario) -> Scenario:
     if scenario.audited and biggest in scenario.audited:
         audited.append(f"{biggest}b")
     return Scenario(id=f"{scenario.id}~split", records=records,
-                    audited=audited, expected=scenario.expected)
+                    audited=audited, expected=scenario.expected,
+                    provenance=Provenance.SYNTHETIC)
 
 
 RELATIONS: dict[str, Relation] = {
