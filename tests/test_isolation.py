@@ -207,3 +207,82 @@ def test_this_is_a_process_boundary_and_not_a_sandbox(project, tmp_path):
                           "    return 1\n")
     assert list(_calibrate(project, tool, [[str(escaped)]]).values()) == [1]
     assert escaped.read_text() == "I am not contained"
+
+
+# --- 5. the matrix, which #42 said had no boundary at all -------------------
+
+
+def test_matrix_time_never_executes_the_operators_code(project, tmp_path):
+    """#42's premise, checked rather than accepted.
+
+    The issue says: "The matrix still runs the operator's tool in the
+    harness process. `usertools.serve` is called from inside `run_context`,
+    in-process, on every faulted and clean run of every variant. So for a
+    300-run matrix the exposure calibration just closed is wide open again,
+    300 times."
+
+    `serve` is indeed called in-process on every run. It does not run the
+    tool. It looks up `tool.table[key]` -- a value computed once, in the
+    child, and carried back as JSON. `usertools.load`, the only function
+    that imports and executes the operator's module, is called from exactly
+    one place in the codebase: `_calibrate`, which IS the child's entry
+    point.
+
+    So this proves the negative directly. The tool appends a line to a file
+    every time its body runs. Calibration runs it; a thousand `serve` calls
+    afterwards must not add a single line.
+    """
+    witness = tmp_path / "ran.log"
+    tool = _tool(project, f"def probe(x):\n"
+                          f"    open({str(witness)!r}, 'a').write('ran\\n')\n"
+                          f"    return 7\n")
+    table = usertools.calibrate(tool, [["x"]], project_dir=project.dir,
+                                repeats=2)
+    during_calibration = witness.read_text().count("ran")
+    assert during_calibration == 2, "calibration calls it `repeats` times"
+
+    from agent_gauntlet.interpose import run_context
+    from agent_gauntlet.faults import FaultSchedule
+
+    tool.table = table
+    with run_context(
+        records={"r1": 7},
+        schedule=FaultSchedule(seed="none"),
+        allowed_tools={tool.name},
+        user_tools={tool.name: tool},
+        project_inputs=[["x"]],
+    ):
+        for _ in range(1000):
+            assert usertools.serve(tool.name, "x") == 7
+
+    assert witness.read_text().count("ran") == during_calibration, (
+        "a matrix-time serve executed the operator's code -- #42's exposure "
+        "would then be real and this test has found it"
+    )
+
+
+def test_load_is_reachable_from_exactly_one_place():
+    """The structural half of the claim above.
+
+    A behavioural test proves today's paths don't execute operator code. It
+    cannot prove a path added tomorrow won't. This pins the shape instead:
+    `load` is the only door, and `_calibrate` -- the child's entry point --
+    is the only caller. A new caller in the parent fails here, loudly,
+    rather than quietly widening the blast radius a release later.
+    """
+    import re
+    from pathlib import Path as _Path
+
+    root = _Path(__file__).resolve().parent.parent / "src" / "agent_gauntlet"
+    callers = set()
+    for path in sorted(root.glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        # `load(` as a bare call or attribute, excluding the definition and
+        # every other module's unrelated `load`.
+        if re.search(r"from \.usertools import [^\n]*\bload\b", text) or \
+                re.search(r"usertools\.load\(", text):
+            callers.add(path.name)
+    assert callers == {"_calibrate.py"}, (
+        f"usertools.load is now reachable from {sorted(callers)} -- if any of "
+        "those runs in the harness process, #42's exposure is real"
+    )

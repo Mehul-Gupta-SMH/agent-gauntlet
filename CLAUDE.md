@@ -118,6 +118,17 @@ silence was being read as coverage. A perturbed world is stamped
 `synthetic` by the code that builds it, whatever its parent was -- `scale`
 triples quantities no trace contains.
 
+**Operator code runs exactly once, in the child, and never again.**
+`usertools.load` is the only function that imports an uploaded module and
+it is reachable from exactly one place -- `_calibrate`, the child process's
+entry point, pinned by a test. Matrix-time `serve` is a lookup into the
+calibrated table, which crossed back as JSON; `discover` and
+`top_level_effects` parse with `ast` and never import. #42 read the
+in-process `serve` call as per-run execution of the tool and it is not: a
+thousand serves execute the operator's body zero times, measured. The
+residual exposure is DATA, not code -- a hostile tool controls its own
+calibrated values, which the board then prints.
+
 **A cost figure records what priced it, not what might have.** `pricing`
 pins an authority per target: the static rate table, or the SDK's own
 `total_cost_usd`. commonadk never consults its table for `--target claude`,

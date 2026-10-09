@@ -660,8 +660,9 @@ test_replay      captured-not-reconstructed, one composer, the published
                  demo's provenance
 test_injection_sites  the registry against the code, and every pairing that
                  cannot fire being refused
-test_isolation   calibration in a child process, and the honest limit of a
-                 process boundary
+test_isolation   calibration in a child process, the honest limit of a
+                 process boundary, and the matrix-time exposure that turned
+                 out not to exist
 test_metamorphic  relations that need no oracle, and the sentinel they
                  catch without one
 test_attribution  the Shapley axioms, the interaction the grid really has,
