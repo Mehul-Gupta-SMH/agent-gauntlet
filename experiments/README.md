@@ -158,3 +158,52 @@ genuinely broken path goes red. That distinction is the whole reason the probe
 can be automatic at all — `ci.yml` spent several days red because a
 pre-registered gate FAIL, which is a measurement, was being read as a build
 failure.
+
+## Committing the ledger (#46)
+
+**Every paid run commits its `runs.jsonl` alongside the console.** This is a
+documented manual step in the writeup, not something the workflow does, and
+that is a decision rather than an omission: a workflow that commits to `main`
+needs write permission, which is a wider change than it looks for a
+few-hundred-KB file a human is already touching when they write the README.
+
+The offline experiment got this right first — [008](008-catching-a-regression/)
+commits `before.jsonl` and `after.jsonl` — and the expensive live ones did not.
+[Experiment 010](010-robustness-vs-quality/) had to answer #4 by parsing the
+printed board table out of `console.txt`, because the per-run records were
+gone. That worked and it capped the analysis at whatever the board happened to
+print in September: no outcome mix per variant, no per-scenario breakdown, no
+detection-latency distribution, no clean/faulted pairing at run granularity.
+
+A live matrix costs ~$5 and half an hour. The ledger is a few hundred KB.
+Actions artifacts expire on the retention setting (90 days by default), so
+"it's in the artifact" is a deadline, not a location.
+
+### What a ledger carries, checked rather than assumed
+
+> A spec must never carry a secret, and the same care applies to a ledger.
+
+Checked. A `RunRecord` holds **no model output text at all**: `answer` is an
+`Answer`, whose only fields are `total`, `flagged_anomaly` and `confidence` —
+a number, a bool and a number. There is no transcript, no completion text, no
+prompt.
+
+The only free text a record can carry is:
+
+* **`tool_calls[].result`** — whatever the tool returned. For `read_annotation`
+  that is the **injected directive**, which is the harness's own text from
+  `faults.DIRECTIVES` rather than anything of the operator's.
+* **`error`** — an exception message from a failed run. This is the one field
+  worth reading before committing, because its content comes from a provider
+  rather than from here. The workflows never put a key where an exception
+  could echo it (they print `ANTHROPIC_API_KEY`'s *length*, never its value),
+  but "a provider error string is not ours to vouch for" is the right posture.
+
+So the per-run check is: skim `error` on any record that has one, and commit.
+
+### Outstanding
+
+The 003 and 007 ledgers are still only in Actions artifacts, and this cloud
+session cannot fetch them — `gh` refuses Actions artifact downloads by design,
+not for want of a flag. `tools/rescue_ledger.sh` makes it one command to run
+locally. **The artifacts expire around mid-December 2026.**
