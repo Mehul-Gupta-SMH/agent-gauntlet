@@ -155,3 +155,47 @@ def test_the_readme_documents_every_cli_command():
     )
     missing = [c for c in sub.choices if f"gauntlet {c}" not in text]
     assert not missing, f"README does not show: {missing}"
+
+
+def test_the_retracted_novelty_claim_does_not_come_back():
+    """#25: every part of it is prior art, verified against the listing.
+
+    A sentence this good-sounding regrows if nothing stops it, and the whole
+    argument of this project is that a reassuring-looking claim deserves a
+    check. `docs/prior-art.md` carries the citations; this stops the claim
+    itself from reappearing in the pitch.
+    """
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    prior_art = ROOT / "docs" / "prior-art.md"
+    assert prior_art.exists(), "the citations have to live somewhere durable"
+
+    # The retraction quotes the old sentence, so count: it may appear once,
+    # inside the paragraph that retracts it, and nowhere else.
+    assert readme.count("It is what creates the oracle") <= 1
+    assert "Chaos is scored, not smoke-tested.**" not in readme, (
+        "the retracted claim is back as a bolded differentiator"
+    )
+    # And the retraction has to actually cite something.
+    for citation in ("CatchBench", "AgentChaos", "prior-art.md"):
+        assert citation in readme, f"the retraction dropped {citation}"
+
+
+def test_prior_art_cites_identifiers_not_just_names():
+    """A name is a claim; an identifier is checkable.
+
+    Every work the retraction rests on needs something a reader can resolve,
+    because "I remember a paper that does this" is exactly the kind of
+    evidence this file exists to replace.
+    """
+    text = (ROOT / "docs" / "prior-art.md").read_text(encoding="utf-8")
+    for work, ident in (
+        ("MAS-FIRE", "2602.19843"),
+        ("ReliabilityBench", "2601.06112"),
+        ("AgentChaos", "2608.06790"),
+        ("ToolMisuseBench", "2604.01508"),
+        ("CatchBench", "2608.22808"),
+        ("AgentCheck", "2607.11098"),
+        ("SSCBench", "2610.11514"),
+    ):
+        assert work in text, f"{work} is not cited"
+        assert ident in text, f"{work} is cited without a resolvable id"

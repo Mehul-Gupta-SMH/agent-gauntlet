@@ -669,10 +669,38 @@ smart rederiving records+notes   83%  0.99   78%   89%    0%  100% det   <- fron
 smart note_taking records+notes  44%  0.68   89%    0%  100%    0% det   [GATED: propagated]
 ```
 
-## Three things that make it different
+## Two things that make it different, and one claim that was wrong
 
-**1. Chaos is scored, not smoke-tested.** Fault injection is the measurement, not
-a robustness check bolted on afterwards. It is what creates the oracle.
+**0. The retracted one.** This section used to open with *"Chaos is scored, not
+smoke-tested. Fault injection is the measurement, not a robustness check bolted
+on afterwards. It is what creates the oracle."* Every part of that is prior art,
+verified against the primary listing rather than recalled — see
+[docs/prior-art.md](docs/prior-art.md) and
+[#25](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/25).
+
+Fault injection as the measurement:
+[ReliabilityBench](https://arxiv.org/abs/2601.06112),
+[MAS-FIRE](https://arxiv.org/abs/2602.19843),
+[ToolMisuseBench](https://arxiv.org/abs/2604.01508),
+[AgentChaos](https://arxiv.org/abs/2608.06790). The injection site as a
+judge-free oracle, which is the part that looked distinctive:
+[CatchBench](https://arxiv.org/abs/2608.22808) labels each case by its injection
+site, *correct by construction and independent of any detector*. The
+counterfactual pair: [AgentCheck](https://arxiv.org/abs/2607.11098) replays a
+clean run with one tool response altered and reports the first divergence;
+[SSCBench](https://arxiv.org/abs/2610.11514) uses clean trajectories as negative
+controls in its oracle reference set. Even the decidable-denominator rule —
+exclude runs the fault never reached — is AgentChaos's, in print.
+
+#25 proposed narrowing the claim to *"we search config space under fault
+injection."* That fails too, on this project's own admission below: it does not
+search, it enumerates a declared grid. And joint configuration × fault search
+already exists in distributed systems
+([CAFault](https://www.usenix.org/system/files/atc25-chen-yuanliang.pdf), USENIX
+ATC 2025).
+
+What survives is narrower than either version, and is stated as *not found*
+rather than *does not exist* — four searches is weak evidence of absence.
 
 **2. The framework is materializable — not yet searchable.** Built on
 [CommonADK](https://github.com/Mehul-Gupta-SMH/CommonADK), which materializes one
@@ -695,11 +723,17 @@ agent declaring no edges and there is nothing for an adapter to coarsen. It
 stops being zero the moment multi-agent topologies land, which is why a test
 asserts it rather than a comment claiming it.
 
-**3. It answers with knowledge, not a champion.** A tournament tells you variant
-#7 won and nothing else — the variables were confounded. agent-gauntlet treats
-model, prompt strategy and tool set as named factors and reports per-factor
-effects, with the interaction caveat attached to the numbers rather than
-sitting in a footnote.
+**3. It answers with knowledge, not a champion** — and refuses to answer when it
+cannot. Model, prompt strategy and tool set are named factors with per-factor
+effects and the interaction caveat attached to the numbers rather than sitting in
+a footnote. Shapley shares exist elsewhere
+([Optuna](https://optuna.org)'s fANOVA ships the same idea), so the uncommon part
+is not the attribution: it is that an unmeasured value renders `n/a` and never
+`0`, the rank column stops where the intervals stop, a winner the run cannot
+separate from its rivals is **not named**, denominators count only decidable
+runs, and the bar is fingerprinted before the numbers exist. None of that is
+novel in statistics. It is uncommon in agent benchmarks, and it is the thing
+this repository actually demonstrates.
 
 ## Status
 

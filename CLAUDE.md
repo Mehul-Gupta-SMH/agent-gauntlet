@@ -118,6 +118,20 @@ silence was being read as coverage. A perturbed world is stamped
 `synthetic` by the code that builds it, whatever its parent was -- `scale`
 triples quantities no trace contains.
 
+**The novelty claim is retracted, and the retraction is guarded.**
+Fault injection as the measurement, the injection site as a judge-free
+oracle, the clean-twin counterfactual pair, and the decidable-denominator
+rule are ALL prior art -- CatchBench labels by injection site "correct by
+construction and independent of any detector", AgentCheck replays a clean
+run with one response altered, SSCBench uses clean trajectories as oracle
+negative controls, AgentChaos excludes runs the fault never reached.
+`docs/prior-art.md` carries the verified citations with arXiv ids, and
+`test_docs.py` stops the sentence regrowing in the README. #25's proposed
+replacement -- "we search config space under fault injection" -- is also
+false: this tool enumerates a declared grid and says so. What survives:
+it materializes and runs the configurations it measures, and the reporting
+discipline. State it as NOT FOUND, never as does-not-exist.
+
 **A withheld source is only decidable where it was necessary.** #41's
 source-dependence check removes a tool the config called and asks whether
 the answer moved or the agent stopped. Applied to any called tool it
