@@ -118,6 +118,25 @@ silence was being read as coverage. A perturbed world is stamped
 `synthetic` by the code that builds it, whatever its parent was -- `scale`
 triples quantities no trace contains.
 
+**A registry pairs tools with kinds and says nothing about keys.**
+`INJECTION_SITES` asserts that a tool may carry a kind; it cannot assert
+that the site's own lookup matches the schedule's key. `list_records` was
+registered for `omission` and looked the fault up by key `"*"` while the
+schedule keyed it by the withheld record id, so every faulted run served
+the full world and the board printed `prop=0%` ungated -- the exact silent
+no-op the registry exists to prevent, in the kind that added it.
+`test_injection_sites.py` now asserts every registered pairing against
+BEHAVIOUR: build the schedule, call the site with the fault's own target,
+require the call be logged faulted. Add a site, add a row there.
+
+**An overridden fault moves the fingerprint.** `--fault` used to be passed
+around the task, so a timeout run on `audited.yaml` was stamped
+`d11a0b2a6801ee74` -- the hash of a spec declaring `wrong_value`. Worse
+than the mixed-rate-table confound, where the hash is ambiguous: this one
+resolved to a spec the run was not produced under. `--fault`/`--fault-tool`
+now build a task copy, and `ledger.fault_kinds` is the backstop for
+ledgers already written.
+
 **The novelty claim is retracted, and the retraction is guarded.**
 Fault injection as the measurement, the injection site as a judge-free
 oracle, the clean-twin counterfactual pair, and the decidable-denominator

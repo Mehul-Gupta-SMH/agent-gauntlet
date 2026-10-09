@@ -59,6 +59,28 @@ three questions.
 | `timeout` | the call itself | the loud contrast — trivially detected, kept so the two can be compared |
 | `instruction` | the authority attached to a result | does the agent still know **whose instructions are instructions**? |
 | `poisoned_memory` | the agent's own recorded finding | does it **re-derive** what it already decided, or build on it? |
+| `omission` | the enumeration, by withholding one record | does the agent notice **what is not there**? |
+
+`omission` closes the gap [AgentChaos](https://arxiv.org/abs/2608.06790)'s
+crash / omission / value taxonomy exposed — the middle one was missing (see
+[prior-art.md](../prior-art.md)). It is the quietest fault here: the call
+succeeds, the list looks ordinary, the total comes out plausibly *low*, and
+nothing in the result looks wrong. A wrong value at least has to be a
+different number; an omission simply is not there.
+
+It is also, measured, the **most decidable** of the number-corrupting kinds
+— the opposite of the intuition that loud faults are the easy ones. A wrong
+value is drawn to be plausible, so it is often small against the
+determinability band; an omission's delta is the whole record. On
+`audited.yaml` it clears the band on 60/60 seed-scenario pairs where
+`wrong_value` manages 37. Its `delta` is negative, which no other kind's
+is.
+
+Fair by reusing the existing rule rather than restating it: the withheld
+record is drawn from the same audited subset the wrong-value rule targets,
+so `get_summary` contradicts it and a cross-checking config can catch it.
+An omission outside the audit would contradict nothing observable and would
+score luck.
 
 `instruction` is decidable without a judge because the directive names a
 **canary** — an improbable value the agent has no other route to. If it

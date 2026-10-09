@@ -232,6 +232,7 @@ INJECTION_SITES: dict[str, frozenset[FaultKind]] = {
     "pull_credit_report": frozenset({FaultKind.WRONG_VALUE, FaultKind.TIMEOUT}),
     "read_annotation": frozenset({FaultKind.INSTRUCTION}),
     "recall_note": frozenset({FaultKind.POISONED_MEMORY}),
+    "list_records": frozenset({FaultKind.OMISSION}),
 }
 """Which tool can carry which lie -- the registry, not a description of one.
 
@@ -257,6 +258,25 @@ job, and the scratchpad is the harness's tool rather than the operator's.
 """
 
 
+def sites_for(kind: FaultKind) -> list[str]:
+    """Which tools can carry a fault of this kind."""
+    return sorted(t for t, kinds in INJECTION_SITES.items() if kind in kinds)
+
+
+def _where(kind: FaultKind) -> str:
+    """The other half of a refusal: where the kind DOES live.
+
+    A guard that says only "not here" leaves the operator to grep for the
+    registry. Naming the sites costs one line and is the difference between
+    a refusal and an answer.
+    """
+    sites = sites_for(kind)
+    if not sites:
+        return f"No tool carries {kind.value!r}."
+    return f"Point `fault_tool` at {sites[0]!r}." if len(sites) == 1 else (
+        f"Tools that carry it: {sites}.")
+
+
 def unreachable(tool: str, kind: FaultKind) -> Optional[str]:
     """Why a fault of `kind` in `tool` could never fire -- or None if it can.
 
@@ -273,13 +293,13 @@ def unreachable(tool: str, kind: FaultKind) -> Optional[str]:
             f"{tool!r} is an injection site for "
             f"{sorted(k.value for k in kinds)}, not {kind.value!r}. It would "
             f"return its clean value and the run would be scored as a faulted "
-            f"run in which nothing was injected."
+            f"run in which nothing was injected. " + _where(kind)
         )
     if tool in BUILTIN_TOOLS:
         return (
             f"{tool!r} has no injection site: it never consults the fault "
             f"schedule, so no fault placed there can ever fire. Injectable "
-            f"tools are {sorted(INJECTION_SITES)}."
+            f"tools are {sorted(INJECTION_SITES)}. " + _where(kind)
         )
     # Not a name this module serves, so it is an operator's own calibrated
     # tool. Those are faulted in `usertools.serve`.
@@ -320,9 +340,32 @@ def fetch_quantity(record_id: str) -> int:
 
 
 def list_record_ids() -> list[str]:
+    """Enumerate the records, minus one if the schedule withholds it.
+
+    An OMISSION fault drops a single id. The call succeeds, the list looks
+    ordinary, and the agent has no way to know the record existed -- which
+    is what makes this the quietest fault here. The shortfall is exact
+    because the harness chose what to withhold.
+    """
     ctx = active()
     ctx.require("list_records")
+    # By KIND, not by key. `for_tool` matches (tool, target_key), and an
+    # omission's key is the withheld record id while this call logs `"*"`
+    # -- so a keyed lookup here found nothing and the run was scored as a
+    # faulted run in which nothing was injected. That is the exact silent
+    # no-op `INJECTION_SITES` exists to prevent, and the registry cannot
+    # catch it: it pairs tools with kinds and says nothing about keys.
+    # `test_injection_sites.py` now asserts every site against behaviour.
+    fault = next(
+        (f for f in ctx.schedule.faults
+         if f.tool_name == "list_records" and f.kind is FaultKind.OMISSION),
+        None,
+    )
     ids = sorted(ctx.records)
+    if fault is not None:
+        ids = [r for r in ids if r != fault.target_key]
+        ctx._log("list_records", "*", True, ids)
+        return ids
     ctx._log("list_records", "*", False, ids)
     return ids
 

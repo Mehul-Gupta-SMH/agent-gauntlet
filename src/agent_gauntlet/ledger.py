@@ -334,6 +334,34 @@ def generalises(records: Iterable["RunRecord"]) -> bool:
     )
 
 
+def fault_kinds(records: Iterable["RunRecord"]) -> dict[str, list[str]]:
+    """Which adversity each run actually met, from the schedule (#5).
+
+    Read off `schedule.faults` rather than from the task, because the task
+    is not where the answer was: `--fault timeout` on a task declaring
+    `wrong_value` produced records stamped `d11a0b2a6801ee74`, the
+    fingerprint of a spec whose `fault_kind` IS `wrong_value`. Two ledgers
+    under two different adversities carried the identical hash and the
+    board averaged them.
+
+    That is the mixed-price-table confound (#14) with a sharper edge: a
+    mixed rate table makes the fingerprint ambiguous, while this made it
+    actively wrong -- the hash resolved to a spec the run was not produced
+    under. The override now builds an honest task copy so the hash moves
+    with the adversity; this stays as the backstop for every ledger
+    written before that, and for any other path that mixes them.
+
+    Clean runs carry no fault and are not drift: the counterfactual twin
+    has no adversity by construction.
+    """
+    seen: dict[str, set[str]] = {}
+    for r in records:
+        for f in getattr(r.schedule, "faults", None) or []:
+            kind = getattr(f.kind, "value", f.kind)
+            seen.setdefault(str(kind), set()).add(r.variant_id)
+    return {k: sorted(v) for k, v in sorted(seen.items())}
+
+
 def duplicate_cells(records: Iterable[RunRecord]) -> dict[tuple, int]:
     """Cells this ledger holds more than one attempt at.
 

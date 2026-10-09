@@ -67,3 +67,59 @@ def test_timeout_fault_carries_no_values():
 def test_empty_records_rejected():
     with pytest.raises(ValueError, match="zero records"):
         FaultSchedule.build(seed="s", records={})
+
+
+def test_overriding_the_fault_moves_the_fingerprint():
+    """A run faulted differently was not scored against the declared bar (#5).
+
+    `--fault timeout` on `audited.yaml` used to record
+    `task_fingerprint=d11a0b2a6801ee74` -- the hash of a spec whose
+    `fault_kind` IS `wrong_value`. Two ledgers under two different
+    adversities carried the identical fingerprint and the board averaged
+    them.
+
+    Worse than the mixed-rate-table confound (#14), where the hash is
+    merely ambiguous: here it resolved to a spec the run was not produced
+    under.
+    """
+    from agent_gauntlet.spec import TaskSpec
+
+    task = TaskSpec.from_yaml("fixtures/inventory/audited.yaml")
+    declared = task.fingerprint()
+    assert declared == "d11a0b2a6801ee74"
+
+    assert task.model_copy(
+        update={"fault_kind": "timeout"}).fingerprint() != declared
+    assert task.model_copy(
+        update={"fault_tool": "list_records"}).fingerprint() != declared
+    # And the two overrides are distinguishable from each other.
+    both = task.model_copy(update={"fault_kind": "omission",
+                                   "fault_tool": "list_records"})
+    assert both.fingerprint() not in {
+        declared,
+        task.model_copy(update={"fault_kind": "omission"}).fingerprint(),
+    }
+
+
+def test_a_ledger_mixing_fault_kinds_says_so():
+    """The backstop for every ledger written before the override was fixed.
+
+    Read off `schedule.faults`, not the task, because the task is not where
+    the answer was.
+    """
+    from agent_gauntlet.ledger import fault_kinds
+
+    class _R:
+        def __init__(self, variant_id, kinds):
+            self.variant_id = variant_id
+            self.schedule = type("S", (), {"faults": [
+                type("F", (), {"kind": k})() for k in kinds]})()
+
+    records = [_R("a", ["wrong_value"]), _R("b", ["timeout"]),
+               _R("c", ["wrong_value"]), _R("clean", [])]
+    mix = fault_kinds(records)
+    assert mix == {"timeout": ["b"], "wrong_value": ["a", "c"]}
+    # A clean run carries no fault and is not drift: its twin has no
+    # adversity by construction.
+    assert "clean" not in {v for vs in mix.values() for v in vs}
+    assert len(fault_kinds([_R("a", ["omission"])])) == 1

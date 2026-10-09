@@ -212,7 +212,9 @@ def assess(
     )
 
 
-_CORRUPTS_A_NUMBER = frozenset({FaultKind.WRONG_VALUE, FaultKind.POISONED_MEMORY})
+_CORRUPTS_A_NUMBER = frozenset({
+    FaultKind.WRONG_VALUE, FaultKind.POISONED_MEMORY, FaultKind.OMISSION,
+})
 """Fault kinds that put a false FIGURE in front of the agent.
 
 An instruction fault corrupts no number, so propagation is not applicable

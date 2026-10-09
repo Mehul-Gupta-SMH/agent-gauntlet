@@ -29,6 +29,7 @@ from .ledger import Ledger, write_summary
 from .stats import detectable_difference
 from .ledger import duplicate_cells as ledger_duplicates
 from .ledger import errors as ledger_errors
+from .ledger import fault_kinds as ledger_fault_kinds
 from .ledger import generalises as ledger_generalises
 from .ledger import provenance_mix as ledger_provenance
 from .ledger import target_drift as ledger_targets
@@ -86,6 +87,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--fault", choices=[k.value for k in FaultKind], default=None,
         help="override the fault kind the task declares",
+    )
+    run.add_argument(
+        "--fault-tool", default=None, metavar="TOOL",
+        help="override which tool the schedule corrupts. A kind only fires "
+             "at a tool registered for it, so --fault on its own is refused "
+             "when the task points at the wrong site -- the refusal names "
+             "the right one",
     )
     run.add_argument(
         "--live", action="store_true",
@@ -190,6 +198,10 @@ def build_parser() -> argparse.ArgumentParser:
     probe.add_argument(
         "--fault", choices=[k.value for k in FaultKind], default=None,
         help="override the fault kind the task declares",
+    )
+    probe.add_argument(
+        "--fault-tool", default=None, metavar="TOOL",
+        help="override which tool the schedule corrupts",
     )
     probe.add_argument(
         "--shape", default=None,
@@ -744,7 +756,7 @@ def _answer_note(answer, scenario, model_name: str) -> int:
 
 
 def _run(args) -> int:
-    task = TaskSpec.from_yaml(args.task)
+    task = _with_fault_override(TaskSpec.from_yaml(args.task), args)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -890,6 +902,17 @@ def _run(args) -> int:
             print("            rate table, because assuming that is how the "
                   "wrong authority")
             print("            got pinned (#47).")
+
+    kinds = ledger_fault_kinds(records)
+    if len(kinds) > 1:
+        print(f"\nWARNING: this ledger holds runs faulted {len(kinds)} "
+              f"different ways.")
+        print("Robustness to a timeout and robustness to a plausible "
+              "falsehood are")
+        print("different questions, and one column cannot answer both (#5).")
+        for name, variants in kinds.items():
+            print(f"  {name}: {len(variants)} variant(s)")
+        print("Start a fresh --out directory per fault kind.")
 
     frameworks = ledger_targets(records)
     if len(frameworks) > 1:
@@ -1496,6 +1519,40 @@ def _print_hypotheses(task, records, variants) -> None:
     print("  Not summed. A config that breaks one of these and keeps two is")
     print("  not comparable to one with the reverse profile, and a score")
     print("  over them would undo the reason for stating them.")
+
+
+def _with_fault_override(task, args):
+    """Apply --fault / --fault-tool to the task itself, not beside it.
+
+    `--fault` used to be passed around the task: `run_matrix` took the kind
+    as a parameter while the records kept `task.fingerprint()`, so a
+    timeout run on `audited.yaml` was stamped `d11a0b2a6801ee74` -- the
+    hash of a spec whose `fault_kind` is `wrong_value`. Two ledgers under
+    two different adversities carried the identical fingerprint.
+
+    Worse than the mixed-rate-table case (#14), where the hash is merely
+    ambiguous: here it resolved to a spec the run was not produced under.
+    Overriding on a copy moves the hash with the adversity, which is what
+    a fingerprint is for.
+    """
+    kind = getattr(args, "fault", None)
+    tool = getattr(args, "fault_tool", None)
+    update = {}
+    if kind and kind != task.fault_kind:
+        update["fault_kind"] = kind
+    if tool and tool != task.fault_tool:
+        update["fault_tool"] = tool
+    if not update:
+        return task
+    moved = task.model_copy(update=update)
+    print("fault        overridden: "
+          + ", ".join(f"{k}={v}" for k, v in sorted(update.items())))
+    print(f"             the fingerprint moves with it "
+          f"({task.fingerprint()} -> {moved.fingerprint()}), because a run "
+          f"faulted")
+    print("             differently was not scored against the declared bar "
+          "(#5).")
+    return moved
 
 
 def _print_sources(task, variants, executor, *, enabled: bool,

@@ -19,17 +19,17 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 2583<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 2640<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 1351<br/>summarize · rank · pareto · depth · curve"]
     ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
-    SCORE["<b>score</b> · 592<br/>Outcome · score_run"]
-    INTER["<b>interpose</b> · 540<br/>RunContext · tool surface · notes"]
+    SCORE["<b>score</b> · 601<br/>Outcome · score_run"]
+    INTER["<b>interpose</b> · 583<br/>RunContext · tool surface · notes"]
     OFFLINE["<b>offline</b> · 555<br/>scripted policies"]
     MATRIX["<b>matrix</b> · 427<br/>run_matrix · _attempt · budget"]
-    FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
+    FAULTS["<b>faults</b> · 451<br/>FaultKind · FaultSchedule"]
     SPEC["<b>spec</b> · 543<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 337<br/>executor · parsing · classification"]
-    LEDGER["<b>ledger</b> · 387<br/>RunRecord · rescore"]
+    LEDGER["<b>ledger</b> · 415<br/>RunRecord · rescore"]
     ANALYZE["<b>analyze</b> · 193<br/>kendall_tau · stability"]
     CERT["<b>certify</b> · 414<br/>Certificate · compare · 3 verdicts"]
     STATS["<b>stats</b> · 204<br/>wilson · bootstrap · MDE"]
@@ -38,7 +38,7 @@ flowchart TD
     HYP["<b>hypotheses</b> · 229<br/>falsifiable bounds · verdicts"]
     CAN["<b>canary</b> · 304<br/>behavioural fingerprint · blind spot"]
     PRICE["<b>pricing</b> · 242<br/>pricing authority · drift"]
-    COV["<b>coverage</b> · 250<br/>what a task can measure · audit"]
+    COV["<b>coverage</b> · 264<br/>what a task can measure · audit"]
     CALIB["<b>calibration</b> · 216<br/>Brier · skill · Murphy"]
 
     CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP & CAN & COV & CALIB

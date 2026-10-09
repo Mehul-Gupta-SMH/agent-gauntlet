@@ -434,7 +434,8 @@ def score_run(
 
     could_be_exposed = _exposure_possible(ctx, schedule)
     applicable = any(
-        f.kind in (FaultKind.WRONG_VALUE, FaultKind.POISONED_MEMORY)
+        f.kind in (FaultKind.WRONG_VALUE, FaultKind.POISONED_MEMORY,
+                   FaultKind.OMISSION)
         for f in schedule.faults
     )
     determinable = applicable and (

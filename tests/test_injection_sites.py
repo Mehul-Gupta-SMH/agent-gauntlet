@@ -38,7 +38,10 @@ from agent_gauntlet.matrix import run_matrix
 ROOT = Path(__file__).resolve().parents[1]
 RECORDS = {"a": 10, "b": 20, "c": 30}
 
-NO_SITE = ["list_records", "get_summary", "record_note", "list_audited_records"]
+# `list_records` used to be here. It is an OMISSION site now (#5), which
+# is why this list is a constant rather than inlined: adding a site has to
+# move it in exactly one place.
+NO_SITE = ["get_summary", "record_note", "list_audited_records"]
 
 
 def _task(tool: str, kind: str) -> TaskSpec:
@@ -145,7 +148,7 @@ def test_the_matrix_refuses_too_and_writes_nothing(tmp_path):
                                   models={"cheap": "m"})
     ledger = Ledger(tmp_path / "runs.jsonl")
     with pytest.raises(ValueError, match="cannot fire"):
-        run_matrix(task=_task("list_records", "wrong_value"), variants=variants,
+        run_matrix(task=_task("get_summary", "wrong_value"), variants=variants,
                    ledger=ledger, base_seed="s", repeats=1)
     assert not ledger.path.exists() or ledger.path.read_text() == ""
 
@@ -177,11 +180,11 @@ def test_the_board_this_used_to_print(tmp_path):
     the output distinguished it from a matrix where every agent had
     genuinely resisted.
     """
-    task = _task("list_records", "wrong_value")
+    task = _task("get_summary", "wrong_value")
     with pytest.raises(ValueError) as exc:
         architect.generate(out_dir=tmp_path, task=task, models={"cheap": "m"})
     # The message has to name the tool and what to do, not merely refuse.
-    assert "list_records" in str(exc.value)
+    assert "get_summary" in str(exc.value)
     assert "never consults the fault schedule" in str(exc.value)
     assert "fetch_record" in str(exc.value)  # the injectable ones, listed
 
@@ -219,3 +222,134 @@ def test_a_project_is_told_before_it_runs(tmp_path, monkeypatch):
 
     p.fault_kind = "wrong_value"
     assert not any("injection site" in b for b in p.blockers())
+
+
+# --- the gap the registry does not cover (#5) -------------------------------
+
+
+def test_every_registered_site_actually_injects_something():
+    """The registry pairs TOOLS with KINDS and says nothing about KEYS.
+
+    That gap bit immediately. `list_records` was registered for OMISSION
+    and the site looked the fault up with `for_tool("list_records", "*")` --
+    but `for_tool` matches `(tool_name, target_key)` and an omission's key
+    is the withheld record id, so the lookup found nothing. Every faulted
+    run returned the full world and the board reported `prop=0%`, ungated:
+    a clean pass for a fault that never fired, in the most flattering
+    direction available.
+
+    `unreachable()` could not have caught it. It answers "may this tool
+    carry this kind", which was yes. So this test asserts the registry
+    against BEHAVIOUR instead: build a schedule for each registered
+    pairing, call the site, and require that the call be logged faulted.
+    A site that silently serves its clean value fails here.
+    """
+    from agent_gauntlet.interpose import list_record_ids
+
+    # Keyed by the fault's OWN target, because that is the bug this test
+    # exists to catch -- and the first draft of this test had it, calling
+    # every site with a hardcoded "a" while the schedule targeted whatever
+    # the seed chose.
+    calls = {
+        "fetch_record": lambda key: fetch_quantity(key),
+        "pull_credit_report": lambda key: pull_credit_report(key),
+        "read_annotation": lambda key: read_annotation(key),
+        "recall_note": lambda key: recall_note(key),
+        "list_records": lambda key: list_record_ids(),
+    }
+    assert set(calls) == set(INJECTION_SITES), (
+        "a registered site has no behavioural check here -- add one rather "
+        "than trusting the registry"
+    )
+
+    for tool, kinds in sorted(INJECTION_SITES.items()):
+        for kind in sorted(kinds, key=lambda k: k.value):
+            schedule = FaultSchedule.build(
+                seed="site", records=RECORDS, kind=kind, tool_name=tool)
+            with run_context(RECORDS, schedule, set(BUILTIN_TOOLS), []) as ctx:
+                if kind is FaultKind.POISONED_MEMORY:
+                    record_note("running", sum(RECORDS.values()))
+                (fault,) = schedule.faults
+                try:
+                    calls[tool](fault.target_key)
+                except Exception:
+                    # A loud fault (timeout) raises, which is injection.
+                    pass
+                faulted = [c for c in ctx.calls
+                           if c.get("tool") == tool and c.get("faulted")]
+            assert faulted, (
+                f"{tool!r} is registered for {kind.value!r} and served its "
+                f"clean value: the run would be scored as a faulted run in "
+                f"which nothing was injected"
+            )
+
+
+def test_an_omission_withholds_exactly_one_record_from_the_enumeration():
+    from agent_gauntlet.interpose import list_record_ids
+
+    schedule = FaultSchedule.build(
+        seed="om", records=RECORDS, kind=FaultKind.OMISSION,
+        tool_name="list_records")
+    (fault,) = schedule.faults
+    with run_context(RECORDS, schedule, set(BUILTIN_TOOLS), []):
+        seen = list_record_ids()
+
+    assert fault.target_key in RECORDS
+    assert set(seen) == set(RECORDS) - {fault.target_key}
+    # Withheld, not altered: delta is the exact shortfall, and negative --
+    # the first fault kind for which that is true.
+    assert fault.delta == -RECORDS[fault.target_key]
+    assert schedule.total_delta < 0
+
+
+def test_an_omission_lands_inside_the_audit_so_it_is_catchable():
+    """#5's fair-fault rule, reused rather than restated.
+
+    An omission outside the audited subset contradicts nothing observable:
+    `get_summary` covers only the audit, so no config could catch it and
+    the run would score luck. `build` draws the withheld record from the
+    same `targets` set the wrong-value rule uses.
+    """
+    task = TaskSpec.from_yaml(ROOT / "fixtures" / "inventory" / "audited.yaml")
+    scenario = task.scenarios[0]
+    assert scenario.audited, "this fixture is the partial-coverage one"
+    for i in range(20):
+        schedule = FaultSchedule.build(
+            seed=f"s{i}", records=scenario.records, kind=FaultKind.OMISSION,
+            tool_name="list_records", targets=scenario.audited_ids)
+        (fault,) = schedule.faults
+        assert fault.target_key in scenario.audited_ids
+
+
+def test_an_omission_is_more_decidable_than_a_plausible_wrong_value():
+    """Measured, and the opposite of the intuition I started with.
+
+    A wrong value is drawn to be PLAUSIBLE -- same order of magnitude, so
+    often small against the determinability band. An omission's delta is
+    the whole record. On `audited.yaml` omission is decidable on 20/20
+    seeds for every scenario where wrong_value manages 7-19.
+
+    Pinned because it bears on #5's budget argument: the quietest fault in
+    the set is also the one that most reliably yields a usable propagation
+    verdict, which is the opposite of what "loud faults are easy" suggests.
+    """
+    from agent_gauntlet.score import _determinable
+
+    task = TaskSpec.from_yaml(ROOT / "fixtures" / "inventory" / "audited.yaml")
+    totals = {FaultKind.OMISSION: 0, FaultKind.WRONG_VALUE: 0}
+    trials = 0
+    for scenario in task.scenarios:
+        for kind, tool in ((FaultKind.OMISSION, "list_records"),
+                           (FaultKind.WRONG_VALUE, "fetch_record")):
+            for i in range(20):
+                schedule = FaultSchedule.build(
+                    seed=f"s{i}", records=scenario.records, kind=kind,
+                    tool_name=tool, targets=scenario.audited_ids)
+                if _determinable(scenario.expected_total, schedule,
+                                 task.tolerance):
+                    totals[kind] += 1
+        trials += 20
+
+    assert trials == 60, "three scenarios, twenty seeds each"
+    assert totals[FaultKind.OMISSION] == 60, "decidable on every seed"
+    assert totals[FaultKind.WRONG_VALUE] < totals[FaultKind.OMISSION]

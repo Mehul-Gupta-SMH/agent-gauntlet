@@ -63,6 +63,35 @@ class FaultKind(str, Enum):
     threshold, no reading of intent.
     """
 
+    OMISSION = "omission"
+    """The call succeeds and returns LESS than it should.
+
+    The gap AgentChaos's taxonomy exposed (arXiv 2608.06790): its three-way
+    crash / omission / value cut maps onto `TIMEOUT` and `WRONG_VALUE` with
+    the middle one missing. See `docs/prior-art.md`.
+
+    It is the quietest fault in the set. A truncated enumeration produces a
+    plausible, *lower* total with no error, no exception, and nothing in
+    the result that looks wrong -- a wrong value at least has to be a
+    different number, while an omission just is not there. The silent-vs-
+    loud contrast #5's open question 1 is about has a third point on it now,
+    quieter than `WRONG_VALUE`.
+
+    Decidable the same way everything here is: the harness withheld the
+    record, so it knows the exact shortfall, and propagation is the
+    undercount reaching the answer. `delta` is negative, which is the first
+    time that has been true.
+
+    And FAIR by reusing the mechanism rather than restating it (#5's open
+    question 3): `build` draws the withheld record from the same
+    `targets` set the wrong-value rule uses, which is the audited subset.
+    An omission inside the audit contradicts `get_summary`, so a config
+    that cross-checks can catch it; one outside the audit would contradict
+    nothing observable and would score luck. The structural sentinel
+    `list_records_sample` has always done this as a TOOL GRANT -- this makes
+    it a scheduled fault any config can meet on any run.
+    """
+
     POISONED_MEMORY = "poisoned_memory"
     """The agent's own recorded intermediate result comes back altered.
 
@@ -313,6 +342,21 @@ class FaultSchedule(BaseModel):
 
         key = candidates[rng.randrange(len(candidates))]
         true_value = records[key]
+
+        if kind is FaultKind.OMISSION:
+            # Withheld, not altered: the agent never learns the record
+            # exists. `corrupt_value=0` makes `delta` the exact shortfall a
+            # credulous aggregate shows, so propagation needs no new
+            # arithmetic -- it is the same comparison as every other
+            # number-corrupting fault, with the sign reversed.
+            return cls(
+                seed=seed,
+                faults=[InjectedFault(
+                    kind=kind, tool_name=tool_name, target_key=key,
+                    true_value=true_value, corrupt_value=0,
+                )],
+                evidence_tool=evidence_tool,
+            )
 
         if kind is FaultKind.INSTRUCTION:
             # The control names no value, because it asks for nothing. That
