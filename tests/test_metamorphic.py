@@ -297,3 +297,94 @@ def test_a_live_run_scores_its_relations_live(task, variants):
     _print_relations(task, variants[:1], fake_executor, enabled=True, live=True)
     assert calls, "the supplied executor was never called"
     assert {c[0] for c in calls} == {variants[0].id}
+
+
+# --- a relation is only defaulted where it is provable (#15) --------------
+
+
+def test_the_default_applies_only_to_a_task_whose_answer_is_the_sum():
+    """`relations_for`'s docstring said a task declares its relations, and
+    the code under it defaulted to all three for any task that declared
+    none -- which was every bundled fixture. So every relation result this
+    project reported came from a set no task had claimed.
+
+    It now defaults only where the default is provable: when no scenario
+    sets `expected`, the answer IS `sum(records.values())` by definition and
+    all three built-ins follow from that.
+    """
+    summing = TaskSpec.from_yaml(FIXTURE)
+    assert all(s.expected is None for s in summing.scenarios)
+    assert metamorphic.defaultable(summing)
+    assert not metamorphic.declared(summing)
+    assert len(metamorphic.relations_for(summing)) == 3
+
+    # One scenario supplying its own answer is enough: the harness no longer
+    # knows what the answer is a function of.
+    other = summing.model_copy(update={
+        "scenarios": [summing.scenarios[0].model_copy(update={"expected": 1})]
+                     + list(summing.scenarios[1:])})
+    assert not metamorphic.defaultable(other)
+    assert metamorphic.relations_for(other) == []
+
+
+def test_a_counting_task_is_not_failed_by_relations_it_never_declared():
+    """The demonstration, not the deduction.
+
+    A task whose answer is a COUNT of records is answered correctly by an
+    agent that counts them -- and under the old default `scale` demanded
+    the count triple when every quantity tripled, and `split` demanded it
+    stay put when a record was split in two. Two confident false failures
+    against a correct agent.
+    """
+    base = TaskSpec.from_yaml(FIXTURE)
+    counting = base.model_copy(update={
+        "id": "record_count",
+        "scenarios": [s.model_copy(update={"expected": len(s.records)})
+                      for s in base.scenarios],
+    })
+    assert metamorphic.relations_for(counting) == [], (
+        "the harness cannot prove a relation about a count, so it must claim "
+        "none"
+    )
+
+
+def test_relabel_is_excluded_from_the_subset_fixture():
+    """It destroys the marker the answer depends on.
+
+    `discontinued.yaml`'s answer is the stocked subset, keyed by an id
+    suffix. `relabel` renames every record, so the suffix goes and the
+    stocked total of `mixed` moves 128 -> 172. A config correctly reporting
+    172 for the relabelled world was being marked VIOLATED for it.
+    """
+    from agent_gauntlet.offline import DISCONTINUED
+
+    task = TaskSpec.from_yaml(
+        FIXTURE.parent / "discontinued.yaml")
+    assert metamorphic.declared(task)
+    assert [r.name for r in metamorphic.relations_for(task)] == ["scale", "split"]
+
+    scenario = task.scenarios[0]
+    relabelled = RELATIONS["relabel"].perturb(scenario)
+    stocked = sum(v for k, v in relabelled.records.items()
+                  if not k.endswith(DISCONTINUED))
+    assert stocked != scenario.expected_total, (
+        "if relabel ever preserves the marker this exclusion can be revisited"
+    )
+
+
+def test_the_two_declared_relations_really_hold(tmp_path):
+    """Declaring a relation that does not hold is the same defect pointing
+    the other way, so the two on the subset fixture are checked rather than
+    asserted."""
+    task = TaskSpec.from_yaml(FIXTURE.parent / "discontinued.yaml")
+    variants = architect.generate(out_dir=tmp_path / "v", task=task,
+                                  models={"cheap": "m", "smart": "s"})
+    best = next(v for v in variants
+                if v.factors.get("prompt") == "reconciling"
+                and v.factors.get("toolset") == "records+summary")
+    outcomes = metamorphic.check(
+        task=task, variants=[best], execute=None,
+        run_once=metamorphic.clean_runner(task), repeats=3)
+    assert outcomes
+    for outcome in outcomes:
+        assert outcome.satisfied is True, f"{outcome.relation} did not hold"

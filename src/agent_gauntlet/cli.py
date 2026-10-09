@@ -1464,8 +1464,15 @@ def _print_relations(task, variants, executor, *, enabled: bool,
     chosen = metamorphic.relations_for(task)
     print("\n--- metamorphic relations " + "-" * 46)
     if not chosen:
-        print("  none declared by this task.")
+        print("  none. This task sets its own `expected`, so its answer is not")
+        print("  the sum of the world and no built-in relation is provable for")
+        print("  it. Declare `relations:` with the ones that hold (#15).")
         return
+    source = ("declared by the task" if metamorphic.declared(task)
+              else "DEFAULTED -- the task declared none, and they are provable "
+                   "only\n              because its answer is the sum of the "
+                   "world")
+    print(f"  source      {source}")
 
     names = [r.name for r in chosen]
     if not enabled:
@@ -2136,7 +2143,8 @@ def _relations(args) -> int:
     chosen = metamorphic.relations_for(task)
 
     print(f"task        {task.id}")
-    print(f"relations   {', '.join(r.name for r in chosen)}")
+    print(f"relations   {', '.join(r.name for r in chosen) or '(none provable)'}")
+    print(f"source      {'declared by the task' if metamorphic.declared(task) else 'defaulted'}")
     print(f"pairs       {args.repeats} per relation, same seed on both sides")
     print("\n  No oracle is used below. Each relation compares a config's")
     print("  perturbed answer against its OWN unperturbed one, so none of")

@@ -575,6 +575,21 @@ None of those needs to know the right answer, and because the compared
 answers are integers, none of them needs a similarity threshold — which
 would be a judged quantity smuggled back in.
 
+**A relation is only applied where it is provable.** The three built-ins
+follow from the answer being the sum of the world: renaming keys does not
+change a sum of values, scaling every value scales the sum, splitting one
+value in two leaves it unchanged. The moment a task supplies its own
+`expected`, the answer is something else and none of them is provable — so
+the task gets none until it declares which hold.
+
+That was not always true, and the cost was concrete. The code defaulted to all
+three for any task that declared none — which was every bundled fixture — so a
+correct agent on a task whose answer is a *count* of records got `scale` and
+`split` marked VIOLATED, and on the subset fixture `relabel` renamed away the
+`__discontinued` marker the answer depends on and failed a config for reporting
+the right total. A missing relation measures less; a wrong one reports a
+failure that did not happen.
+
 Each relation compares a config's perturbed answer against its **own**
 unperturbed one, with the same seed on both sides, exactly as the
 clean/faulted pair does. On the bundled fixture this catches the

@@ -204,14 +204,59 @@ class RelationOutcome:
         return self.held == self.runs and self.runs > 0
 
 
+def declared(task: TaskSpec) -> bool:
+    """Did the task name its own relations, or is it taking the default?
+
+    Report sites need the difference. "This config satisfies three
+    relations" and "this config satisfies three relations nobody claimed
+    hold for this task" are different statements, and only the first is
+    evidence.
+    """
+    return bool(getattr(task, "relations", None))
+
+
+def defaultable(task: TaskSpec) -> bool:
+    """Can the built-in relations be assumed to hold for this task?
+
+    Only when no scenario sets `expected`. Then the answer IS
+    `sum(records.values())` by definition -- `Scenario.expected_total` says
+    so -- and all three built-ins provably follow from that: renaming keys
+    does not change a sum of values, scaling every value scales the sum,
+    and splitting one value in two leaves it unchanged.
+
+    The moment a scenario supplies its own `expected`, the answer is
+    something else and the harness has no idea what. It cannot prove any
+    relation, so it claims none.
+    """
+    return all(s.expected is None for s in task.scenarios)
+
+
 def relations_for(task: TaskSpec) -> list[Relation]:
     """The relations this task accepts.
 
     A task declares them, like everything else here: a relation that does
     not hold for a task is not a finding about the agent, and "the answer
     must never change" applied blindly is a false-failure machine.
+
+    That docstring was true and the code under it was not. It defaulted to
+    ALL THREE whenever a task declared none -- which every bundled fixture
+    did -- so every relation result this project has ever reported came
+    from a set no task had claimed. Demonstrated rather than deduced: a
+    correct agent on a task whose answer is a COUNT of records gets
+    `scale` and `split` marked VIOLATED, because tripling every quantity
+    does not triple a count and splitting a record does change one. And on
+    `discontinued.yaml`, whose answer is a subset sum keyed by an id
+    suffix, `relabel` renames the keys and destroys the marker: the stocked
+    total moves 128 -> 172 and a correct config is failed for it.
+
+    So the default now applies only where it is provable -- see
+    `defaultable` -- and otherwise the task gets nothing until it says what
+    holds. Conservative in the direction that matters: a missing relation
+    measures less, a wrong one reports a failure that did not happen.
     """
-    names = getattr(task, "relations", None) or list(RELATIONS)
+    names = getattr(task, "relations", None)
+    if not names:
+        names = list(RELATIONS) if defaultable(task) else []
     return [RELATIONS[n] for n in names if n in RELATIONS]
 
 

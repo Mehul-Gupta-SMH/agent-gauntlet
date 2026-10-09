@@ -75,6 +75,23 @@ statement: |
 oracle: full
 tolerance: 0
 
+# Declared, not defaulted -- and `relabel` is deliberately absent.
+#
+# The built-in relations are only provable for a task whose answer IS the
+# sum of the world. This task's answer is a SUBSET of it, keyed by an id
+# suffix, so `metamorphic.defaultable` returns False and the harness claims
+# nothing until the task says what holds. These two do:
+#
+#   scale   tripling every quantity triples the stocked subset too
+#   split   splitting one record in two leaves the subset sum unchanged
+#
+# `relabel` does NOT. It renames every record, which destroys the
+# `__discontinued` marker the answer depends on: the stocked total of the
+# `mixed` scenario moves 128 -> 172, and a config that correctly reports 172
+# for the relabelled world is marked VIOLATED for it. That is a false
+# failure, and it was firing on this fixture until the default was fixed.
+relations: [scale, split]
+
 # Four prompt levels, one capability each, and that is the point. The clean
 # step (drop the excluded records) and the robustness step (reconcile
 # against the audit) are deliberately carried by DIFFERENT levels. Putting

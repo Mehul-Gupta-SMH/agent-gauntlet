@@ -194,7 +194,11 @@ def assess(
     props.append(Property(
         name="metamorphic_relations", family=Family.RELATIONS,
         reachable=bool(relations),
-        why_not=None if relations else "this task declares no relations",
+        why_not=None if relations else (
+            "this task sets its own `expected`, so its answer is not the sum "
+            "of the world and no built-in relation is provable for it -- "
+            "declare the ones that hold"
+        ),
     ))
     props.append(Property(
         name="steady_state_hypotheses", family=Family.RELATIONS,

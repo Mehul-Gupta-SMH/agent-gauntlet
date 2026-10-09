@@ -82,7 +82,7 @@ does not use it and detaches historical run records. These must not change:
 |---|---|
 | `fixtures/inventory/task.yaml` | `5c9848747223eaa4` |
 | `fixtures/inventory/audited.yaml` | `d11a0b2a6801ee74` |
-| `fixtures/inventory/discontinued.yaml` | `18eefc3f8c2d6a0a` |
+| `fixtures/inventory/discontinued.yaml` | `4f03405d3269254e` |
 | `fixtures/lending/applicant.yaml` | `2f32ad9fcecc025b` |
 | `fixtures/poisoning/instruction.yaml` | `10347b6eeeba5b0d` |
 | `fixtures/poisoning/memory.yaml` | `8f7d94a1568e6696` |
@@ -94,10 +94,20 @@ generation time (`architect.leaks_answer`): every variant would score
 1.00 without calling a tool, and the board would rank a field that never
 did the work.
 
-Two hashes have moved, both deliberately and both documented in the
-fixture header. `discontinued.yaml` was re-registered the day it was
-created, when its hypotheses block was added and no run record existed
-against the first hash.
+Three hashes have moved, all deliberately and all documented in the
+fixture header. `discontinued.yaml` twice: the day it was created, when
+its hypotheses block were added, and again when it declared
+`relations: [scale, split]` to stop `relabel` false-failing on it. No live
+run record has ever existed against either earlier hash.
+
+**A relation is only defaulted where it is provable.** `relations_for`
+used to apply all three to any task that declared none -- which was every
+fixture -- so every relation result this project reported came from a set
+no task had claimed. It now defaults only when no scenario sets
+`expected`, because then the answer IS the sum of the world and all three
+follow from that. Otherwise the task gets none until it says what holds.
+A missing relation measures less; a wrong one reports a failure that did
+not happen.
 
 The instruction fixture's hash moved once, on 2026-09-23, and the reason
 is in the file: its first live run put no directive in front of the agent
@@ -169,7 +179,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 608 tests, ~48s
+.venv/bin/python -m pytest -q                       # 612 tests, ~51s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli canary fixtures/inventory/audited.yaml \
