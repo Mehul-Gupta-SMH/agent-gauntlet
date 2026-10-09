@@ -153,7 +153,13 @@ def run_matrix(
     if not offline:
         from .pricing import snapshot as _price_snapshot
 
-        prices = _price_snapshot(v.model for v in variants).model_dump(mode="json")
+        # The TARGET decides what priced the run, not the model list (#47).
+        # commonadk never consults its rate table for the Claude Agent SDK,
+        # so pinning that table on a `claude` run pinned numbers no dollar
+        # in the ledger came from.
+        prices = _price_snapshot(
+            (v.model for v in variants), target=target,
+        ).model_dump(mode="json")
 
     events.emit(
         "matrix.start",

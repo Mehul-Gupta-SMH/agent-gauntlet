@@ -215,3 +215,79 @@ def test_two_frameworks_in_one_ledger_are_visible(task, grid, tmp_path):
     seen = target_drift([*a, *b])
     assert set(seen) == {"crewai", "langgraph"}
     assert all(seen[k] for k in seen)
+
+
+def test_the_claude_target_is_not_priced_by_the_rate_table():
+    """The pin was a claim about a table that produced none of the dollars (#47).
+
+    Asserted against commonadk's own source, not against my reading of it:
+    the Claude Agent SDK runner takes `cost_usd` from
+    `ResultMessage.total_cost_usd` and says in its docstring that
+    `runners/pricing.py` is "never consulted for this target". `--target
+    claude` is this project's default and the only target it has ever run
+    live, so every live dollar in every ledger came from the SDK's figure
+    while every record pinned a rate table instead.
+    """
+    import inspect
+
+    from commonadk.runners import claude_agent
+
+    source = inspect.getsource(claude_agent)
+    assert "total_cost_usd" in source
+    # Stops before the line wrap in upstream's docstring, deliberately --
+    # the sentence continues "for this target" on the next line.
+    assert "is never consulted for this" in source, (
+        "upstream changed its cost attribution -- pricing.AUTHORITY needs "
+        "re-checking before this test is relaxed"
+    )
+
+    snap = pricing.snapshot(["anthropic/claude-haiku-4-5"], target="claude")
+    assert snap.source == pricing.SDK_PRICED
+    assert snap.rates == {}, "there is no table to pin, so none is pinned"
+    assert not snap.detects_drift, "the SDK publishes no rates to compare"
+    assert snap.models_cache_and_batch_tiers
+
+
+def test_a_table_priced_target_still_pins_the_table():
+    snap = pricing.snapshot(["anthropic/claude-haiku-4-5"], target="langgraph")
+    assert snap.source == pricing.TABLE
+    assert snap.rates == {"anthropic/claude-haiku-4-5": [1.0, 5.0]}
+    assert snap.detects_drift
+    assert not snap.models_cache_and_batch_tiers, (
+        "flat input/output rates: no cache tier, no batch tier (#47)"
+    )
+
+
+def test_adding_the_authority_moved_no_table_fingerprint():
+    """A new field joins the payload only when it is not the default.
+
+    The same rule as `TaskSpec.fingerprint`, for the same reason: rehashing
+    every table-priced snapshot would detach the pins already in ledgers.
+    """
+    models = ["anthropic/claude-haiku-4-5", "anthropic/claude-sonnet-5"]
+    rates = pricing.rates_for(models)
+    assert pricing.fingerprint(rates) == "06e68075941ee991"
+    assert pricing.fingerprint(rates, source=pricing.TABLE) == "06e68075941ee991"
+
+
+def test_each_authority_gets_its_own_fingerprint():
+    """So a ledger mixing them reads n/a rather than averaging.
+
+    Dollars from a flat table and dollars the SDK billed are not the same
+    measurement, which is exactly what `prices_mixed` is for.
+    """
+    models = ["anthropic/claude-haiku-4-5"]
+    fps = {
+        pricing.snapshot(models, target=t).fingerprint
+        for t in ("claude", "langgraph", "mystery_sdk")
+    }
+    assert len(fps) == 3
+
+
+def test_an_unlisted_target_is_unrecorded_not_assumed():
+    """Assuming the table is how the wrong authority got pinned."""
+    snap = pricing.snapshot(["anthropic/claude-haiku-4-5"], target="something_new")
+    assert snap.source == pricing.UNKNOWN
+    assert not snap.detects_drift
+    assert not snap.models_cache_and_batch_tiers
+    assert pricing.authority_for(None) == pricing.UNKNOWN

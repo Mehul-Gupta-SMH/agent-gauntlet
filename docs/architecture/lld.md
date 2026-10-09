@@ -19,13 +19,13 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 2462<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 2508<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 1351<br/>summarize · rank · pareto · depth · curve"]
     ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 592<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 540<br/>RunContext · tool surface · notes"]
     OFFLINE["<b>offline</b> · 493<br/>scripted policies"]
-    MATRIX["<b>matrix</b> · 401<br/>run_matrix · _attempt · budget"]
+    MATRIX["<b>matrix</b> · 427<br/>run_matrix · _attempt · budget"]
     FAULTS["<b>faults</b> · 407<br/>FaultKind · FaultSchedule"]
     SPEC["<b>spec</b> · 543<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 337<br/>executor · parsing · classification"]
@@ -37,7 +37,7 @@ flowchart TD
     ATTR["<b>attribution</b> · 442<br/>exact Shapley · interaction · refusals"]
     HYP["<b>hypotheses</b> · 229<br/>falsifiable bounds · verdicts"]
     CAN["<b>canary</b> · 304<br/>behavioural fingerprint · blind spot"]
-    PRICE["<b>pricing</b> · 133<br/>rate snapshot · drift"]
+    PRICE["<b>pricing</b> · 242<br/>pricing authority · drift"]
     COV["<b>coverage</b> · 250<br/>what a task can measure · audit"]
     CALIB["<b>calibration</b> · 216<br/>Brier · skill · Murphy"]
 
@@ -672,8 +672,8 @@ test_hypotheses  falsifiable bounds, and the three ways a verdict lies:
                  censored, confirmed-at-zero, held by a hair
 test_canary      the fingerprint that triggers a re-run, and the shifts
                  it admits it cannot see
-test_pricing     the rate table a dollar figure was computed against, and
-                 the cost that goes n/a when two of them meet
+test_pricing     what actually priced a dollar figure -- a table or the
+                 SDK itself -- and the cost that goes n/a when two meet
 test_reward_hacking  the answer written into the statement it is graded
                  against, refused before a matrix exists
 test_coverage    what a task can measure before it is run, and the audit

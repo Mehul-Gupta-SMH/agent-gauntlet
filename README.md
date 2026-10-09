@@ -769,9 +769,21 @@ Every result, with raw output committed alongside it, is in
   ([#9](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/9),
   [#14](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/14)) — but
   recording a confound is not removing one. There is still no framework factor
-  in the grid, and the price table models no cache or batch discount, which
-  biases the cost column against exactly the configurations that are cheapest
-  in production ([#47](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/47)).
+  in the grid.
+- **What priced a run is now recorded, and it is not always a rate table.**
+  [#47](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/47) said the
+  flat table models no cache or batch discount, biasing the cost column against
+  exactly the configurations that are cheapest in production. True — for five of
+  the six targets. For `--target claude`, the default and the only target this
+  project has ever run live, commonadk takes `cost_usd` from the SDK's own
+  figure and *never consults* its rate table. So the bias was not the live
+  defect; the **pin** was. Every live record claimed a rate table that produced
+  none of its dollars — plausible rates, a real fingerprint, and no causal
+  relationship to the number. The snapshot now records the authority, each
+  authority hashes differently so a mixed ledger reads `n/a`, and the board
+  states the blind spot each one has: the table misses cache and batch tiers;
+  the SDK reports what it billed but publishes no rates, so upstream price
+  drift is invisible from here.
 - **The clean run does not discriminate on the bundled inventory fixtures.**
   Across both live matrices ever run, every contender answered correctly every
   time its tools told the truth — so the clean leaderboard is a tie and

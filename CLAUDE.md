@@ -118,6 +118,18 @@ silence was being read as coverage. A perturbed world is stamped
 `synthetic` by the code that builds it, whatever its parent was -- `scale`
 triples quantities no trace contains.
 
+**A cost figure records what priced it, not what might have.** `pricing`
+pins an authority per target: the static rate table, or the SDK's own
+`total_cost_usd`. commonadk never consults its table for `--target claude`,
+which is the default -- so pinning the table there was a claim with no
+causal relationship to the dollars, and it looked healthy. Each authority
+hashes differently, so a mixed ledger reads `n/a` rather than averaging two
+different measurements. Each has a blind spot the board states: the table
+models no cache or batch tier; the SDK reports what it billed but publishes
+no rates, so upstream drift is invisible. An unlisted target is
+`unrecorded`, never assumed to be the table -- assuming is how the wrong
+authority got pinned.
+
 **A relation is only defaulted where it is provable.** `relations_for`
 used to apply all three to any task that declared none -- which was every
 fixture -- so every relation result this project reported came from a set

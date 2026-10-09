@@ -24,6 +24,7 @@ from .faults import FaultKind
 from .score import Outcome
 from .live import provider_unreachable as _provider_unreachable
 from . import certify
+from . import pricing
 from .ledger import Ledger, write_summary
 from .stats import detectable_difference
 from .ledger import duplicate_cells as ledger_duplicates
@@ -856,8 +857,39 @@ def _run(args) -> int:
             print(f"  {fp}: {len(variants)} variant(s)")
     elif priced:
         (only,) = priced
-        print(f"prices      {only}  (rates pinned at run time; there is no "
-              f"upstream date to show)")
+        # Name the authority, not just the hash. The hash used to imply a
+        # rate table on runs whose dollars came from the SDK instead (#47).
+        authority = _price_authority(records)
+        print(f"prices      {only}  via {authority}")
+        if authority == pricing.SDK_PRICED:
+            print("            The SDK reports what it billed, so whatever "
+                  "cache or batch")
+            print("            discount this run obtained is already in the "
+                  "figure -- and it")
+            print("            publishes no rates, so a price change upstream "
+                  "is invisible")
+            print("            from here. The pin cannot detect that drift "
+                  "(#14, #47).")
+        elif authority == pricing.TABLE:
+            print("            Flat input/output rates, pinned at run time: "
+                  "no cache tier")
+            print("            and no batch tier. Every variant here shares "
+                  "one statement by")
+            print("            the fairness invariant, so this grid is built "
+                  "of stable")
+            print("            prefixes -- the shape caching discounts -- and "
+                  "the table prices")
+            print("            them all alike, biased against whichever "
+                  "config is cheapest")
+            print("            in production (#47).")
+        else:
+            print("            Which component produced these dollars is "
+                  "UNRECORDED: this")
+            print("            target is not in `pricing.AUTHORITY`. Not "
+                  "assumed to be the")
+            print("            rate table, because assuming that is how the "
+                  "wrong authority")
+            print("            got pinned (#47).")
 
     frameworks = ledger_targets(records)
     if len(frameworks) > 1:
@@ -1568,6 +1600,20 @@ def _print_relations(task, variants, executor, *, enabled: bool,
     else:
         print("\n  Every declared relation held for every config. One pair each:")
         print("  a relation that holds once is not a relation that holds.")
+
+
+def _price_authority(records) -> str:
+    """The one pricing authority these records agree on, or UNKNOWN.
+
+    Read off the stored snapshots rather than recomputed from the target,
+    so a ledger says what it was priced by even if the map has since
+    changed.
+    """
+    seen = {
+        (r.prices or {}).get("source") for r in records if (r.prices or {})
+    }
+    seen.discard(None)
+    return seen.pop() if len(seen) == 1 else pricing.UNKNOWN
 
 
 def _print_scope(records) -> None:
