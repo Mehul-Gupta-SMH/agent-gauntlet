@@ -4,7 +4,7 @@ Every run that produced a result, with its raw output committed alongside the
 writeup. A number quoted in the README or an issue should be traceable to a
 file in here.
 
-Two rules this directory follows:
+Three rules this directory follows:
 
 - **Captured, not transcribed.** `console.txt` and `summary.json` are the
   actual artifacts. Prose in a writeup can be wrong; the artifact next to it
@@ -12,6 +12,14 @@ Two rules this directory follows:
 - **Negative results are results.** An experiment that failed its own gate, or
   that found the harness at fault, stays in the record at the same weight as
   one that passed.
+- **A live experiment commits its ledger.** `runs.jsonl` goes in the directory,
+  not just the printed board. Experiments 003 and 007 broke this rule before it
+  was written down: roughly $10 of real runs whose per-run records live only in
+  an Actions artifact, so [experiment 010](010-robustness-vs-quality/) had to
+  answer its question by *parsing the printed table*. Artifacts expire; a
+  committed file does not. `tools/rescue_ledger.sh` files one, and 003 and 007
+  are still outstanding — their artifacts expire **2026-12-14** and
+  **2026-12-15** (#46).
 
 | # | Experiment | Cost | Outcome |
 |---|---|---|---|
