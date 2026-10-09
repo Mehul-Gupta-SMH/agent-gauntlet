@@ -19,8 +19,8 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 2398<br/>argparse · board rendering · probe · ui"]
-    BOARD["<b>board</b> · 1158<br/>summarize · rank · pareto · depth · curve"]
+    CLI["<b>cli</b> · 2457<br/>argparse · board rendering · probe · ui"]
+    BOARD["<b>board</b> · 1218<br/>summarize · rank · pareto · depth · curve"]
     ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 592<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 540<br/>RunContext · tool surface · notes"]
@@ -304,11 +304,26 @@ default fixture at n=36, eight contenders collapse into two tiers.
 
 **`best_under`** answers the constraint an operator actually arrives with —
 "the best thing I can afford at $X a run" — beside the frontier, which
-answers the preference. Inside the top tier the tiebreak is cost, because
-picking between configs the run could not separate on quality would be
-reading noise. Unpriced configs are refused and *handed back*: an unpriced
-run is not a free one (#14), and admitting them would make "no price" the
-cheapest possible answer.
+answers the preference. One rule: **the cheapest config inside the band
+this run could not order.** Normally that band is the top evidence tier.
+When the run produced no interval at all, the band is every affordable
+row — the same rule, not a second one, because quality then orders
+nothing and cost is the only measured dimension left.
+
+It returns a `BudgetPick` rather than a tuple, and that shape is the fix
+for two live defects (#44). The old fallback took a plain argmax on
+quality when no interval existed — the least evidence producing the most
+confident answer, measured once at 100× the cost of the alternative for
+two unmeasured points — while the printer asserted "cheapest of the
+configs this run could not tell apart", unconditionally and falsely. So
+`basis` now records how the pick was made and the print site reads it,
+never describes it. And `evidence_tiers` drops a row with no interval by
+design, which `best_under` read as "not there": a priced, affordable 95%
+config lost to a 70% one and appeared nowhere. Those rows come back as
+`unplaced` — not in the band, not ruled out of it. Unpriced configs are
+refused and handed back the same way: an unpriced run is not a free one
+(#14), and admitting them would make "no price" the cheapest possible
+answer.
 
 **`search_cost`** reports what finding the answer cost, as opposed to what
 running it will. Without it the escalation ladder — offline, then `probe`,

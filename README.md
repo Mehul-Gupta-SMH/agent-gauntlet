@@ -56,8 +56,10 @@ gauntlet coverage fixtures/inventory/audited.yaml
 gauntlet explain runs/runs.jsonl --variant "smart verifying records+summary"
 ```
 
-Add `--max-cost-per-run 0.02` to get the constrained answer — the best config
-you can afford at that price — beside the unconstrained frontier.
+Add `--max-cost-per-run 0.02` to get the constrained answer — the cheapest
+config inside the band this run could not order, beside the unconstrained
+frontier. It also names the affordable configs it could *not* place against
+the leaders, rather than dropping them.
 
 `check --safety-only` gates on the binary properties — propagation and
 compliance — and reports quality regressions without blocking on them. And

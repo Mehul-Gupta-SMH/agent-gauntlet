@@ -445,7 +445,8 @@ def test_the_best_config_under_a_ceiling():
         _v("fine", 0.93, low=0.83, high=0.98, cost=0.02),
         _v("cheap_bad", 0.30, low=0.18, high=0.45, cost=0.001),
     ]
-    pick, unpriced = board.best_under(rows, 0.10)
+    chosen = board.best_under(rows, 0.10)
+    pick, unpriced = chosen.pick, chosen.unpriced
     assert pick.variant_id == "fine"
     assert unpriced == []
 
@@ -458,7 +459,7 @@ def test_inside_the_top_tier_the_tiebreak_is_the_constraint():
         _v("pricey", 0.95, low=0.85, high=0.99, cost=0.09),
         _v("thrifty", 0.92, low=0.82, high=0.97, cost=0.01),
     ]
-    pick, _ = board.best_under(rows, 0.10)
+    pick = board.best_under(rows, 0.10).pick
     assert pick.variant_id == "thrifty"
 
 
@@ -470,14 +471,15 @@ def test_an_unpriced_config_is_not_a_cheap_one():
         _v("priced", 0.80, low=0.70, high=0.90, cost=0.05),
         _v("mystery", 0.99, low=0.90, high=1.0, priced=False),
     ]
-    pick, unpriced = board.best_under(rows, 1.00)
+    chosen = board.best_under(rows, 1.00)
+    pick, unpriced = chosen.pick, chosen.unpriced
     assert pick.variant_id == "priced"
     assert [r.variant_id for r in unpriced] == ["mystery"]
 
 
 def test_nothing_affordable_is_an_answer():
     rows = [_v("dear", 0.95, low=0.85, high=0.99, cost=5.0)]
-    pick, _ = board.best_under(rows, 0.10)
+    pick = board.best_under(rows, 0.10).pick
     assert pick is None
 
 
@@ -529,3 +531,62 @@ def test_a_single_cell_has_no_interaction_range():
                                 spread=0.2,
                                 conditional_spreads={"prompt=naive": 0.2})
     assert effect.interaction_range is None
+
+
+def test_no_intervals_anywhere_does_not_produce_the_most_confident_answer():
+    """The least evidence used to produce the boldest pick (#44).
+
+    With no interval on the metric, `evidence_tiers` is empty and the old
+    fallback took a plain argmax on quality -- then the board printed
+    "cheapest of the configs this run could not tell apart at the top",
+    which was false in both halves. Measured on a two-row board: it chose
+    the config costing 100x the alternative for two points of quality no
+    interval supported.
+
+    The rule is now one rule. The band is the set this run could not order;
+    when it ordered nothing, the band is everything affordable, and the
+    pick is the cheapest in it.
+    """
+    dear = _v("dear", 0.90, low=0, high=1, cost=0.10)
+    cheap = _v("cheap", 0.88, low=0, high=1, cost=0.001)
+    dear.intervals, cheap.intervals = {}, {}
+
+    chosen = board.best_under([dear, cheap], 1.00)
+    assert chosen.pick.variant_id == "cheap"
+    assert "ordered nothing" in chosen.basis
+    # And the basis is what gets printed, so the sentence cannot claim a
+    # top-band tiebreak that never happened.
+    assert "top" not in chosen.basis
+
+
+def test_an_affordable_config_with_no_interval_is_named_not_dropped():
+    """`evidence_tiers` leaves an unplaceable row out, by design. Reading
+    that as "not there" lost an affordable contender silently (#44).
+
+    Measured: a priced, affordable 95% config lost to a 70% one and
+    appeared in neither the pick nor the list of rows not considered.
+    """
+    strong = _v("strong_no_interval", 0.95, low=0, high=1, cost=0.05)
+    strong.intervals = {}
+    rows = [strong,
+            _v("weaker", 0.70, low=0.60, high=0.80, cost=0.05),
+            _v("far_behind", 0.20, low=0.10, high=0.30, cost=0.05)]
+
+    chosen = board.best_under(rows, 1.00)
+    assert chosen.pick.variant_id == "weaker"
+    assert [r.variant_id for r in chosen.unplaced] == ["strong_no_interval"]
+    # Not in the band and not ruled out of it -- the distinction the
+    # `unplaced` list exists to keep.
+    assert chosen.unpriced == []
+
+
+def test_a_placed_row_is_never_also_reported_as_unplaced():
+    rows = [
+        _v("top", 0.95, low=0.85, high=0.99, cost=0.05),
+        _v("near", 0.90, low=0.80, high=0.96, cost=0.02),
+        _v("far", 0.40, low=0.25, high=0.55, cost=0.01),
+    ]
+    chosen = board.best_under(rows, 1.00)
+    assert chosen.unplaced == []
+    assert chosen.pick.variant_id == "near"
+    assert "could not tell apart" in chosen.basis

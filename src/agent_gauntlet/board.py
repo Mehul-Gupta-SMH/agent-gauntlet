@@ -731,12 +731,54 @@ def rank_labels(
     return labels
 
 
+class BudgetPick(BaseModel):
+    """The constrained answer, and every row it could not weigh (#44).
+
+    A tuple of (pick, unpriced) was not enough to describe what happened,
+    and the printer filled the gap by asserting a basis nobody had checked.
+    Both failures below were live:
+
+    * With no intervals anywhere, the pick fell back to a plain argmax on
+      quality -- the LEAST evidence producing the MOST confident answer --
+      while the board said "cheapest of the configs this run could not
+      tell apart". On a two-row board that chose a config costing 100x the
+      alternative for two points of unmeasured quality.
+    * `evidence_tiers` drops a row with no interval for the metric, by
+      design, since it cannot be placed against one. `best_under` read
+      that as "not there": an affordable, priced 95% config lost to a 70%
+      one and appeared in neither the pick nor the list of rows not
+      considered.
+
+    So the basis is recorded rather than described, the same way the
+    relations block reads its provenance off the stamp. A sentence about
+    how a number was chosen is a claim like any other.
+    """
+
+    pick: Optional[VariantResult] = None
+    basis: str
+    """How `pick` was chosen, in the words the board prints. Never inferred
+    at the print site."""
+
+    unpriced: list[VariantResult] = Field(default_factory=list)
+    """Affordable or not, nobody can say: no price, or prices from two rate
+    tables. An unpriced run is not a free one (#14), so these cannot be
+    admitted under a ceiling -- and they are handed back rather than
+    dropped, because "your cheapest option might be in here" is part of
+    the answer."""
+
+    unplaced: list[VariantResult] = Field(default_factory=list)
+    """Priced and affordable, with no interval on the metric, so the run
+    could not place them against the leaders. Not in the band and not out
+    of it. Reported for the same reason as `unpriced`: the alternative is
+    an affordable contender vanishing silently."""
+
+
 def best_under(
     results: Sequence[VariantResult],
     max_cost_per_run: float,
     *,
     metric: str = "quality",
-) -> tuple[Optional[VariantResult], list[VariantResult]]:
+) -> BudgetPick:
     """The best config inside a spend ceiling, and what could not be judged.
 
     The Pareto frontier is the honest refusal to collapse a tradeoff into a
@@ -744,14 +786,13 @@ def best_under(
     a preference: "the best thing I can afford at $X a run". That is a
     different question and it is answerable from the same board.
 
-    Returns the pick and the rows that were excluded for having no price.
-    An unpriced run is not a free one (#14), so those cannot be admitted
-    under a ceiling -- and they are handed back rather than dropped,
-    because "your cheapest option might be in here" is part of the answer.
-
-    The pick is the top of its *evidence* tier, not merely the top row: if
-    the run could not separate the leaders, saying which of them is best
-    would be reading noise.
+    One rule, not two: **the cheapest config inside the top band this run
+    could not order.** When the run separated the leaders, the band is the
+    top evidence tier. When it ordered nothing at all, the band is every
+    affordable row -- which is the same rule, not a fallback to a
+    different one, and it yields the only comparison this run actually
+    made. Picking the highest quality there would be ranking on a
+    difference no interval supports.
     """
     priced = [
         r for r in results
@@ -765,16 +806,34 @@ def best_under(
     ]
     affordable = [r for r in priced if r.cost_per_run <= max_cost_per_run]
     if not affordable:
-        return None, unpriced
+        return BudgetPick(
+            pick=None, unpriced=unpriced,
+            basis="nothing priced came in under the ceiling",
+        )
 
     tiers = evidence_tiers(affordable, metric=metric)
     if not tiers:
-        # No intervals to reason with: fall back to the plain ordering and
-        # let the caller's resolution caveat do the qualifying.
-        return max(affordable, key=lambda r: getattr(r, metric)), unpriced
-    # Inside the top tier the run cannot order them, so take the cheapest:
-    # a tiebreak on the constraint the operator actually stated.
-    return min(tiers[0], key=lambda r: r.cost_per_run), unpriced
+        # The run ordered nothing on this metric, so the only measured
+        # dimension left is the one the operator constrained on.
+        return BudgetPick(
+            pick=min(affordable, key=lambda r: r.cost_per_run),
+            unpriced=unpriced,
+            basis=("cheapest affordable config -- this run produced no "
+                   "interval on this metric, so it ordered nothing and "
+                   "quality cannot break the tie"),
+        )
+
+    band = tiers[0]
+    placed = {id(r) for tier in tiers for r in tier}
+    unplaced = [r for r in affordable if id(r) not in placed]
+    return BudgetPick(
+        pick=min(band, key=lambda r: r.cost_per_run),
+        unpriced=unpriced,
+        unplaced=unplaced,
+        basis=("cheapest of the " + (f"{len(band)} configs" if len(band) > 1
+                                     else "one config")
+               + " at the top that this run could not tell apart"),
+    )
 
 
 def search_cost(results: Sequence[VariantResult]) -> dict[str, object]:

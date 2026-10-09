@@ -163,7 +163,8 @@ def test_the_censoring_reaches_the_budget_pick(task, grid, tmp_path):
                                              "fingerprint": "deadbeef"}})
              if i % 2 else r for i, r in enumerate(records)]
 
-    pick, unpriced = board.best_under(board.summarize(moved), 1.00)
+    chosen = board.best_under(board.summarize(moved), 1.00)
+    pick, unpriced = chosen.pick, chosen.unpriced
     assert pick is None, "a pick under a ceiling needs a comparable price"
     assert unpriced, "and the rows are handed back rather than dropped"
 

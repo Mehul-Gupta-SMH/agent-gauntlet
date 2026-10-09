@@ -1288,19 +1288,37 @@ def _print_search_cost(results, seeds: int, args) -> None:
 
 def _print_under_budget(results, ceiling: float) -> None:
     """The constrained answer, next to the unconstrained frontier."""
-    pick, unpriced = board.best_under(results, ceiling)
+    chosen = board.best_under(results, ceiling)
+    pick, unpriced = chosen.pick, chosen.unpriced
     print(f"\n--- best config at or under ${ceiling:.4f}/run " + "-" * 31)
     if pick is None:
-        print("  nothing priced came in under the ceiling.")
+        print(f"  {chosen.basis}.")
     else:
         ci = pick.intervals.get("quality")
         qual = "n/a" if pick.quality is None else f"{pick.quality:.0%}"
         band = f" [{ci.low:.0%},{ci.high:.0%}]" if ci else ""
         print(f"  {pick.label}   {qual}{band}   "
               f"${pick.cost_per_run:.4f}/run")
-        print("  Cheapest of the configs this run could not tell apart at the")
-        print("  top -- picking between them on quality would be reading")
-        print("  noise, so the tiebreak is the constraint you actually set.")
+        # Read off `basis`, never asserted here. The sentence that used to
+        # live at this print was unconditional and false on the path with
+        # the least evidence (#44).
+        # Not `.capitalize()`, which lowercases the rest of the string.
+        shown = chosen.basis[:1].upper() + chosen.basis[1:]
+        print(f"  {shown}. Picking between them on")
+        print("  quality would be reading noise, so the tiebreak is the")
+        print("  constraint you actually set.")
+    if chosen.unplaced:
+        # Priced, affordable, and dropped by `evidence_tiers` for having no
+        # interval. Silently excluding an affordable contender is the same
+        # defect as silently admitting an unpriced one.
+        print(f"\n  {len(chosen.unplaced)} affordable config(s) could not be "
+              "placed against")
+        print("  the leaders -- no interval on this metric, so the run can "
+              "neither")
+        print("  put them in the top band nor rule them out:")
+        for r in chosen.unplaced:
+            q = "n/a" if r.quality is None else f"{r.quality:.0%}"
+            print(f"    {r.label}   {q}   ${r.cost_per_run:.4f}/run")
     if unpriced:
         # An unpriced run is not a free one (#14). They cannot be admitted
         # under a ceiling, and dropping them silently would hide the fact
