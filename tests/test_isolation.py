@@ -73,26 +73,45 @@ def test_the_environment_is_an_allowlist_not_a_denylist(project, monkeypatch):
     """A denylist protects the variables somebody thought to name. This one
     is not named anywhere and must still be invisible."""
     monkeypatch.setenv("SOME_INTERNAL_TOKEN_NOBODY_LISTED", "hunter2")
-    tool = _tool(project, "import os\n"
-                          "def probe(x):\n"
-                          "    return sorted(os.environ)\n")
-    seen = list(_calibrate(project, tool).values())[0]
-    assert "SOME_INTERNAL_TOKEN_NOBODY_LISTED" not in seen
+    # A COUNT, not the list. A calibrated value must be numeric (#48), so
+    # the probe reports how many variables it saw that the allowlist does
+    # not name -- which asserts the same property and does not need the
+    # tool to return something the harness would refuse as a truth.
+    #
     # The allowlist governs what the parent PASSES. CPython itself adds a
     # couple of locale variables on the way in (PEP 538), which is worth
-    # knowing rather than papering over -- so they are named here instead
-    # of loosening the assertion to nothing.
-    INTERPRETER_ADDS = {"LC_CTYPE", "PYTHONHASHSEED"}
-    assert set(seen) <= set(usertools.ENV_ALLOWLIST) | INTERPRETER_ADDS
+    # knowing rather than papering over, so they are named here instead of
+    # loosening the assertion to nothing.
+    allowed = sorted(set(usertools.ENV_ALLOWLIST) |
+                     {"LC_CTYPE", "PYTHONHASHSEED"})
+    tool = _tool(project, "import os\n"
+                          f"ALLOWED = {allowed!r}\n"
+                          "def probe(x):\n"
+                          "    return len([k for k in os.environ\n"
+                          "                if k not in ALLOWED])\n")
+    assert list(_calibrate(project, tool).values()) == [0]
+
+    # And the unlisted name specifically, as its own assertion rather than
+    # folded into the count.
+    named = _tool(project, "import os\n"
+                           "def probe(x):\n"
+                           "    return int('SOME_INTERNAL_TOKEN_NOBODY_LISTED'"
+                           " in os.environ)\n")
+    assert list(_calibrate(project, named).values()) == [0], (
+        "the child saw a variable nobody listed anywhere"
+    )
 
 
 def test_the_child_still_gets_what_a_tool_legitimately_needs(project):
     """Stripped, not crippled: a tool that shells out or writes a temp file
     is doing something ordinary."""
+    # `int`, not `bool`: a bool is not a number here (#48), deliberately --
+    # `isinstance(True, int)` is True in Python, which is how a truth value
+    # ends up in a column of totals.
     tool = _tool(project, "import os\n"
                           "def probe(x):\n"
-                          "    return bool(os.environ.get('PATH'))\n")
-    assert list(_calibrate(project, tool).values()) == [True]
+                          "    return int(bool(os.environ.get('PATH')))\n")
+    assert list(_calibrate(project, tool).values()) == [1]
     assert "PATH" in usertools.child_env()
     assert not any(k.endswith("_API_KEY") for k in usertools.child_env())
 
@@ -286,3 +305,45 @@ def test_load_is_reachable_from_exactly_one_place():
         f"usertools.load is now reachable from {sorted(callers)} -- if any of "
         "those runs in the harness process, #42's exposure is real"
     )
+
+
+# --- 6. the calibrated value is data the operator controls (#48) ------------
+
+
+def test_a_non_numeric_calibrated_value_is_refused_not_dropped(project):
+    """Serializable was not enough, and the gap was silent (#48).
+
+    A string or a dict crosses the pipe happily, becomes a calibrated
+    "truth", and is then dropped at read time -- `_read` returns None for
+    anything non-numeric. So the operator got a tool that calibrated
+    SUCCESSFULLY, contributed nothing, and had nothing say so.
+
+    This project's censoring rule inverted: not an unmeasured thing
+    rendered as a number, but a value accepted as a truth and then quietly
+    discarded.
+    """
+    for source, kind in (("    return 'not a number'\n", "str"),
+                         ("    return {'a': 1}\n", "dict"),
+                         ("    return [1, 2]\n", "list"),
+                         ("    return None\n", "NoneType")):
+        tool = _tool(project, "def probe(x):\n" + source)
+        with pytest.raises(CalibrationError) as exc:
+            _calibrate(project, tool)
+        assert kind in str(exc.value)
+        # And the message names the call, not just the type.
+        assert "probe('x')" in str(exc.value)
+
+
+def test_a_bool_is_not_a_number_here(project):
+    """`isinstance(True, int)` is True in Python, which is exactly the kind
+    of accident that puts a truth value in a column of totals."""
+    tool = _tool(project, "def probe(x):\n    return True\n")
+    with pytest.raises(CalibrationError) as exc:
+        _calibrate(project, tool)
+    assert "bool" in str(exc.value)
+
+
+def test_numbers_still_calibrate(project):
+    for source, expected in (("    return 42\n", 42), ("    return 7.5\n", 7.5)):
+        tool = _tool(project, "def probe(x):\n" + source)
+        assert list(_calibrate(project, tool).values()) == [expected]

@@ -11,7 +11,7 @@ flowchart TD
     subgraph ui["UI layer — a view, not a second pipeline"]
         SERVER["<b>server</b> · 724<br/>stdlib http · wizard · arena"]
         RUNNER["<b>runner</b> · 637<br/>project → TaskSpec · policies"]
-        USERT["<b>usertools</b> · 389<br/>discover · calibrate · serve"]
+        USERT["<b>usertools</b> · 397<br/>discover · calibrate · serve"]
         PROJECT["<b>project</b> · 309<br/>Project · blockers"]
         SECRETS["<b>secrets</b> · 203<br/>.env · Store"]
         CALIB["<b>_calibrate</b> · 88<br/>the child process"]

@@ -68,6 +68,24 @@ def run(spec: dict[str, Any]) -> dict[str, Any]:
                 "args": args,
                 "returned": type(seen[0]).__name__,
             }
+        # Serializable is not enough (#48). A string or a dict crosses the
+        # pipe happily, becomes a calibrated "truth", and is then dropped
+        # SILENTLY at read time -- `_read` returns None for anything
+        # non-numeric. So the operator got a tool that calibrated
+        # successfully, contributed nothing, and had nothing say so.
+        #
+        # That is this project's censoring rule inverted: not an unmeasured
+        # thing rendered as a number, but a value accepted as a truth and
+        # then quietly discarded. Refused here, where the message can name
+        # the call that produced it.
+        if isinstance(seen[0], bool) or not isinstance(seen[0], (int, float)):
+            return {
+                "ok": False,
+                "kind": "not_a_number",
+                "args": args,
+                "returned": type(seen[0]).__name__,
+                "value": repr(seen[0])[:120],
+            }
         table[key] = seen[0]
     return {"ok": True, "table": table}
 

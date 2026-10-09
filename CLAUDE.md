@@ -118,6 +118,15 @@ silence was being read as coverage. A perturbed world is stamped
 `synthetic` by the code that builds it, whatever its parent was -- `scale`
 triples quantities no trace contains.
 
+**A calibrated value must be a number, refused rather than dropped.**
+Serializable was not enough (#48): a string or a dict crossed the pipe,
+became a calibrated "truth", and was then dropped SILENTLY at read time --
+`_read` returns None for anything non-numeric. The operator got a tool that
+calibrated successfully, contributed nothing, and had nothing say so. The
+censoring rule inverted: a value accepted as a truth and quietly discarded.
+A bool is not a number here, because `isinstance(True, int)` is how a truth
+value ends up in a column of totals.
+
 **A relation violation gates only once reproduced.** #27 makes it
 gate-shaped -- binary, so like propagation rather than a quality drop --
 and that rule is necessary, not sufficient. The board runs ONE pair per

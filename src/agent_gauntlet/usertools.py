@@ -316,6 +316,14 @@ def calibrate(
             f"run against a known truth, and a tool that disagrees with itself "
             f"has none -- its noise would be scored as the agent's."
         )
+    if kind == "not_a_number":
+        raise CalibrationError(
+            f"{call} returned a {outcome['returned']} "
+            f"({outcome.get('value')}), which cannot be a calibrated truth: "
+            f"the board compares numbers, and a non-numeric value would be "
+            f"accepted here and then dropped silently at read time -- a tool "
+            f"that calibrated successfully and contributed nothing (#48)."
+        )
     if kind == "unserializable":
         raise CalibrationError(
             f"{call} returned a {outcome['returned']}, which cannot be a "
