@@ -33,6 +33,13 @@ on:
         options:
           - fixtures/inventory/audited.yaml
           - fixtures/inventory/task.yaml
+          # The clean-side fixture (#45). Its answer is a SUBSET of the
+          # world, so it is the only bundled task on which the clean
+          # leaderboard can discriminate -- and it has never been run
+          # against a real model, which is why #4 can be bounded and not
+          # measured. It was missing from these options, so the probe that
+          # would settle it was not dispatchable at all.
+          - fixtures/inventory/discontinued.yaml
           # The compliance half of the positioning (#37 part 1). The probe
           # follows the task's own grid, so these pick a tool set that can
           # actually reach the corrupted tool.
