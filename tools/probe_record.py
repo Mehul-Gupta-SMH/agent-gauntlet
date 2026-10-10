@@ -47,16 +47,6 @@ PATTERNS: dict[str, re.Pattern] = {
     "outcome": re.compile(r"^outcome\s*:\s*(\w+)"),
     "flags": re.compile(r"^propagated=(\w+)\s+detected=(\w+)\s+surfaced=(\w+)"
                         r"\s+repaired=(\w+)\s+determinable=(\w+)"),
-    "cost": re.compile(r"'cost_usd': ([0-9.]+)"),
-    # Tokens, because cost alone cannot be read (#47). Two targets are two
-    # agent SDKs, so a cost ratio between them mixes the RATE (which
-    # pricing authority priced it) with the VOLUME (how large that
-    # adapter's prompt is). Without the counts there is no way to tell
-    # which moved -- the first claude-target row came in at 2.4x the
-    # langgraph cost and nothing in the record could say why.
-    "prompt_tokens": re.compile(r"'prompt_tokens': (\d+)"),
-    "completion_tokens": re.compile(r"'completion_tokens': (\d+)"),
-    "total_tokens": re.compile(r"'total_tokens': (\d+)"),
     "sentinel_total": re.compile(r"^reported total\s*:\s*(-?\d+)\s+\(truth \d+\)$"),
     # An instruction probe's HEADLINE, and it was being dropped. The
     # rotation reached `poisoning/instruction.yaml` on run 38041237112 and
@@ -91,6 +81,55 @@ PATTERNS: dict[str, re.Pattern] = {
 
 _BOOL = {"True": True, "False": False}
 
+# A probe is THREE agent runs -- clean, faulted, sentinel -- with three
+# bills. For most of this record's life the probe printed a rollup for the
+# first only, so every row's `cost_usd` was the clean half's while its
+# `outcome` and `faulted_total` were the faulted half's, and the record
+# understated what a probe costs by roughly 3x.
+#
+# Each half is now labelled and parsed separately. `cost_usd` and the bare
+# token fields keep meaning THE CLEAN HALF, unchanged, so no historical row
+# starts saying something it did not say. The other two halves arrive under
+# prefixes.
+#
+# These are searched within the matched line rather than against the whole
+# console: the three lines are identical in shape, and a pattern that swept
+# the file would take the last one -- which is how the faulted answer came
+# to be recorded as the sentinel's figure once already.
+_ROLLUP_LINE = re.compile(r"^tokens/cost(?: \((\w+)\))?\s*:\s*(.*)$")
+_ROLLUP_FIELDS = {
+    "cost_usd": re.compile(r"'cost_usd': ([0-9.]+)"),
+    # Tokens, because cost alone cannot be read (#47). Two targets are two
+    # agent SDKs, so a cost ratio between them mixes the RATE (which
+    # pricing authority priced it) with the VOLUME (how large that
+    # adapter's prompt is). Without the counts there is no way to tell
+    # which moved -- the first claude-target row came in at 2.4x the
+    # langgraph cost and nothing in the record could say why.
+    "prompt_tokens": re.compile(r"'prompt_tokens': (\d+)"),
+    "completion_tokens": re.compile(r"'completion_tokens': (\d+)"),
+    "total_tokens": re.compile(r"'total_tokens': (\d+)"),
+    # How many model calls that bill covers. Without it a cost cannot be
+    # turned into a per-call rate, which is what #47's ratio needs.
+    "llm_calls": re.compile(r"'count': (\d+)"),
+}
+_HALVES = ("clean", "faulted", "sentinel")
+
+
+def _rollup_fields(half: str, body: str) -> dict[str, Any]:
+    """Pull one labelled rollup line apart.
+
+    The clean half keeps the bare field names it has always had.
+    """
+    prefix = "" if half == "clean" else f"{half}_"
+    out: dict[str, Any] = {}
+    for name, pattern in _ROLLUP_FIELDS.items():
+        found = pattern.search(body)
+        if not found:
+            continue
+        raw = found.group(1)
+        out[prefix + name] = float(raw) if name == "cost_usd" else int(raw)
+    return out
+
 
 def _int_or_none(raw: Optional[str]) -> Optional[int]:
     """An absent or unparseable exit status is null, never 0 -- 0 means the
@@ -108,10 +147,17 @@ def parse(text: str) -> dict[str, Any]:
 
     for raw in text.splitlines():
         line = raw.strip()
+
+        rollup = _ROLLUP_LINE.match(line)
+        if rollup:
+            # An unlabelled line is the clean half: that is the format the
+            # already-committed rows were written from.
+            out.update(_rollup_fields(rollup.group(1) or "clean",
+                                      rollup.group(2)))
+            continue
+
         for name, pattern in PATTERNS.items():
-            searched = name in ("cost", "prompt_tokens",
-                                "completion_tokens", "total_tokens")
-            m = pattern.search(line) if searched else pattern.match(line)
+            m = pattern.match(line)
             if not m:
                 continue
             if name == "injected":
@@ -143,8 +189,8 @@ def parse(text: str) -> dict[str, Any]:
                 # asks for nothing did not "hold".
                 out["complied"] = (
                     None if verdict == "n/a" else verdict == "OBEYED")
-            elif name in ("confidence", "cost"):
-                out["cost_usd" if name == "cost" else name] = float(m.group(1))
+            elif name == "confidence":
+                out[name] = float(m.group(1))
             else:
                 out[name] = m.group(1)
 
@@ -161,8 +207,15 @@ def parse(text: str) -> dict[str, Any]:
                   "cost_usd", "prompt_tokens", "completion_tokens",
                   "total_tokens", "sentinel_total", "directive_shape",
                   "canary", "complied", "compliance_decidable",
-                  "faulted_reaching", "never_consulted"):
+                  "faulted_reaching", "never_consulted", "llm_calls"):
         out.setdefault(field, None)
+    # The two halves that were never priced. Present as null when the
+    # probe did not reach them, so "the sentinel never ran" is readable
+    # rather than inferred from an absent key.
+    for half in ("faulted", "sentinel"):
+        for field in ("cost_usd", "prompt_tokens", "completion_tokens",
+                      "total_tokens", "llm_calls"):
+            out.setdefault(f"{half}_{field}", None)
     return out
 
 

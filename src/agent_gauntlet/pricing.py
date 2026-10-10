@@ -88,6 +88,23 @@ wrong authority got pinned in the first place.
 """
 
 UNKNOWN = "unrecorded"
+"""No authority is recorded for this target: it is absent from
+`AUTHORITY`. A gap in the map, and deliberately not read as the table."""
+
+MIXED = "mixed"
+"""These records were priced by MORE THAN ONE authority.
+
+A different thing from `UNKNOWN`, and it used to collapse into it -- so a
+ledger whose rows came from two authorities printed "this target is not in
+`pricing.AUTHORITY`", naming a cause that was not the cause.
+
+It matters because the two authorities do not agree. Measured over five
+live `claude` probes (experiment 015), `ResultMessage.total_cost_usd` comes
+in at **1.83x to 2.29x** the figure this table computes from the same runs'
+recorded token counts. So a cost column mixing them is not approximate
+across rows, it is off by about a factor of two on some of them -- and
+`--max-cost-per-run` and `board.best_under` pick winners on it.
+"""
 
 
 class PriceSnapshot(BaseModel):

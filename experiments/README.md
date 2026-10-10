@@ -35,7 +35,8 @@ Three rules this directory follows:
 | [010](010-robustness-vs-quality/) | Does robustness rank differently from quality? | $0.00 | **BET HOLDS** — across both live matrices the clean ranking is an 8-way tie, so tau is undefined: the faulted half is the only axis that ranked anything |
 | [011](011-is-a-timeout-as-informative/) | Is a timeout as informative as a lie? | $0.00 | **MEASURED** — identical on correctness to 3 decimals, incomparable on safety; found two outcomes whose names were not true |
 | [013](013-the-probe-was-an-experiment/) | The probe was an experiment nobody was recording | $0.00 | **FOUND** — twelve paid-for live runs that disagreed with each other, read out of job logs by hand; the same cell both propagates and repairs |
-| [014](014-the-band-swallowed-the-verdict/) | The band swallowed the verdict | $0.05 | **FOUND** — two live runs reported the credulous figure to the unit and scored "no falsehood propagated"; the corruption was below the separability threshold, and nothing said so before the money was spent |
+| [014](014-the-band-swallowed-the-verdict/) | The band swallowed the verdict | $0.05+ | **FOUND** — two live runs reported the credulous figure to the unit and scored "no falsehood propagated"; the corruption was below the separability threshold, and nothing said so before the money was spent. The cost is a floor: see 015 |
+| [015](015-what-the-flat-table-misses/) | What the flat table misses, and in which direction | $0.00 | **MEASURED** — #47's ratio, from probes already paid for: the flat table underprices by 1.83×–2.29×, the opposite direction from the premise. Also found that every live row's cost is the clean half's while its outcome is the faulted half's |
 
 ## Where that leaves the question
 

@@ -291,3 +291,44 @@ def test_an_unlisted_target_is_unrecorded_not_assumed():
     assert not snap.detects_drift
     assert not snap.models_cache_and_batch_tiers
     assert pricing.authority_for(None) == pricing.UNKNOWN
+
+
+# --- the mixed authority, which used to read as a missing one -------------
+
+
+def test_mixed_authority_is_its_own_answer_not_unrecorded():
+    """Two situations, one return value, and the message named the wrong
+    one (#47, experiment 015).
+
+    `UNKNOWN` means no row recorded an authority. `MIXED` means several did
+    and they disagree -- measured at 1.83x-2.29x over five live probes, so
+    a cost column spanning both is off by about a factor of two on some
+    rows, not approximate.
+    """
+    from agent_gauntlet import pricing
+    from agent_gauntlet.cli import _price_authority
+
+    class _R:
+        def __init__(self, source):
+            self.prices = {"source": source} if source else {}
+
+    assert _price_authority([]) == pricing.UNKNOWN
+    assert _price_authority([_R(None), _R(None)]) == pricing.UNKNOWN
+    assert _price_authority([_R(pricing.TABLE)]) == pricing.TABLE
+    assert _price_authority([_R(pricing.SDK_PRICED)]) == pricing.SDK_PRICED
+    assert (_price_authority([_R(pricing.TABLE), _R(pricing.SDK_PRICED)])
+            == pricing.MIXED)
+    assert pricing.MIXED != pricing.UNKNOWN
+
+
+def test_the_board_says_a_mixed_cost_column_is_not_comparable():
+    """The warning has to name the consequence, not just the condition."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "src" / "agent_gauntlet"
+              / "cli.py").read_text(encoding="utf-8")
+    branch = source.split("pricing.MIXED:", 1)[1].split("else:", 1)[0]
+    assert "not comparable" in branch
+    assert "factor of two" in branch
+    assert "Split the ledger by target" in branch, (
+        "a caveat without an action is a caveat nobody applies")

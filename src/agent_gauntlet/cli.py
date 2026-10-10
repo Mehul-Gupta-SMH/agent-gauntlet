@@ -353,6 +353,24 @@ def hardest_scenario(task: TaskSpec):
     return max(task.scenarios, key=lambda sc: (len(sc.records), sc.id))
 
 
+def _print_rollup(half: str, rollup) -> None:
+    """Print one half's token and cost rollup, labelled.
+
+    Labelled because the three halves of a probe are three agent runs with
+    three bills, and for most of this record's life only the first was
+    printed. A reader computing cost-per-detection from a row was dividing
+    the clean half's dollars by the faulted half's outcome.
+
+    Silent when the rollup is absent rather than printing zeros: a target
+    whose adapter reports no usage has not spent nothing.
+    """
+    if not rollup:
+        return
+    calls = rollup.get("llm_calls") if isinstance(rollup, dict) else None
+    if calls:
+        print(f"tokens/cost ({half}): {calls}")
+
+
 def _probe(args) -> int:
     """One live call against one variant, with the raw reply shown.
 
@@ -608,7 +626,7 @@ def _probe(args) -> int:
             set(architect.TOOLSETS[variant.factors["toolset"]]),
             scenario.audited_ids,
         ) as fctx:
-            fanswer, _ = _unpack(execute(variant, "probe-faulted"))
+            fanswer, faulted_rollup = _unpack(execute(variant, "probe-faulted"))
     except Exception as exc:
         print(f"\n{type(exc).__name__}: {exc}")
         if _provider_unreachable(exc):
@@ -619,6 +637,13 @@ def _probe(args) -> int:
 
     was_exposed = any(c.get("faulted") for c in fctx.calls)
     print(f"tool calls     : {[c['tool'] for c in fctx.calls]}")
+    # A probe makes THREE agent runs and used to price one. The clean
+    # half's rollup was the only one printed, so every row in
+    # `experiments/live/probe.jsonl` carried a `cost_usd` that was the
+    # clean half's while its `outcome` and `faulted_total` were the faulted
+    # half's -- and the record understated what a probe costs by roughly
+    # 3x. Found while computing #47's ratio from rows already paid for.
+    _print_rollup("faulted", faulted_rollup)
     print(f"faulted results reaching the agent: {sum(bool(c.get('faulted')) for c in fctx.calls)}")
 
     if not was_exposed:
@@ -716,7 +741,7 @@ def _probe(args) -> int:
             scenario.records, FaultSchedule.clean("probe-sentinel"),
             set(granted), scenario.audited_ids,
         ) as sctx:
-            sanswer, _ = _unpack(execute(guard, "probe-sentinel"))
+            sanswer, sentinel_rollup = _unpack(execute(guard, "probe-sentinel"))
     except Exception as exc:
         print(f"\n{type(exc).__name__}: {exc}")
         if _provider_unreachable(exc):
@@ -726,6 +751,7 @@ def _probe(args) -> int:
         return 1
 
     print(f"tool calls     : {[c['tool'] for c in sctx.calls]}")
+    _print_rollup("sentinel", sentinel_rollup)
     print(f"reported total : {sanswer.total}  (truth {scenario.expected_total})")
 
     if sanswer.total is None:
@@ -923,6 +949,23 @@ def _run(args) -> int:
             print("            them all alike, biased against whichever "
                   "config is cheapest")
             print("            in production (#47).")
+        elif authority == pricing.MIXED:
+            print("            These rows were priced by MORE THAN ONE "
+                  "authority, and the")
+            print("            two do not agree: over five live `claude` "
+                  "probes the SDK's")
+            print("            own figure came in at 1.83x-2.29x what the "
+                  "table computes")
+            print("            from the same runs' token counts (experiment "
+                  "015). So the")
+            print("            cost column is not comparable ACROSS these "
+                  "rows -- it is")
+            print("            off by about a factor of two on some of them, "
+                  "and")
+            print("            --max-cost-per-run and the frontier pick "
+                  "winners on it.")
+            print("            Split the ledger by target before reading any "
+                  "dollar figure.")
         else:
             print("            Which component produced these dollars is "
                   "UNRECORDED: this")
@@ -1824,17 +1867,25 @@ def _print_relations(task, variants, executor, *, enabled: bool,
 
 
 def _price_authority(records) -> str:
-    """The one pricing authority these records agree on, or UNKNOWN.
+    """The one pricing authority these records agree on.
 
     Read off the stored snapshots rather than recomputed from the target,
     so a ledger says what it was priced by even if the map has since
     changed.
+
+    Three outcomes, not two. `UNKNOWN` means nothing recorded an authority;
+    `MIXED` means several did and they differ. Those used to be the same
+    return value, so a mixed ledger was told its target was missing from
+    the map -- a message naming a cause that was not the cause, about a
+    disagreement measured at roughly a factor of two (#47, experiment 015).
     """
     seen = {
         (r.prices or {}).get("source") for r in records if (r.prices or {})
     }
     seen.discard(None)
-    return seen.pop() if len(seen) == 1 else pricing.UNKNOWN
+    if len(seen) == 1:
+        return seen.pop()
+    return pricing.MIXED if seen else pricing.UNKNOWN
 
 
 def _print_scope(records) -> None:

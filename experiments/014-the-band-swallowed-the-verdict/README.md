@@ -2,7 +2,7 @@
 
 **Status:** finding, fixed in the same commit
 **Found by:** the probe rotation, on cells it was told to go collect
-**Cost:** $0.054 in live calls that were already paid for
+**Cost:** $0.054 of live calls already paid for — and that figure is a floor, not the total. It is the two runs' **clean halves**; a probe makes three agent runs and only the first was priced. See [015](../015-what-the-flat-table-misses/).
 **Issues:** #5 (one branch over), #45
 
 ## What happened
