@@ -122,15 +122,28 @@ jobs:
             exit 1
           fi
 
+      # Which cell to probe, when nobody said. The probe has always run
+      # the same one -- audited.yaml on langgraph -- so the live record is
+      # six rows deep there and empty everywhere else, while four issues
+      # (#4, #5, #45, #47) are blocked on evidence a probe would produce.
+      #
+      # Rotating costs nothing: the run happens either way, at the same
+      # ~$0.02. Least-covered first, so it converges on even coverage with
+      # no schedule to maintain. A dispatch with explicit inputs wins.
+      - name: Choose the least-covered cell
+        id: cell
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        run: python tools/probe_next.py experiments/live/probe.jsonl >> "$GITHUB_OUTPUT"
+
       - name: Probe the live path
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          FIXTURE: ${{ inputs.fixture || 'fixtures/inventory/audited.yaml' }}
-          TARGET: ${{ inputs.target || 'langgraph' }}
-          # claude-haiku-4-5, $1/$5 per MTok -- half Sonnet 5's rate. The
-          # probe proves the path, and the path does not care which model
-          # walked it.
-          MODEL: ${{ inputs.model || 'cheap' }}
+          FIXTURE: ${{ inputs.fixture || steps.cell.outputs.fixture || 'fixtures/inventory/audited.yaml' }}
+          TARGET: ${{ inputs.target || steps.cell.outputs.target || 'langgraph' }}
+          # cheap is claude-haiku-4-5, $1/$5 per MTok. The probe proves the
+          # path, and the path does not care which model walked it -- but
+          # #45 does, which is why `smart` is one of the rotated cells.
+          MODEL: ${{ inputs.model || steps.cell.outputs.model || 'cheap' }}
           SHAPE: ${{ inputs.shape || 'authority' }}
         run: |
           # +e deliberately: Actions runs this under bash -e, and the whole
@@ -188,8 +201,28 @@ jobs:
               exit 1
               ;;
             *)
-              echo "::error::the live path is broken (exit $status). Do NOT run the matrix."
-              exit 1
+              # The probe now has TWO jobs and only one of them may turn
+              # the build red.
+              #
+              # Its original job is the matrix guard: is the path a ~$5
+              # matrix would take sound? That question is about the DEFAULT
+              # cell, and a real break there is a build failure.
+              #
+              # Its second job is gathering live evidence on cells four
+              # issues are blocked on (#4, #5, #45, #47), chosen by
+              # rotation. A break there is a FINDING about that cell -- the
+              # fixture, the target, or the model -- and it must not block
+              # every later push on an unrelated commit. `experiments/`
+              # records what that confusion already cost once: ci.yml spent
+              # several days red because a pre-registered gate FAIL, which
+              # is a measurement, was read as a build failure.
+              if [ "$FIXTURE" = "fixtures/inventory/audited.yaml" ] && \
+                 [ "$TARGET" = "langgraph" ]; then
+                echo "::error::the live path is broken (exit $status) on the DEFAULT cell. Do NOT run the matrix."
+                exit 1
+              fi
+              echo "::warning::probe failed (exit $status) on the rotated cell $FIXTURE $TARGET/$MODEL. That is a finding about this cell, not a broken build -- the matrix guard runs on the default cell. See experiments/live/probe.jsonl."
+              exit 0
               ;;
           esac
 
@@ -220,9 +253,9 @@ jobs:
           # row carried "fixture":"", "target":"", "model_level":"",
           # "shape":"" -- provenance fields that are the whole point of the
           # row.
-          FIXTURE: ${{ inputs.fixture || 'fixtures/inventory/audited.yaml' }}
-          TARGET: ${{ inputs.target || 'langgraph' }}
-          MODEL: ${{ inputs.model || 'cheap' }}
+          FIXTURE: ${{ inputs.fixture || steps.cell.outputs.fixture || 'fixtures/inventory/audited.yaml' }}
+          TARGET: ${{ inputs.target || steps.cell.outputs.target || 'langgraph' }}
+          MODEL: ${{ inputs.model || steps.cell.outputs.model || 'cheap' }}
           SHAPE: ${{ inputs.shape || 'authority' }}
         run: |
           set -euo pipefail

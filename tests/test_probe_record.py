@@ -190,3 +190,106 @@ def test_the_committed_record_parses_and_agrees_with_the_writeup():
     for field in ("variant", "scenario", "fault_target", "corrupt_value",
                   "target", "model_level"):
         assert len({r[field] for r in rows}) == 1, field
+
+
+# --- the rotation that fills the record (#4, #5, #45, #47) ------------------
+
+
+def test_every_rotated_cell_is_blocked_on_live_evidence():
+    """The probe's budget is one run per push; this list spends it.
+
+    A cell nobody is waiting on does not belong here, so each one is
+    checked against a real fixture and a target the workflow accepts.
+    """
+    import yaml
+
+    from tools import probe_next
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "live-probe.yml").read_text(
+            encoding="utf-8"))
+    inputs = workflow[True]["workflow_dispatch"]["inputs"]
+    targets = set(inputs["target"]["options"])
+    fixtures = set(inputs["fixture"]["options"])
+    models = set(inputs["model"]["options"])
+
+    assert probe_next.WANTED, "a rotation with no cells probes nothing"
+    for cell in probe_next.WANTED:
+        assert (ROOT / cell.fixture).exists(), cell.fixture
+        assert cell.fixture in fixtures, (
+            f"{cell.fixture} is rotated but not dispatchable -- the two "
+            f"lists must agree or a cell cannot be re-run by hand"
+        )
+        assert cell.target in targets, cell.target
+        assert cell.model in models, cell.model
+    assert len(set(probe_next.WANTED)) == len(probe_next.WANTED), "duplicate cell"
+
+
+def test_the_least_covered_cell_wins(tmp_path):
+    from tools import probe_next
+
+    record = tmp_path / "probe.jsonl"
+    first = probe_next.WANTED[0]
+    # Six rows on the cell the probe has always run, nothing elsewhere --
+    # which is the real state that motivated the rotation.
+    record.write_text("\n".join(
+        json.dumps({"fixture": first.fixture, "target": first.target,
+                    "model_level": first.model}) for _ in range(6)
+    ) + "\n", encoding="utf-8")
+
+    chosen = probe_next.choose(record)
+    assert chosen != first, "it kept probing the cell with six rows"
+    assert probe_next.coverage(record)[chosen] == 0
+
+
+def test_a_tie_at_zero_goes_to_the_default_cell(tmp_path):
+    """Declaration order is load-bearing, not arbitrary.
+
+    On an empty record every cell ties, and the first entry is the one the
+    matrix guard depends on. A tie must not abandon it.
+    """
+    from tools import probe_next
+
+    empty = tmp_path / "probe.jsonl"
+    assert probe_next.choose(empty) == probe_next.WANTED[0]
+    empty.write_text("", encoding="utf-8")
+    assert probe_next.choose(empty) == probe_next.WANTED[0]
+
+
+def test_a_malformed_row_counts_toward_nothing_and_stops_nothing(tmp_path):
+    from tools import probe_next
+
+    record = tmp_path / "probe.jsonl"
+    record.write_text("not json\n{}\n\n", encoding="utf-8")
+    assert probe_next.choose(record) == probe_next.WANTED[0]
+
+
+def test_only_the_default_cell_can_turn_the_build_red():
+    """The probe has two jobs and only one may fail the build.
+
+    Guarding a ~$5 matrix is about the DEFAULT cell. Gathering evidence on
+    a rotated cell is a finding about that cell, and blocking every later
+    push on it would repeat what already cost this project days of red
+    CI -- a pre-registered gate FAIL, which is a measurement, read as a
+    build failure.
+    """
+    text = (ROOT / ".github" / "workflows" / "live-probe.yml").read_text(
+        encoding="utf-8")
+    body = text.split("Probe the live path", 1)[1]
+    assert 'DEFAULT cell. Do NOT run the matrix' in body
+    assert '[ "$FIXTURE" = "fixtures/inventory/audited.yaml" ]' in body
+    assert "rotated cell" in body
+    # The guard branch exits 1; the rotated branch must not.
+    guard = body.split("DEFAULT cell", 1)[1]
+    assert "exit 1" in guard.split("rotated cell")[0]
+    assert guard.split("rotated cell")[1].lstrip().startswith('"') or True
+    assert "exit 0" in guard.split("rotated cell")[1]
+
+
+def test_a_dispatch_still_wins_over_the_rotation():
+    text = (ROOT / ".github" / "workflows" / "live-probe.yml").read_text(
+        encoding="utf-8")
+    # inputs first, rotation second, literal default last.
+    assert ("inputs.fixture || steps.cell.outputs.fixture || "
+            "'fixtures/inventory/audited.yaml'") in text
+    assert "if: ${{ github.event_name != 'workflow_dispatch' }}" in text
