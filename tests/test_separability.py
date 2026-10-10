@@ -226,3 +226,29 @@ def test_a_fixture_can_be_censored_for_cause_and_the_flag_cannot_help(tmp_path):
     assert seen[False][1] == 0 and seen[True][1] == 0, "none are withheld"
     assert seen[False][0] == seen[True][0] > 0, (
         "censored for cause, and the flag changes nothing about it")
+
+
+def test_the_offline_clean_spread_is_one_noise_rate_not_discrimination():
+    """Guards the retraction in experiment 014.
+
+    The offline clean leaderboard shows several distinct values, and they
+    are draws from a single Bernoulli shared by every policy -- `_slip` at
+    `SLIP_RATE`, declared in `offline.py` as the variance the stability
+    machinery needs. A spread with one parameter for all configurations is
+    not a measurement of how configurations differ.
+
+    Pinned as a test because the claim "offline the clean board is not
+    tied" is true, reads like discrimination, and is not. Anyone reaching
+    for it to validate a candidate fixture for #45 should fail here first.
+    """
+    import inspect
+
+    from agent_gauntlet import offline
+
+    assert offline.SLIP_RATE > 0, "no slip, no spread, nothing to retract"
+    for name in ("naive", "verifying", "filtering", "reconciling",
+                 "summary_only", "bureau_repull", "bureau_deliberate"):
+        sig = inspect.signature(getattr(offline, name))
+        assert sig.parameters["rate"].default is offline.SLIP_RATE, (
+            f"{name} must share the one slip rate, or the offline clean "
+            f"spread would be a config property and the retraction wrong")

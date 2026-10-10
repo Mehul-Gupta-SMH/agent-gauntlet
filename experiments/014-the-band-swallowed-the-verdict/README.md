@@ -159,33 +159,57 @@ That is experiment 003's lesson for the fourth time — a capability assigned
 to a prompt level does not survive a real model. It stays n=2 and the
 rotation continues.
 
-## And the clean half, for free
+## And the clean half, where I nearly published an artefact
 
-While measuring the above, the offline matrices printed something #45 should
-have:
+While measuring the above, the offline matrices printed something that looks
+like news for #45:
 
 | fixture | distinct clean-quality values, offline |
 |---|---|
 | `inventory/audited.yaml` | 5 — `0.0, 0.667, 0.778, 0.889, 1.0` |
 | `lending/applicant.yaml` | 3 — `0.0, 0.667, 1.0` |
 
-Offline, the clean leaderboard **is not tied**. Live, on the same
-`audited.yaml`, experiments 003 and 007 found exactly one distinct clean
-value across 648 runs.
+Live, on the same `audited.yaml`, experiments 003 and 007 found exactly
+**one** distinct clean value across 648 runs. So the first draft of this
+section said the offline clean leaderboard is not tied, and concluded that
+#45's ceiling is a gap between the offline policies and real models.
 
-So #45's ceiling is not a property of the fixtures. It is the gap between
-the offline policies and real models: the offline policy set is a model of
-how configurations differ, and real models do not differ that way on the
-clean half. Which is experiment 003's lesson again — a capability assigned
-to a prompt level does not survive a real model — now on the axis #45 is
-about.
+**That was wrong, and the way it was wrong is this project's own subject.**
 
-The consequence for #45 is methodological, and it is not good news: **no
-amount of offline validation can establish that a candidate fixture
-discriminates live.** A fixture built and checked offline would show a
-healthy spread and could still be an eight-way tie on a real model, which is
-precisely what `audited.yaml` did. #45 needs a live matrix, not a better
-offline design loop.
+Attributing the spread to an axis dissolves it. Per variant, 3 clean repeats
+on `applicant.yaml`'s single scenario, 7 of 17 variants answer *differently
+across repeats of the same scenario* — and a clean offline run has no fault
+in it to vary. The cause is in `offline.py`, declared, forty lines above the
+policies:
+
+> Real agents are stochastic; perfectly deterministic stand-ins make top-1
+> stability meaningless, because every seed produces an identical ranking
+> and the gate can never fail. A seeded slip gives the offline path enough
+> variance to exercise the stability machinery.
+
+`SLIP_RATE = 0.15`, applied through `_slip` by **every** policy, at the
+**same rate**. So the offline clean spread is a Bernoulli draw with one
+parameter shared across all configurations. Those five values are five draws
+from one distribution, not five configurations with different abilities.
+They were never a measurement of discrimination, and "offline the board is
+not tied" was a sentence about a noise generator.
+
+What survives, and it is the useful half:
+
+* Offline, clean discrimination exists **only as all-or-nothing by tool
+  reach**. `toolset-records-partial` sits at exactly `0.0` on both fixtures,
+  because it cannot see the records it would need. Everything graded above
+  that is the slip rate.
+* So the offline path has **no mechanism** by which a graded clean spread
+  could appear, and a candidate fixture cannot be validated offline for the
+  property #45 asks about. Not "would be a weak prediction" — there is no
+  prediction to make.
+* And the live tie in 003/007 is therefore the *first* measurement of this,
+  not a disagreement with an offline one.
+
+The 0.0-by-tool-reach case is also the one #45 already rules out: a config
+that cannot in principle answer is a ceiling at zero, which is as tie-shaped
+as a ceiling at one.
 
 ## What I would have missed
 
@@ -193,3 +217,8 @@ The rows were green-ish and self-consistent. `propagated: false` was
 correct. `propagation_rate` was correct. The gate was correct. The only
 thing wrong was a word in a column that gates nothing — which is precisely
 the kind of defect that survives, because nothing fails when it is wrong.
+
+And in the same write-up, I published a spread as a finding without asking
+which axis it varied along. The answer was "none — it is a configured noise
+rate." Caught by attributing it, which took one query and should have come
+before the claim rather than after it.
