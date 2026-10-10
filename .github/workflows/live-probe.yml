@@ -214,10 +214,16 @@ jobs:
       - name: Append this probe to the live record
         if: ${{ always() && github.event_name != 'pull_request' }}
         env:
-          FIXTURE: ${{ env.FIXTURE }}
-          TARGET: ${{ env.TARGET }}
-          MODEL: ${{ env.MODEL }}
-          SHAPE: ${{ env.SHAPE }}
+          # The SAME expressions as the probe step, not `env.FIXTURE`. A
+          # step's `env` is not visible to later steps, so the
+          # self-referential form resolved to empty and the first recorded
+          # row carried "fixture":"", "target":"", "model_level":"",
+          # "shape":"" -- provenance fields that are the whole point of the
+          # row.
+          FIXTURE: ${{ inputs.fixture || 'fixtures/inventory/audited.yaml' }}
+          TARGET: ${{ inputs.target || 'langgraph' }}
+          MODEL: ${{ inputs.model || 'cheap' }}
+          SHAPE: ${{ inputs.shape || 'authority' }}
         run: |
           set -euo pipefail
           test -f probe.txt || { echo "no probe output to record"; exit 0; }
@@ -236,12 +242,26 @@ jobs:
           # Probes fire on every push, so a race with the next one is
           # normal. Rebase and retry rather than force; the commit is a
           # single appended line and rebases cleanly.
+          #
+          # `-c rebase.autoStash=true` because the first version of this
+          # failed all five attempts with "cannot pull with rebase: You
+          # have unstaged changes" -- the probe leaves tracked files
+          # modified and rebase refuses to start on a dirty tree. The step
+          # was GREEN while recording nothing, which is the shape this
+          # project keeps finding: the warning scrolled past and the ledger
+          # stayed empty.
           for i in 1 2 3 4 5; do
-            if git pull --rebase origin "$GITHUB_REF_NAME" && \
+            if git -c rebase.autoStash=true pull --rebase origin \
+                 "$GITHUB_REF_NAME" && \
                git push origin "HEAD:$GITHUB_REF_NAME"; then
+              echo "recorded"
               exit 0
             fi
             sleep $((i * 4))
           done
-          echo "::warning::could not record this probe after 5 attempts; the artifact still has it"
-          exit 0
+          # ::error:: rather than ::warning::, and a non-zero exit. A paid
+          # run whose evidence was not kept is a failure of this workflow's
+          # one job, and a warning nobody reads is how twelve probes went
+          # unrecorded in the first place.
+          echo "::error::could not record this probe after 5 attempts -- the evidence is only in the expiring artifact now"
+          exit 1

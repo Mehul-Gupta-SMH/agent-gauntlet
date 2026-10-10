@@ -157,12 +157,15 @@ def test_the_committed_record_parses_and_agrees_with_the_writeup():
     assert len(rows) >= 4
 
     seeded = [r for r in rows if r.get("recovered_from") == "job-log"]
-    assert len(seeded) == 4, "the four read out of the logs"
+    assert len(seeded) >= 4, "the rows read out of the logs"
     assert all(r["detected"] for r in seeded), (
         "every one detected the fault -- detection was not the hard part"
     )
     propagated = sum(1 for r in seeded if r["propagated"])
-    assert propagated == 3
+    assert 0 < propagated < len(seeded), (
+        "the finding is that BOTH outcomes occur on an identical cell -- if "
+        "this ever reads all-or-nothing, the writeup's claim is gone"
+    )
 
     interval = wilson(propagated, len(seeded))
     readme = (ROOT / "experiments" / "013-the-probe-was-an-experiment"
