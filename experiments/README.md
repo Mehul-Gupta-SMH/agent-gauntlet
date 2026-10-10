@@ -230,3 +230,23 @@ The 003 and 007 ledgers are still only in Actions artifacts, and this cloud
 session cannot fetch them — `gh` refuses Actions artifact downloads by design,
 not for want of a flag. `tools/rescue_ledger.sh` makes it one command to run
 locally. **The artifacts expire around mid-December 2026.**
+
+## The probe records itself too (#46, experiment 013)
+
+`live-probe.yml` appends one line per run to `experiments/live/probe.jsonl`,
+parsed from the console by `tools/probe_record.py`.
+
+This was not in the original rule and it should have been. Twelve probes ran on
+2026-10-09 — one per push to `main` — all green, all paid for, and **none of
+them readable in aggregate**: the artifacts expire and the job logs go with
+them. Four were eventually read out of the logs by hand, and they disagreed
+with each other. See [013](013-the-probe-was-an-experiment/).
+
+The matrix was the obvious case for committing evidence because it is
+expensive. The probe was the case that mattered, because it runs constantly and
+nobody was looking.
+
+Parsing a console is a poor interface; a `--json` flag on `gauntlet probe` would
+be better. The recorder exists in this shape because the console format is what
+twelve already-paid-for runs emitted, and a recorder that only works after a
+refactor records nothing today.

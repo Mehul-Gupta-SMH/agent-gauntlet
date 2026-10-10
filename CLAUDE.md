@@ -118,6 +118,23 @@ silence was being read as coverage. A perturbed world is stamped
 `synthetic` by the code that builds it, whatever its parent was -- `scale`
 triples quantities no trace contains.
 
+**A paid run that is not recorded did not happen.** Twelve live probes ran
+on 2026-10-09, one per push, all green, all paid for -- and none readable in
+aggregate, because artifacts expire with their logs. Four read out by hand
+DISAGREED: the same cell under the same injected fault propagated three
+times and repaired once (experiment 013). So `live-probe.yml` appends a row
+to `experiments/live/probe.jsonl` and `live-gauntlet.yml` commits its
+ledger. The expensive run was the obvious case; the cheap one that runs
+constantly was the case that mattered.
+
+**A live cell's outcome is not stable, and offline cannot show it.** Same
+fixture, scenario, target, model, prompt, tool set and seed-chosen
+injection: 3 of 4 propagated, Wilson [30%, 95%]. Every one DETECTED the
+contradiction -- detection was not the hard part, acting on it was. Offline
+that cell repairs 100% of the time by construction, so an offline
+`repair_rate` is a fact about the test doubles. Experiment 009 showed a
+RANKING needs k>=4; this is one level down, a single cell's outcome.
+
 **A calibrated value must be a number, refused rather than dropped.**
 Serializable was not enough (#48): a string or a dict crossed the pipe,
 became a calibrated "truth", and was then dropped SILENTLY at read time --

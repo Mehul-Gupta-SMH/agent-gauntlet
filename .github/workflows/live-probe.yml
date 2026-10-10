@@ -73,8 +73,10 @@ concurrency:
   group: live-probe-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'push' }}
   cancel-in-progress: true
 
+# `contents: write` for one step: appending this probe's
+# result to experiments/live/probe.jsonl (#46, experiment 013).
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   probe:
@@ -198,3 +200,48 @@ jobs:
           name: probe-output
           path: probe.txt
           if-no-files-found: ignore
+
+      # The artifact above expires, and that cost something real: twelve
+      # probes ran on 2026-10-09, all green, all paid for, and nobody could
+      # aggregate them (experiment 013). Four were eventually read out of
+      # the job logs and they DISAGREED -- the same cell under the same
+      # injected fault propagated three times and repaired once.
+      #
+      # So the probe records one line per run. #46's rule -- every paid run
+      # commits its own evidence -- applied to the cheap runs too. The
+      # matrix was the obvious case; the probe was the one already
+      # producing paid measurements that evaporated.
+      - name: Append this probe to the live record
+        if: ${{ always() && github.event_name != 'pull_request' }}
+        env:
+          FIXTURE: ${{ env.FIXTURE }}
+          TARGET: ${{ env.TARGET }}
+          MODEL: ${{ env.MODEL }}
+          SHAPE: ${{ env.SHAPE }}
+        run: |
+          set -euo pipefail
+          test -f probe.txt || { echo "no probe output to record"; exit 0; }
+
+          mkdir -p experiments/live
+          python tools/probe_record.py probe.txt >> experiments/live/probe.jsonl
+
+          tail -n 1 experiments/live/probe.jsonl
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add experiments/live/probe.jsonl
+          if git diff --cached --quiet; then echo "nothing to record"; exit 0; fi
+          git commit -m "probe ${GITHUB_RUN_ID}: one line of live evidence (#46)"
+
+          # Probes fire on every push, so a race with the next one is
+          # normal. Rebase and retry rather than force; the commit is a
+          # single appended line and rebases cleanly.
+          for i in 1 2 3 4 5; do
+            if git pull --rebase origin "$GITHUB_REF_NAME" && \
+               git push origin "HEAD:$GITHUB_REF_NAME"; then
+              exit 0
+            fi
+            sleep $((i * 4))
+          done
+          echo "::warning::could not record this probe after 5 attempts; the artifact still has it"
+          exit 0
