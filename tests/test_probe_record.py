@@ -156,24 +156,37 @@ def test_the_committed_record_parses_and_agrees_with_the_writeup():
             if l.strip()]
     assert len(rows) >= 4
 
-    seeded = [r for r in rows if r.get("recovered_from") == "job-log"]
-    assert len(seeded) >= 4, "the rows read out of the logs"
-    assert all(r["detected"] for r in seeded), (
+    assert [r for r in rows if r.get("recovered_from") == "job-log"], (
+        "the rows read out of the logs before the recorder existed"
+    )
+    assert all(r["detected"] for r in rows), (
         "every one detected the fault -- detection was not the hard part"
     )
-    propagated = sum(1 for r in seeded if r["propagated"])
-    assert 0 < propagated < len(seeded), (
+
+    # THE CLAIM, not the rate. Every probe appends a row, so a pinned
+    # figure is stale the moment anyone pushes -- which is how this test
+    # failed once already, asserting "4 of 5" against a README that had
+    # moved to "4 of 6". The finding is that both outcomes occur on an
+    # identical cell, and that is what must not quietly stop being true.
+    propagated = sum(1 for r in rows if r["propagated"])
+    assert 0 < propagated < len(rows), (
         "the finding is that BOTH outcomes occur on an identical cell -- if "
         "this ever reads all-or-nothing, the writeup's claim is gone"
     )
 
-    interval = wilson(propagated, len(seeded))
+    # The README's headline must match the file it describes, computed the
+    # same way rather than transcribed.
+    interval = wilson(propagated, len(rows))
     readme = (ROOT / "experiments" / "013-the-probe-was-an-experiment"
               / "README.md").read_text(encoding="utf-8")
-    assert f"Propagated {propagated} of {len(seeded)}" in readme
+    assert f"Propagated {propagated} of {len(rows)}" in readme, (
+        f"the writeup and {len(rows)} recorded rows disagree -- append a row "
+        f"and the headline moves with it"
+    )
     assert f"[{interval.low:.0%}, {interval.high:.0%}]" in readme
 
-    # Nothing the harness controls varied across the four.
+    # Nothing the harness controls varied across any of them. That is the
+    # whole basis for reading the disagreement as the model's.
     for field in ("variant", "scenario", "fault_target", "corrupt_value",
                   "target", "model_level"):
-        assert len({r[field] for r in seeded}) == 1, field
+        assert len({r[field] for r in rows}) == 1, field
