@@ -92,6 +92,16 @@ PATTERNS: dict[str, re.Pattern] = {
 _BOOL = {"True": True, "False": False}
 
 
+def _int_or_none(raw: Optional[str]) -> Optional[int]:
+    """An absent or unparseable exit status is null, never 0 -- 0 means the
+    probe completed, and guessing it for a row the workflow said nothing
+    about would be the censoring rule broken in one field."""
+    try:
+        return int(raw) if raw not in (None, "") else None
+    except ValueError:
+        return None
+
+
 def parse(text: str) -> dict[str, Any]:
     out: dict[str, Any] = {}
     sentinel_seen: list[int] = []
@@ -166,6 +176,14 @@ def main() -> int:
     # console -- the workflow knows these and the console does not restate
     # all of them.
     row.update(
+        # What the probe returned, from the workflow rather than the
+        # console: 0 complete, 1 the faulted run raised or the fault
+        # reached no tool call, 2 a setup error or the agent never
+        # consulting the faulted tool, 4 the provider unreachable. A blank
+        # row carrying this needs no hand-written note to be readable, and
+        # the only place it used to live was a `::warning::` on the check
+        # run.
+        probe_exit=_int_or_none(os.environ.get("PROBE_EXIT")),
         run_id=os.environ.get("GITHUB_RUN_ID"),
         commit=os.environ.get("GITHUB_SHA"),
         fixture=os.environ.get("FIXTURE"),

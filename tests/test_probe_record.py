@@ -170,9 +170,12 @@ def test_the_committed_record_parses_and_agrees_with_the_writeup():
         # statement, and the better one: a hand note is a person explaining
         # a blank after the fact, that field is the probe's own verdict
         # recorded at the time. Either satisfies this.
-        assert row.get("note") or row.get("never_consulted"), (
-            "an empty row with no `note` and no `never_consulted` is "
-            "indistinguishable from a parser failure -- say which it was"
+        assert (row.get("note") or row.get("never_consulted")
+                or row.get("probe_exit") is not None), (
+            "an empty row that says nothing about why is indistinguishable "
+            "from a parser failure -- a hand note, the probe's own "
+            "never-consulted verdict, or the recorded exit status, but one "
+            "of them"
         )
     rows = [r for r in rows if r.get("outcome")]
     assert rows, "no evidence rows left to make a claim about"
@@ -621,3 +624,38 @@ def test_exit_two_is_four_conditions_and_the_workflow_separates_them():
     assert first_exit == "exit 0", (
         "a finding about a rotated cell must not block every later push; "
         f"the first exit after the warning is {first_exit!r}")
+
+
+def test_a_blank_row_records_why_without_needing_the_log(tmp_path):
+    """Two blank rows in a row on `poisoning/memory.yaml` cost a check-run
+    API crawl to explain, and the explanation was one integer.
+
+    `PROBE_EXIT` comes from the workflow, which knows the status, rather
+    than from the console, which does not restate it. Absent is null and
+    never 0: 0 means the probe completed.
+    """
+    with_status = _record("expected total : 10\n", tmp_path, PROBE_EXIT="1")
+    assert with_status["probe_exit"] == 1
+
+    silent = _record("expected total : 10\n", tmp_path, PROBE_EXIT="")
+    assert silent["probe_exit"] is None, "absent must not read as a clean run"
+
+    junk = _record("expected total : 10\n", tmp_path, PROBE_EXIT="nope")
+    assert junk["probe_exit"] is None
+
+
+def test_the_workflow_publishes_the_probe_status_to_the_recorder():
+    """The wiring, because a field nothing sets is worse than no field.
+
+    `env.X` set in one step is invisible to later steps -- that is already
+    how the first recorded rows came out with empty provenance -- so this
+    has to travel as a step output.
+    """
+    text = (ROOT / ".github" / "workflows" / "live-probe.yml").read_text(
+        encoding="utf-8")
+    assert 'echo "status=$status" >> "$GITHUB_OUTPUT"' in text
+    assert "PROBE_EXIT: ${{ steps.probe.outputs.status }}" in text
+    # And the step it reads from must actually carry that id.
+    probe_step = text.split("- name: Probe the live path", 1)[1]
+    assert probe_step.lstrip().startswith("id: probe"), (
+        "steps.probe.outputs.status resolves to nothing without the id")

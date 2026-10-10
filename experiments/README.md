@@ -233,6 +233,22 @@ session cannot fetch them — `gh` refuses Actions artifact downloads by design,
 not for want of a flag. `tools/rescue_ledger.sh` makes it one command to run
 locally. **The artifacts expire around mid-December 2026.**
 
+**One thing here *is* reachable, and it took two blank rows to notice.** A
+workflow's own `::warning::` and `::error::` lines become **check-run
+annotations**, and those are served by `api.github.com` — no artifact host, no
+log download. `repos/{owner}/{repo}/commits/{sha}/check-runs` then
+`repos/{owner}/{repo}/check-runs/{id}/annotations` reads them. Two probes on
+`poisoning/memory.yaml` recorded a clean half, an injection, a cost and no
+outcome, and the reason existed in exactly one place: an annotation saying
+`probe failed (exit 1) on the rotated cell`. That rules out the two other
+causes the row was compatible with.
+
+This does not rescue the ledgers — a ledger is a file in an artifact, not an
+annotation. It does mean a workflow that *says* what it concluded leaves a
+readable record even when its output does not survive, which is worth more than
+it sounds: the probe now records `probe_exit` directly, so the next blank row
+explains itself without the crawl.
+
 ## The probe records itself too (#46, experiment 013)
 
 `live-probe.yml` appends one line per run to `experiments/live/probe.jsonl`,

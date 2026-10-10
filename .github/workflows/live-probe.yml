@@ -141,6 +141,7 @@ jobs:
           fi
 
       - name: Probe the live path
+        id: probe
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FIXTURE: ${{ inputs.fixture || steps.cell.outputs.fixture || 'fixtures/inventory/audited.yaml' }}
@@ -175,6 +176,14 @@ jobs:
           gauntlet probe "$FIXTURE" --target "$TARGET" --model "$MODEL" \
             $SHAPE_ARG | tee probe.txt
           status=${PIPESTATUS[0]}
+          # Published so the recorded row can say WHY it is blank. The
+          # console is uploaded as an artifact and the artifact host is not
+          # reachable from every environment (#46), so a row that explains
+          # itself is worth more than one that needs the log fetched. Twice
+          # running, `poisoning/memory.yaml` recorded a clean half, an
+          # injection, a cost and no outcome -- and the only place the
+          # reason existed was a `::warning::` on the check run.
+          echo "status=$status" >> "$GITHUB_OUTPUT"
 
           case "$status" in
             0)
@@ -288,6 +297,12 @@ jobs:
           TARGET: ${{ inputs.target || steps.cell.outputs.target || 'langgraph' }}
           MODEL: ${{ inputs.model || steps.cell.outputs.model || 'cheap' }}
           SHAPE: ${{ inputs.shape || 'authority' }}
+          # What the probe actually returned. 0 is a complete run; 1 is a
+          # raised faulted run or a fault that reached no tool call; 2 is a
+          # setup error or the agent never consulting the faulted tool; 4
+          # is the provider being unreachable. A blank row with this field
+          # set needs no hand-written note to be readable.
+          PROBE_EXIT: ${{ steps.probe.outputs.status }}
         run: |
           set -euo pipefail
           test -f probe.txt || { echo "no probe output to record"; exit 0; }
