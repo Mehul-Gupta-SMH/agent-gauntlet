@@ -613,3 +613,47 @@ def check_sources(
                 expected=base_scenario.expected_total,
             ))
     return out
+
+
+# --- rephrase-invariance: declared, costed, and not scored offline (#41) ----
+
+
+def paraphrase_pairs(task: TaskSpec) -> list[tuple[str, str]]:
+    """The (statement, paraphrase) pairs this task declares.
+
+    Empty for every bundled fixture, which is the honest state: #41's first
+    pre-condition is that paraphrases are hand-written and declared, and
+    nobody has written any.
+    """
+    return [(task.statement, text) for text in task.paraphrases]
+
+
+def paraphrase_cost(task: TaskSpec, variants: Sequence[VariantSpec]) -> int:
+    """Extra runs a paraphrase suite would cost, beyond the baseline.
+
+    One run per paraphrase per variant. The baseline is the variant's own
+    unperturbed answer, which the relations suite already needs, so this is
+    the marginal cost rather than the total.
+
+    It is larger than it looks for a reason worth stating: a paraphrase
+    replaces the statement, the statement is written into the variant's
+    generated `skill.md`, so each pair needs the variant REGENERATED. That
+    also moves `VariantSpec.fingerprint`, which is correct -- the two runs
+    are genuinely different variants and the ledger should say so -- but it
+    means a paraphrase suite cannot reuse a generated grid.
+    """
+    return len(task.paraphrases) * len(variants)
+
+
+def paraphrase_is_vacuous_offline() -> str:
+    """Why this family is never scored against scripted policies.
+
+    Stated as a function rather than a comment because the report prints
+    it, and the one thing this family must not do is report `4/4` on a
+    suite that could not fail.
+    """
+    return (
+        "a scripted policy never reads the task statement, so every "
+        "paraphrase passes by construction -- which would report a "
+        "property of the test doubles as one of the agents"
+    )

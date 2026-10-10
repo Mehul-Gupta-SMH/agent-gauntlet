@@ -647,3 +647,98 @@ def test_the_sentinel_is_what_a_relation_catches(tmp_path):
         "a relation caught something other than the sentinel, or missed it"
     )
     assert "relabel" in gated[sentinels[0]]
+
+
+# --- rephrase-invariance: declared, never generated (#41) -------------------
+
+
+PARAPHRASE_FIXTURES = {
+    "fixtures/inventory/task.yaml": "5c9848747223eaa4",
+    "fixtures/inventory/audited.yaml": "d11a0b2a6801ee74",
+    "fixtures/inventory/discontinued.yaml": "61ddcbf035c1b91d",
+    "fixtures/lending/applicant.yaml": "2f32ad9fcecc025b",
+    "fixtures/poisoning/instruction.yaml": "10347b6eeeba5b0d",
+    "fixtures/poisoning/memory.yaml": "8f7d94a1568e6696",
+}
+
+
+def _task(**kw):
+    from agent_gauntlet.spec import Scenario, TaskSpec
+
+    base = dict(id="t", statement="Report the total.", oracle="full",
+                scenarios=[Scenario(id="a", records={"r1": 1})])
+    base.update(kw)
+    return TaskSpec(**base)
+
+
+@pytest.mark.parametrize("path,expected", sorted(PARAPHRASE_FIXTURES.items()))
+def test_adding_paraphrases_moved_no_fingerprint(path, expected):
+    """The join-when-set rule, applied to a seventh field."""
+    from agent_gauntlet.spec import TaskSpec
+
+    assert TaskSpec.from_yaml(path).fingerprint() == expected
+
+
+def test_a_declared_paraphrase_is_pre_registered():
+    """#41's first pre-condition, and the reason it is a declaration.
+
+    A model-written paraphrase is an unpinned variable: it changes between
+    runs, so a config could pass on Monday and fail on Tuesday with nothing
+    about the config having moved. Declared ones join the hash, so adding
+    one after seeing a failure is detectable.
+    """
+    plain = _task()
+    declared = _task(paraphrases=["Give me the grand total."])
+    assert plain.fingerprint() != declared.fingerprint()
+    assert declared.fingerprint() != _task(
+        paraphrases=["Give me the grand total.", "Sum everything."]
+    ).fingerprint()
+
+
+def test_a_paraphrase_that_cannot_fail_is_refused():
+    """A pair comparing the statement against itself asserts nothing.
+
+    Refused rather than skipped, because a suite reporting 4/4 where one
+    pair was vacuous is exactly the failure this family has to avoid.
+    """
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError, match="identical"):
+        _task(paraphrases=["Report the total."])
+    with pytest.raises(pydantic.ValidationError, match="empty"):
+        _task(paraphrases=["   "])
+    with pytest.raises(pydantic.ValidationError, match="repeats"):
+        _task(paraphrases=["Sum it.", "Sum it."])
+
+
+def test_the_cost_is_per_paraphrase_per_variant(tmp_path):
+    from agent_gauntlet import architect
+
+    task = _task(paraphrases=["Sum everything.", "What is the total?"])
+    variants = architect.generate(
+        out_dir=tmp_path / "v", task=task,
+        models={"cheap": "anthropic/claude-haiku-4-5"},
+        prompts=["naive"], toolsets=["records"], include_sentinel=False)
+    assert metamorphic.paraphrase_cost(task, variants) == 2 * len(variants)
+    assert metamorphic.paraphrase_cost(_task(), variants) == 0
+
+
+def test_offline_vacuity_is_stated_not_scored():
+    """The family is absent from the suite that runs, on purpose.
+
+    A scripted policy never reads the statement, so every paraphrase passes
+    by construction. The reason is a function because the report prints it;
+    the one thing this must not do is emit `ok`.
+    """
+    why = metamorphic.paraphrase_is_vacuous_offline()
+    assert "never reads the task statement" in why
+    assert "test doubles" in why
+
+    # And the printed block says n/a rather than a score.
+    import inspect
+
+    from agent_gauntlet import cli
+
+    body = inspect.getsource(cli._print_paraphrases)
+    assert "n/a for every config" in body
+    assert "'ok'" not in body and '"ok"' not in body

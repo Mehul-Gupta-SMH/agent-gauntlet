@@ -173,7 +173,16 @@ def test_the_committed_record_parses_and_agrees_with_the_writeup():
     rows = [r for r in rows if r.get("outcome")]
     assert rows, "no evidence rows left to make a claim about"
 
-    assert all(r["detected"] for r in rows), (
+    # "Detection was not the hard part" is a claim about the cell the
+    # writeup is about -- audited.yaml on langgraph -- not about the whole
+    # record. The rotation has since added a discontinued.yaml row that did
+    # NOT detect, which is a finding of its own rather than a counterexample
+    # to this one, and scoping the assertion is how both stay true.
+    writeup_cell = [r for r in rows
+                    if r["fixture"].endswith("audited.yaml")
+                    and r["target"] == "langgraph"]
+    assert writeup_cell, "the cell the writeup is about has no rows"
+    assert all(r["detected"] for r in writeup_cell), (
         "every one detected the fault -- detection was not the hard part"
     )
 
@@ -221,12 +230,13 @@ def test_the_committed_record_parses_and_agrees_with_the_writeup():
         for field in ("variant", "scenario", "fault_target", "corrupt_value"):
             assert len({r[field] for r in group}) == 1, (cell, field)
 
-    # And the finding holds inside at least one cell, which is where it is
-    # a finding at all.
-    assert any(
-        0 < sum(1 for r in group if r["propagated"]) < len(group)
-        for group in cells.values() if len(group) > 1
-    ), "no cell shows both outcomes -- the writeup's claim is gone"
+    # And the finding holds inside the cell the writeup is about, which is
+    # where it is a finding at all.
+    propagated = sum(1 for r in writeup_cell if r["propagated"])
+    assert 0 < propagated < len(writeup_cell), (
+        f"the writeup's cell shows {propagated}/{len(writeup_cell)} -- the "
+        f"claim is that BOTH outcomes occur on an identical cell"
+    )
 
 
 # --- the rotation that fills the record (#4, #5, #45, #47) ------------------

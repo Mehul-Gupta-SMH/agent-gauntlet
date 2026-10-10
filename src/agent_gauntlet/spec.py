@@ -330,6 +330,30 @@ class TaskSpec(BaseModel):
     pre-registration exists to make detectable.
     """
 
+    paraphrases: list[str] = Field(default_factory=list)
+    """Restatements of `statement` that must not change the answer (#41).
+
+    #41's first pre-condition, settled the way it proposed: **hand-written
+    and declared**, never generated. A model-written paraphrase is the
+    judge sneaking back in through the input side -- it becomes an unpinned
+    variable that changes between runs, so a config could pass on Monday
+    and fail on Tuesday with nothing about the config having moved.
+
+    Declared here, these join `fingerprint()` when set, which makes them
+    pre-registered for free: adding a paraphrase after seeing a config fail
+    one changes the hash, and every run record carries the hash it was
+    judged against.
+
+    Each entry replaces the statement wholesale rather than editing it,
+    because a diff-based perturbation would need a rule for what counts as
+    a safe edit, and that rule is the similarity threshold #28 refuses.
+
+    **Offline this measures nothing**, and the report says so: a scripted
+    policy never reads the statement, so every paraphrase passes
+    vacuously -- which would report a property of the test doubles as one
+    of the agents. It is checked only on the live path.
+    """
+
     gate: Optional[GateCriteria] = None
     """Pre-registered gate thresholds. Absent means the gate reports
     numbers without a verdict -- it never invents a bar."""
@@ -344,6 +368,30 @@ class TaskSpec(BaseModel):
     bar, and overriding it from a CLI flag must mean the same thing as
     declaring it here.
     """
+
+    @model_validator(mode="after")
+    def _check_paraphrases(self) -> TaskSpec:
+        """A paraphrase identical to the statement tests nothing.
+
+        Refused rather than skipped, because a suite reporting `4/4` where
+        one pair compared the statement against itself is the vacuous pass
+        this whole family has to avoid.
+        """
+        for i, text in enumerate(self.paraphrases):
+            if not text.strip():
+                raise ValueError(f"paraphrase {i} of task {self.id!r} is empty")
+            if text.strip() == self.statement.strip():
+                raise ValueError(
+                    f"paraphrase {i} of task {self.id!r} is identical to the "
+                    f"statement, so it asserts nothing -- a pair that cannot "
+                    f"fail is a vacuous pass"
+                )
+        if len(set(self.paraphrases)) != len(self.paraphrases):
+            raise ValueError(
+                f"task {self.id!r} repeats a paraphrase; each one is a "
+                f"separate pair and a duplicate just costs a run"
+            )
+        return self
 
     @model_validator(mode="after")
     def _check_scenarios(self) -> TaskSpec:
@@ -466,6 +514,8 @@ class TaskSpec(BaseModel):
                 **({"fault_kind": self.fault_kind}
                    if self.fault_kind != "wrong_value" else {}),
                 **({"relations": sorted(self.relations)} if self.relations else {}),
+                **({"paraphrases": list(self.paraphrases)}
+                   if self.paraphrases else {}),
                 **({"provenance": self.provenance.value}
                    if self.provenance is not None else {}),
                 **({"hypotheses": [h.model_dump(mode="json")

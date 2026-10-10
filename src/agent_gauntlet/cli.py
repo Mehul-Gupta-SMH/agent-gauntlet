@@ -989,6 +989,7 @@ def _run(args) -> int:
                      enabled=args.with_relations, live=args.live)
     _print_sources(task, variants, executor,
                    enabled=args.with_relations, live=args.live)
+    _print_paraphrases(task, variants, live=args.live)
     _print_effects(results)
     _print_attribution(records, [v.id for v in variants if v.is_sentinel])
     rc = _print_gate(records, seeds, task)
@@ -1575,6 +1576,50 @@ def _with_fault_override(task, args):
     print("             differently was not scored against the declared bar "
           "(#5).")
     return moved
+
+
+def _print_paraphrases(task, variants, *, live: bool) -> None:
+    """Rephrase-invariance: declared, costed, and never scored offline (#41).
+
+    #41 calls rephrase-invariance the most universal relation there is, and
+    it is deliberately absent from the suite that runs: offline policies do
+    not read the statement, so it would pass vacuously. This block makes
+    the family visible without pretending to measure it -- what the task
+    declared, what checking it would cost, and why the number is missing
+    rather than zero.
+    """
+    from . import metamorphic
+
+    print("\n--- rephrase-invariance " + "-" * 48)
+    pairs = metamorphic.paraphrase_pairs(task)
+    if not pairs:
+        print("  this task declares no paraphrases, so there is nothing to")
+        print("  check. Add `paraphrases:` to the spec -- hand-written, never")
+        print("  generated (#41): a model-written restatement is an unpinned")
+        print("  variable that changes between runs, so a config could pass")
+        print("  on Monday and fail on Tuesday without having moved.")
+        print("  Declared ones join `fingerprint()`, which pre-registers them.")
+        return
+
+    cost = metamorphic.paraphrase_cost(task, variants)
+    print(f"  {len(pairs)} paraphrase(s) declared, {cost} extra run(s) on this "
+          f"grid.")
+    print("  Each pair needs the variant REGENERATED -- the statement lives in")
+    print("  its `skill.md` -- so the variant fingerprint moves too, which is")
+    print("  correct: the two runs are genuinely different variants.")
+    for i, (_, text) in enumerate(pairs, 1):
+        shown = text.strip().splitlines()[0]
+        print(f"    {i}. {shown[:66]}" + ("..." if len(shown) > 66 else ""))
+
+    if not live:
+        # n/a, never ok. This is the obvious place the censoring rule would
+        # be broken, and #41's own table predicts it.
+        print(f"\n  n/a for every config -- NOT CHECKED offline, because "
+              f"{metamorphic.paraphrase_is_vacuous_offline()}.")
+        return
+    print("\n  n/a for every config -- the live checker is not built (#41).")
+    print("  The declaration and its cost are recorded; the comparison is")
+    print("  not, and reporting `ok` here would be the vacuous pass again.")
 
 
 def _print_sources(task, variants, executor, *, enabled: bool,

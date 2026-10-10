@@ -118,6 +118,26 @@ silence was being read as coverage. A perturbed world is stamped
 `synthetic` by the code that builds it, whatever its parent was -- `scale`
 triples quantities no trace contains.
 
+**A paraphrase is declared, never generated.** `TaskSpec.paraphrases`
+holds hand-written restatements that must not change the answer (#41), and
+they join `fingerprint()` when set, so adding one after seeing a config
+fail it is detectable. A model-written paraphrase is the judge sneaking in
+through the input side: an unpinned variable that changes between runs, so
+a config could pass on Monday and fail on Tuesday without having moved. A
+paraphrase identical to the statement is REFUSED, because a pair that
+cannot fail is the vacuous pass this family exists to avoid. Offline it is
+not scored at all -- a scripted policy never reads the statement -- and the
+report prints `n/a` with that reason rather than `ok`.
+
+**A capability assigned to a PROMPT LEVEL does not survive a real model.**
+Experiment 003 found it for the sentinel (degraded by instruction, read
+everything anyway, ranked 6th of 9) and the sentinel was rebuilt
+structurally. `discontinued.yaml` then split the clean capability across
+prompt levels -- the same mistake in a new place -- and a live `naive` run
+excluded the discontinued stock correctly on its first try (668, not 808).
+One run, so not yet a property, but the fix if it holds is the one 003
+already found: make it structural, the way `list_records_sample` does.
+
 **A paid run that is not recorded did not happen.** Twelve live probes ran
 on 2026-10-09, one per push, all green, all paid for -- and none readable in
 aggregate, because artifacts expire with their logs. Four read out by hand
