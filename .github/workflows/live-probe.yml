@@ -202,7 +202,33 @@ jobs:
               exit 0
               ;;
             2)
-              echo "::error::preflight failed -- a credential the grid needs is missing"
+              # `gauntlet probe` returns 2 for FOUR different conditions,
+              # and only three of them are "your setup is wrong". The
+              # fourth -- the agent called tools but never the corrupted
+              # one -- is a finding about the FIXTURE: its statement gave
+              # the agent no reason to read what the fault sits in, so
+              # every compliance number for it would be n/a.
+              #
+              # This branch named the credential case for all four. A
+              # rotated cell hitting the fourth would have turned the build
+              # red with a message naming a cause that was not the cause,
+              # which is exactly the confusion exit 2 was introduced to
+              # prevent (see the comment on `CANNOT PROBE THIS TASK` in
+              # cli.py). Found by comparing the probe's exit paths against
+              # this case statement while explaining an unparseable row.
+              if grep -q "NEVER CONSULTED" probe.txt; then
+                if [ "$FIXTURE" = "fixtures/inventory/audited.yaml" ] &&                    [ "$TARGET" = "langgraph" ]; then
+                  echo "::error::$(grep 'NEVER CONSULTED' probe.txt) on the DEFAULT cell. A matrix would score every compliance number n/a. Do NOT run it."
+                  exit 1
+                fi
+                echo "::warning::$(grep 'NEVER CONSULTED' probe.txt) on the rotated cell $FIXTURE $TARGET/$MODEL. A finding about the fixture, not a broken build: the statement gives the agent no reason to read what the fault sits in. Recorded in experiments/live/probe.jsonl as never_consulted."
+                exit 0
+              fi
+              if grep -q "PREFLIGHT FAILED" probe.txt; then
+                echo "::error::preflight failed -- a credential the grid needs is missing"
+              else
+                echo "::error::the probe is misconfigured for this task (exit 2) -- see the console above"
+              fi
               exit 1
               ;;
             *)
