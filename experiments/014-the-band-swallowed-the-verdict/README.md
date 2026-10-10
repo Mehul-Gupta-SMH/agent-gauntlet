@@ -121,7 +121,35 @@ a call argument, so turning it on would leave no trace in any fingerprint.
 `TaskSpec.separable_faults` is the pre-registered way to ask. It joins
 `fingerprint()` only when set, so all six fixture hashes are unchanged.
 
+## How much this was costing
+
+Measured offline, across the fixtures that exist. 81 faulted runs each for
+the inventory pair, 51 for lending, three repeats, one model level:
+
+| fixture | faulted runs | undecidable | of those, **withheld** | censored for cause | with `separable_faults` |
+|---|---|---|---|---|---|
+| `inventory/task.yaml` | 81 | 59 (73%) | 57 | 2 | **0 undecidable** |
+| `inventory/audited.yaml` | 81 | 29 (36%) | 28 | 1 | **0 undecidable** |
+| `lending/applicant.yaml` | 51 | 27 (53%) | **0** | 27 | 27 — unchanged |
+
+The default fixture has been dropping **three quarters of its faulted runs**
+from the gating metric's denominator, and nine tenths of those for a reason
+that was fixable from the day `decidable_band` was written.
+
+`applicant.yaml` is the control, and it is the one that makes rule 3 worth
+having. Its 27 losses are variants never granted the faulted tool: no answer
+they could give would be evidence either way. That is censoring **for
+cause**, the flag changes nothing about it, and it must not — forcing a
+bigger lie does not teach a config about a tool it does not have.
+
+This does not mean the fixtures should be edited. Experiment 003 was judged
+against `5c9848747223eaa4`; setting the flag changes that hash and detaches
+the record. The number is the finding; rehashing a pre-registered fixture to
+improve it is not.
+
 ## What this says about #45
+
+
 
 Both rows also carry the finding that motivated the cell: `clean_total` =
 668 = `expected`. The `naive` prompt, which offline reports 808, got the
@@ -130,6 +158,34 @@ discontinued-stock exclusion **right** on a real model at both levels.
 That is experiment 003's lesson for the fourth time — a capability assigned
 to a prompt level does not survive a real model. It stays n=2 and the
 rotation continues.
+
+## And the clean half, for free
+
+While measuring the above, the offline matrices printed something #45 should
+have:
+
+| fixture | distinct clean-quality values, offline |
+|---|---|
+| `inventory/audited.yaml` | 5 — `0.0, 0.667, 0.778, 0.889, 1.0` |
+| `lending/applicant.yaml` | 3 — `0.0, 0.667, 1.0` |
+
+Offline, the clean leaderboard **is not tied**. Live, on the same
+`audited.yaml`, experiments 003 and 007 found exactly one distinct clean
+value across 648 runs.
+
+So #45's ceiling is not a property of the fixtures. It is the gap between
+the offline policies and real models: the offline policy set is a model of
+how configurations differ, and real models do not differ that way on the
+clean half. Which is experiment 003's lesson again — a capability assigned
+to a prompt level does not survive a real model — now on the axis #45 is
+about.
+
+The consequence for #45 is methodological, and it is not good news: **no
+amount of offline validation can establish that a candidate fixture
+discriminates live.** A fixture built and checked offline would show a
+healthy spread and could still be an eight-way tie on a real model, which is
+precisely what `audited.yaml` did. #45 needs a live matrix, not a better
+offline design loop.
 
 ## What I would have missed
 

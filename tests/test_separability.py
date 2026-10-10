@@ -149,3 +149,80 @@ def test_a_declared_separable_task_actually_decides_it(tmp_path):
     # Not asserting the converse: whether an unforced draw happens to clear
     # the threshold is the seed's business, and pinning it here would pin a
     # coincidence.
+
+
+# --- what it costs the fixtures that exist --------------------------------
+
+
+@pytest.mark.parametrize("fixture", [
+    "fixtures/inventory/task.yaml",
+    "fixtures/inventory/audited.yaml",
+])
+def test_the_flag_empties_the_withheld_bucket(fixture, tmp_path):
+    """The measurement that gives this feature its size.
+
+    Pins the DIRECTION, not the count: the counts are deterministic for a
+    given fixture and seed, and a test that pins them breaks on any fixture
+    edit for reasons that have nothing to do with this claim.
+
+    What the counts were when this was written, offline, 81 faulted runs
+    each: `task.yaml` 59 undecidable of which 57 withheld, `audited.yaml`
+    29 of which 28. Both go to zero with the flag. The default fixture had
+    been dropping three quarters of its faulted runs from the gating
+    metric's denominator, and nine tenths of those for a reason that was
+    fixable all along (experiment 014).
+    """
+    from agent_gauntlet import architect
+    from agent_gauntlet.matrix import run_matrix
+
+    base = TaskSpec.from_yaml(fixture)
+    counts = {}
+    for sep in (False, True):
+        task = base.model_copy(update={"separable_faults": sep})
+        out = tmp_path / f"v{sep}"
+        variants = architect.generate(
+            out_dir=out, task=task, models={"cheap": "openai/gpt-4o-mini"})
+        ledger = Ledger(tmp_path / f"runs-{sep}.jsonl")
+        run_matrix(task=task, variants=variants, ledger=ledger,
+                   base_seed="s", repeats=3, offline=True)
+        faulted = [r for r in ledger.records()
+                   if r.condition != "clean" and r.score is not None]
+        assert faulted
+        counts[sep] = sum(1 for r in faulted if r.score.propagation_withheld)
+
+    assert counts[False] > 0, "this fixture has nothing to demonstrate"
+    assert counts[True] == 0, "the flag must empty the withheld bucket"
+
+
+def test_a_fixture_can_be_censored_for_cause_and_the_flag_cannot_help(tmp_path):
+    """`applicant.yaml` loses runs too, and none of them are withheld.
+
+    Its 27 undecidable faulted runs are variants that were never granted
+    the faulted tool, so no answer they gave could be evidence either way.
+    That is censoring for cause -- rule 3's *not applicable*, not
+    *withheld* -- and forcing a bigger corruption does not and must not
+    change it.
+    """
+    from agent_gauntlet import architect
+    from agent_gauntlet.matrix import run_matrix
+
+    base = TaskSpec.from_yaml("fixtures/lending/applicant.yaml")
+    seen = {}
+    for sep in (False, True):
+        task = base.model_copy(update={"separable_faults": sep})
+        variants = architect.generate(
+            out_dir=tmp_path / f"a{sep}", task=task,
+            models={"cheap": "openai/gpt-4o-mini"})
+        ledger = Ledger(tmp_path / f"a-runs-{sep}.jsonl")
+        run_matrix(task=task, variants=variants, ledger=ledger,
+                   base_seed="s", repeats=3, offline=True)
+        faulted = [r for r in ledger.records()
+                   if r.condition != "clean" and r.score is not None]
+        seen[sep] = (
+            sum(1 for r in faulted if not r.score.propagation_determinable),
+            sum(1 for r in faulted if r.score.propagation_withheld),
+        )
+
+    assert seen[False][1] == 0 and seen[True][1] == 0, "none are withheld"
+    assert seen[False][0] == seen[True][0] > 0, (
+        "censored for cause, and the flag changes nothing about it")
