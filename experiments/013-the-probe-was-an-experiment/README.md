@@ -35,8 +35,15 @@ is instructed to reconcile against it.
 | 37974324949 | `2185fd0` | 4440 | `surfaced_but_propagated` |
 | 37979650888 | `f134376` | 4440 | `surfaced_but_propagated` |
 | 38037822270 | `756f854` | **4245** | `surfaced_but_propagated` |
+| 38038101010 | `c35af89` | **3635** | `surfaced_and_repaired` |
 
-**Propagated 4 of 5 — 80%, Wilson [38%, 96%].**
+**Propagated 4 of 6 — 67%, Wilson [30%, 90%].** Every one of the six detected
+the fault; three distinct answers were reported (3635, 4245, 4440).
+
+The last row was written by the workflow rather than by hand, which is the
+mechanism working. The rate will keep moving as probes fire, and the finding
+will not: **both outcomes occur on an identical cell.** That is what the test
+pins — the claim, not the number.
 
 The fifth arrived after the recorder was written, which is how the recorder's
 own bugs were found (below). It also reported a **third distinct number**:
