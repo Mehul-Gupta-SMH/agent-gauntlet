@@ -90,9 +90,27 @@ jobs:
       # The target decides which CommonADK extra is needed. Installing only
       # the package was how the first automatic probe died on a missing
       # `langchain_core` -- and, worse, reported it as a provider outage.
+      # Which cell to probe, when nobody said. The probe has always run
+      # the same one -- audited.yaml on langgraph -- so the live record is
+      # six rows deep there and empty everywhere else, while four issues
+      # (#4, #5, #45, #47) are blocked on evidence a probe would produce.
+      #
+      # Rotating costs nothing: the run happens either way, at the same
+      # ~$0.02. Least-covered first, so it converges on even coverage with
+      # no schedule to maintain. A dispatch with explicit inputs wins.
+      # MUST run before the install step below, which installs the
+      # TARGET's SDK. The first version of this ran after it, so a
+      # rotated `claude` cell installed commonadk[langgraph] and the
+      # probe failed on a runner that was never installed -- two rows
+      # of nulls, and the cell looked broken when the workflow was.
+      - name: Choose the least-covered cell
+        id: cell
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        run: python tools/probe_next.py experiments/live/probe.jsonl >> "$GITHUB_OUTPUT"
+
       - name: Install, including the target's SDK
         env:
-          TARGET: ${{ inputs.target || 'langgraph' }}
+          TARGET: ${{ inputs.target || steps.cell.outputs.target || 'langgraph' }}
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
@@ -121,19 +139,6 @@ jobs:
                  "Re-dispatch with that fixture, or leave shape at 'authority'."
             exit 1
           fi
-
-      # Which cell to probe, when nobody said. The probe has always run
-      # the same one -- audited.yaml on langgraph -- so the live record is
-      # six rows deep there and empty everywhere else, while four issues
-      # (#4, #5, #45, #47) are blocked on evidence a probe would produce.
-      #
-      # Rotating costs nothing: the run happens either way, at the same
-      # ~$0.02. Least-covered first, so it converges on even coverage with
-      # no schedule to maintain. A dispatch with explicit inputs wins.
-      - name: Choose the least-covered cell
-        id: cell
-        if: ${{ github.event_name != 'workflow_dispatch' }}
-        run: python tools/probe_next.py experiments/live/probe.jsonl >> "$GITHUB_OUTPUT"
 
       - name: Probe the live path
         env:

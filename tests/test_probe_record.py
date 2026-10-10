@@ -159,6 +159,20 @@ def test_the_committed_record_parses_and_agrees_with_the_writeup():
     assert [r for r in rows if r.get("recovered_from") == "job-log"], (
         "the rows read out of the logs before the recorder existed"
     )
+
+    # A row with no `outcome` is not evidence -- the probe ran and produced
+    # nothing parseable. The file keeps them, annotated, because they are a
+    # true record of what the workflow did; they are not measurements and
+    # every claim below is about the rows that are.
+    empty = [r for r in rows if not r.get("outcome")]
+    for row in empty:
+        assert row.get("note"), (
+            "an empty row with no `note` is indistinguishable from a parser "
+            "failure -- say which it was"
+        )
+    rows = [r for r in rows if r.get("outcome")]
+    assert rows, "no evidence rows left to make a claim about"
+
     assert all(r["detected"] for r in rows), (
         "every one detected the fault -- detection was not the hard part"
     )
@@ -238,16 +252,17 @@ def test_the_least_covered_cell_wins(tmp_path):
 
     record = tmp_path / "probe.jsonl"
     first = probe_next.WANTED[0]
-    # Six rows on the cell the probe has always run, nothing elsewhere --
-    # which is the real state that motivated the rotation.
+    # Six rows of real evidence on the cell the probe has always run,
+    # nothing elsewhere -- the state that motivated the rotation.
     record.write_text("\n".join(
         json.dumps({"fixture": first.fixture, "target": first.target,
-                    "model_level": first.model}) for _ in range(6)
+                    "model_level": first.model,
+                    "outcome": "surfaced_but_propagated"}) for _ in range(6)
     ) + "\n", encoding="utf-8")
 
     chosen = probe_next.choose(record)
     assert chosen != first, "it kept probing the cell with six rows"
-    assert probe_next.coverage(record)[chosen] == 0
+    assert probe_next.coverage(record)[chosen].evidence == 0
 
 
 def test_a_tie_at_zero_goes_to_the_default_cell(tmp_path):
@@ -301,3 +316,98 @@ def test_a_dispatch_still_wins_over_the_rotation():
     assert ("inputs.fixture || steps.cell.outputs.fixture || "
             "'fixtures/inventory/audited.yaml'") in text
     assert "if: ${{ github.event_name != 'workflow_dispatch' }}" in text
+
+
+def test_a_cell_that_never_produces_evidence_is_parked(tmp_path):
+    """A broken cell must not become a standing charge (#46).
+
+    An empty row records that the probe ran and produced nothing
+    parseable -- usually that the cell or the workflow is broken, which
+    happened immediately: the first rotation ran the chooser AFTER the step
+    that installs the target's SDK, so a rotated `claude` cell got
+    `commonadk[langgraph]` and failed on a runner that was never installed.
+
+    Counting empty rows as coverage would have let it look increasingly
+    well covered while answering nothing; retrying forever would have spent
+    every push on it. So it is chosen on EVIDENCE and parked after
+    `MAX_EMPTY` fruitless attempts.
+    """
+    from tools import probe_next
+
+    broken, working = probe_next.WANTED[1], probe_next.WANTED[2]
+    record = tmp_path / "probe.jsonl"
+    rows = [{"fixture": broken.fixture, "target": broken.target,
+             "model_level": broken.model, "outcome": None}
+            for _ in range(probe_next.MAX_EMPTY)]
+    record.write_text("\n".join(json.dumps(r) for r in rows) + "\n",
+                      encoding="utf-8")
+
+    counts = probe_next.coverage(record)
+    assert counts[broken] == (0, probe_next.MAX_EMPTY)
+    assert broken not in probe_next.eligible(counts), "it is still being paid for"
+    assert probe_next.choose(record) != broken
+
+    # One row of real evidence rescues it: the cell works, it was an outage.
+    with record.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"fixture": broken.fixture,
+                             "target": broken.target,
+                             "model_level": broken.model,
+                             "outcome": "surfaced_and_repaired"}) + "\n")
+    assert broken in probe_next.eligible(probe_next.coverage(record))
+
+    # And a cell with no attempts at all is untouched by any of this.
+    assert working in probe_next.eligible(probe_next.coverage(record))
+
+
+def test_empty_rows_do_not_count_as_coverage(tmp_path):
+    from tools import probe_next
+
+    cell = probe_next.WANTED[0]
+    record = tmp_path / "probe.jsonl"
+    record.write_text(json.dumps(
+        {"fixture": cell.fixture, "target": cell.target,
+         "model_level": cell.model, "outcome": None}) + "\n", encoding="utf-8")
+    assert probe_next.coverage(record)[cell].evidence == 0
+
+
+def test_parking_every_cell_still_returns_one(tmp_path):
+    """A rotation that chooses nothing probes nothing, which is worse than
+    probing a cell that may be broken."""
+    from tools import probe_next
+
+    record = tmp_path / "probe.jsonl"
+    rows = [{"fixture": c.fixture, "target": c.target, "model_level": c.model,
+             "outcome": None}
+            for c in probe_next.WANTED for _ in range(probe_next.MAX_EMPTY)]
+    record.write_text("\n".join(json.dumps(r) for r in rows) + "\n",
+                      encoding="utf-8")
+    assert probe_next.eligible(probe_next.coverage(record)) == []
+    assert probe_next.choose(record) == probe_next.WANTED[0]
+
+
+def test_the_chooser_runs_before_the_sdk_install():
+    """The bug that produced the first two empty rows.
+
+    The install step installs the TARGET's SDK, so the rotation has to have
+    picked the target before it runs. Ordering is the whole fix, and
+    ordering is exactly what a YAML file will not complain about.
+    """
+    import yaml
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "live-probe.yml").read_text(
+            encoding="utf-8"))
+    names = [s.get("name") or "" for s in workflow["jobs"]["probe"]["steps"]]
+    chooser = next(i for i, n in enumerate(names) if "least-covered" in n)
+    install = next(i for i, n in enumerate(names) if "target's SDK" in n)
+    assert chooser < install, (
+        f"the chooser runs at step {chooser + 1} and the SDK install at "
+        f"{install + 1} -- a rotated target would install the wrong SDK"
+    )
+
+    # And every step that needs the target must read the rotation, not just
+    # the dispatch input.
+    for step in workflow["jobs"]["probe"]["steps"]:
+        target = (step.get("env") or {}).get("TARGET")
+        if target:
+            assert "steps.cell.outputs.target" in target, step.get("name")

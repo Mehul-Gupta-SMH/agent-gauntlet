@@ -81,26 +81,77 @@ def _rows(path: Path) -> Iterator[dict]:
             continue
 
 
-def coverage(path: Path) -> dict[Cell, int]:
-    """How many recorded rows each wanted cell already has."""
-    counts = {cell: 0 for cell in WANTED}
+MAX_EMPTY = 2
+"""Empty rows a cell may accumulate before it leaves the rotation.
+
+A row with no `outcome` is not evidence -- it records that the probe ran
+and produced nothing parseable. Usually that means the cell is broken
+rather than the model is interesting, and it happened immediately: the
+first version of the rotation ran the chooser AFTER the step that installs
+the target's SDK, so a rotated `claude` cell installed
+`commonadk[langgraph]` and the probe failed on a runner that was never
+installed.
+
+Two is enough to tell a transient outage from a broken cell, and parking it
+after that is the difference between a finding and a standing charge.
+"""
+
+
+class Count(NamedTuple):
+    evidence: int
+    """Rows carrying an `outcome` -- the ones that answer anything."""
+    empty: int
+    """Rows where the probe ran and produced nothing parseable."""
+
+
+def coverage(path: Path) -> dict[Cell, Count]:
+    """Per wanted cell: rows that are evidence, and rows that are not.
+
+    Counted apart because they mean opposite things. Evidence is why the
+    cell is in the rotation; an empty row is a bug report about the cell or
+    about the workflow, and counting the two together would let a cell that
+    can never succeed look well covered.
+    """
+    evidence = {cell: 0 for cell in WANTED}
+    empty = {cell: 0 for cell in WANTED}
     for row in _rows(path):
         cell = Cell(row.get("fixture") or "", row.get("target") or "",
                     row.get("model_level") or "")
-        if cell in counts:
-            counts[cell] += 1
-    return counts
+        if cell not in evidence:
+            continue
+        if row.get("outcome"):
+            evidence[cell] += 1
+        else:
+            empty[cell] += 1
+    return {cell: Count(evidence[cell], empty[cell]) for cell in WANTED}
+
+
+def eligible(counts: dict[Cell, Count]) -> list[Cell]:
+    """Cells still worth spending on.
+
+    A cell with no evidence after `MAX_EMPTY` attempts is parked. It stays
+    in `WANTED` and stays dispatchable by hand -- parking is not deletion,
+    and the chooser says out loud that it did it.
+    """
+    return [cell for cell in WANTED
+            if counts[cell].evidence or counts[cell].empty < MAX_EMPTY]
 
 
 def choose(path: Path) -> Cell:
-    """The wanted cell with the fewest rows; ties go to declaration order.
+    """The eligible cell with the least evidence; ties go to declaration order.
 
     Declaration order matters and is not arbitrary: the first entry is the
     cell this project has always probed, so a tie at zero does not abandon
     the path the matrix guard depends on.
+
+    Chosen on EVIDENCE rather than on rows, because a cell that keeps
+    failing would otherwise look increasingly well covered while answering
+    nothing.
     """
     counts = coverage(path)
-    return min(WANTED, key=lambda cell: (counts[cell], WANTED.index(cell)))
+    live = eligible(counts) or list(WANTED)
+    return min(live, key=lambda cell: (counts[cell].evidence,
+                                       WANTED.index(cell)))
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -108,13 +159,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     path = Path(argv[0]) if argv else Path("experiments/live/probe.jsonl")
     counts = coverage(path)
     cell = choose(path)
+    live = set(eligible(counts))
 
     # To stderr so the step's `$GITHUB_OUTPUT` capture stays clean, and
-    # because a human reading the log wants to see why this cell won.
-    print("live evidence per cell:", file=sys.stderr)
+    # because a human reading the log wants to see why this cell won -- and
+    # which cells are producing nothing, which is the failure this project
+    # keeps catching late.
+    print("live evidence per cell (evidence / empty):", file=sys.stderr)
     for wanted in WANTED:
-        mark = " <-- probing this" if wanted == cell else ""
-        print(f"  {counts[wanted]:3d}  {wanted.fixture} "
+        count = counts[wanted]
+        if wanted == cell:
+            mark = "  <-- probing this"
+        elif wanted not in live:
+            mark = f"  <-- PARKED: {count.empty} attempts, no evidence"
+        else:
+            mark = ""
+        print(f"  {count.evidence:3d} / {count.empty:<3d} {wanted.fixture} "
               f"{wanted.target}/{wanted.model}{mark}", file=sys.stderr)
 
     print(f"fixture={cell.fixture}")
