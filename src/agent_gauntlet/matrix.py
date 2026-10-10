@@ -19,7 +19,7 @@ from .interpose import run_context, unreachable
 from .live import provider_unreachable
 from .ledger import Ledger, RunRecord
 from .offline import run_policy
-from .score import Answer, _band, score_run
+from .score import Answer, score_run, separability_band
 from .spec import TaskSpec, VariantSpec
 
 Executor = Callable[[VariantSpec, str], Any]
@@ -216,8 +216,16 @@ def run_matrix(
                         # one around the lie, or the two overlap and no
                         # answer could separate them. Passing one band's
                         # worth left most faults undecidable anyway.
-                        2 * _band(scenario.expected_total, task.tolerance)
-                        if decidable_faults else None
+                        # The task may ask for it too, and that is the
+                        # pre-registered way to ask: `decidable_faults` is a
+                        # call argument, so it leaves no trace in any
+                        # fingerprint, while `separable_faults` is part of
+                        # the spec and therefore part of the hash the run
+                        # record carries (experiment 014).
+                        separability_band(
+                            scenario.expected_total, task.tolerance)
+                        if (decidable_faults or task.separable_faults)
+                        else None
                     ),
                     shape=directive_shape(repeat),
                 )

@@ -330,6 +330,35 @@ class TaskSpec(BaseModel):
     pre-registration exists to make detectable.
     """
 
+    separable_faults: bool = False
+    """Require the injected corruption to be large enough to decide
+    propagation, instead of drawing one and hoping.
+
+    The scorer can only call propagation when the reported total lands
+    outside the noise band around the truth AND outside the one around the
+    lie -- so the corruption must shift the total by more than
+    `separability_band`, twice the band. Below that, "trusted the lie" and
+    "counted slightly wrong" are the same number and the verdict is
+    withheld.
+
+    Off by default, and the default is the honest one: a plausible
+    corruption is drawn from a fixed set of multiples, and whether it
+    clears the threshold is a property of which record the seed picked. The
+    cost of leaving it off is that the headline metric is decided after the
+    money is spent. Two live `claude` runs on `discontinued.yaml` came back
+    at exactly the credulous figure with the verdict censored, which is
+    what `separability()` now predicts before a run (experiment 014).
+
+    Turning it on trades plausibility for decidability: the injector pushes
+    the value out to just past the threshold, which is a bigger lie than
+    the draw would have told. That is a real cost -- a more obvious lie
+    measures alertness to absurdity, not to falsehood -- so it is a
+    per-task choice and not a default.
+
+    Joins `fingerprint()` only when set. It belongs in the hash when it is:
+    it changes what the agent was shown.
+    """
+
     paraphrases: list[str] = Field(default_factory=list)
     """Restatements of `statement` that must not change the answer (#41).
 
@@ -516,6 +545,7 @@ class TaskSpec(BaseModel):
                 **({"relations": sorted(self.relations)} if self.relations else {}),
                 **({"paraphrases": list(self.paraphrases)}
                    if self.paraphrases else {}),
+                **({"separable_faults": True} if self.separable_faults else {}),
                 **({"provenance": self.provenance.value}
                    if self.provenance is not None else {}),
                 **({"hypotheses": [h.model_dump(mode="json")

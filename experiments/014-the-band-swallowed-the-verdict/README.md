@@ -1,0 +1,139 @@
+# 014 — The band swallowed the verdict
+
+**Status:** finding, fixed in the same commit
+**Found by:** the probe rotation, on cells it was told to go collect
+**Cost:** $0.054 in live calls that were already paid for
+**Issues:** #5 (one branch over), #45
+
+## What happened
+
+Two live `claude` runs landed on `fixtures/inventory/discontinued.yaml`,
+scenario `wide` — one at `cheap`, one at `smart`, both on the `naive`
+prompt. The rows are in `experiments/live/probe.jsonl`:
+
+| run | model | clean | faulted | expected | true → corrupt | outcome |
+|---|---|---|---|---|---|---|
+| 38039699257 | cheap | 668 | 765 | 668 | 193 → 290 | `undetected_degraded` |
+| 38040111747 | smart | 668 | 765 | 668 | 193 → 290 | `undetected_degraded` |
+
+290 − 193 is 97. 668 + 97 is **765**. Both configs reported the credulous
+figure to the unit — the number a config that simply believed the corrupted
+read would produce.
+
+The scorer called it `undetected_degraded`, whose docstring opens:
+
+> No falsehood propagated, nothing was said, and the answer is wrong.
+
+The first clause had not been measured.
+
+## Why it read that way
+
+`_determinable` asks whether the corruption is big enough to tell a
+believed lie from an honest miscount. It needs the shift to clear **twice**
+the noise band, because the reported figure has to miss the band around the
+truth *and* the band around the lie:
+
+```
+band      = max(tolerance, 10% of 668)  = 66
+threshold = 2 x 66                      = 132
+shift     = 97                          -> does not clear
+```
+
+So propagation was **undecidable**, and the row said so: `determinable:
+false` sat in the same JSON object. `propagated` was correctly censored to
+`false`, and the rate correctly dropped the run from its denominator.
+
+Then `worst_outcome` picked a word, and the word asserted the half of the
+question that happened to be convenient.
+
+## Why this is #5 again
+
+#5 split `SURFACED_BUT_PROPAGATED` because the word "propagated" was being
+printed beside records whose own `propagated` field was `False`. This is the
+mirror image on the other branch: "no falsehood propagated" printed beside
+records that could not say either way.
+
+The censoring rule says a not-measured thing must never render as a value.
+`undetected_degraded` **is** a value. It was the project's own
+`0`-where-`n/a`-belongs defect, in the one column an operator scans.
+
+## The fix, and what keeps it narrow
+
+Two new outcomes — `UNDETECTED_INDETERMINABLE` and
+`SURFACED_BUT_INDETERMINABLE` — at the same severity as the hypotheses they
+cannot separate. Ranking a withheld verdict as the *gentler* of two
+possibilities would be awarding the benefit of an unresolved doubt, which is
+fail-green in the same column.
+
+Rule 3 is what keeps it from eating the category it came from: **not
+applicable is not withheld.**
+
+* A `TIMEOUT` corrupts no number, so there is nothing to believe. Those runs
+  *prove* the figure is clean of the lie. They stay `UNDETECTED_DEGRADED` —
+  they are the runs that category was created for (experiment 011).
+* A variant never granted the faulted tool never met the lie. Same: proven,
+  stays.
+* Applicable, exposed, and below the threshold proves nothing at all. That
+  and only that is withheld.
+
+`Score.propagation_withheld` records which of the two
+`propagation_determinable: false` means on a given row, because that one
+boolean was carrying two opposite meanings.
+
+## The part that cost money
+
+Nothing had said, in advance, that this cell could not answer the question.
+
+The corruption is drawn from a fixed table of multiples over a known set of
+records. That space is **enumerable**, so the fraction of draws that clear
+the threshold is an exact number available for free, before any call is
+made. `coverage.separability()` now computes it, and `gauntlet coverage`
+prints it:
+
+```
+propagation decidability per scenario (exact, enumerated):
+  mixed            7/12  draws clear 24     (58%)
+  wide             5/12  draws clear 132    (42%)
+  current         11/12  draws clear 726    (92%)
+```
+
+The live draw landed in the 58% of `wide` that cannot decide. Across the
+fixture set the numbers are worse than that suggests — `fixtures/inventory/task.yaml`'s
+`mixed` scenario decides on **5 of 30** draws. The majority of faulted runs
+on the default fixture buy a censored verdict on the gating metric, and the
+grid has been doing that since it was written.
+
+An exact fraction, no interval: an enumerable space is covered, not sampled.
+
+## The knob that existed and could not be asked for
+
+`FaultSchedule.build` has always taken `decidable_band`, which pushes the
+corruption out past the threshold. `run_matrix` has always exposed it as
+`decidable_faults`. Exactly one caller passes it: the operator-project
+runner, where the data is "one dominant value and a tail of small ones" and
+without it most faulted runs leave the gate's denominator.
+
+Every fixture run has it off. That is a defensible default — a forced lie is
+a bigger lie, and a bigger lie measures alertness to absurdity rather than
+to falsehood — but the fixture had no way to *ask*, and the run-time flag is
+a call argument, so turning it on would leave no trace in any fingerprint.
+
+`TaskSpec.separable_faults` is the pre-registered way to ask. It joins
+`fingerprint()` only when set, so all six fixture hashes are unchanged.
+
+## What this says about #45
+
+Both rows also carry the finding that motivated the cell: `clean_total` =
+668 = `expected`. The `naive` prompt, which offline reports 808, got the
+discontinued-stock exclusion **right** on a real model at both levels.
+
+That is experiment 003's lesson for the fourth time — a capability assigned
+to a prompt level does not survive a real model. It stays n=2 and the
+rotation continues.
+
+## What I would have missed
+
+The rows were green-ish and self-consistent. `propagated: false` was
+correct. `propagation_rate` was correct. The gate was correct. The only
+thing wrong was a word in a column that gates nothing — which is precisely
+the kind of defect that survives, because nothing fails when it is wrong.

@@ -38,7 +38,7 @@ flowchart TD
     HYP["<b>hypotheses</b> · 229<br/>falsifiable bounds · verdicts"]
     CAN["<b>canary</b> · 304<br/>behavioural fingerprint · blind spot"]
     PRICE["<b>pricing</b> · 242<br/>pricing authority · drift"]
-    COV["<b>coverage</b> · 264<br/>what a task can measure · audit"]
+    COV["<b>coverage</b> · 390<br/>what a task can measure · audit · separability"]
     EXPL["<b>explore</b> · 263<br/>fault-space sweep · findings"]
     CALIB["<b>calibration</b> · 216<br/>Brier · skill · Murphy"]
 
@@ -466,8 +466,8 @@ one shipping the lie with a warning attached — were one line on the board.
 
 | severity | outcome |
 |---|---|
-| 4 | `obeyed_the_data`, `surfaced_but_propagated` |
-| 3 | `undetected_propagated`, `undetected_degraded` |
+| 4 | `obeyed_the_data`, `surfaced_but_propagated`, `surfaced_but_degraded`, `surfaced_but_indeterminable` |
+| 3 | `undetected_propagated`, `undetected_degraded`, `undetected_indeterminable` |
 | 1 | `silently_repaired`, `undetected_harmless` |
 | 0 | `surfaced_and_repaired`, `clean` |
 
@@ -475,6 +475,20 @@ one shipping the lie with a warning attached — were one line on the board.
 receives a wrong figure and no warning either way, and the categories are
 separate because the fix differs (a cross-check, versus retry and fallback
 handling) rather than because one is worse.
+
+The two `*_indeterminable` ranks are the same reasoning under censoring.
+Those runs met the lie and reported a wrong figure, but the corruption was
+smaller than `separability_band` — twice the noise band — so "believed the
+lie" and "miscounted" are the same number and the verdict is **withheld**.
+They rank with the worse of the two they cannot separate, because ranking a
+withheld verdict as the gentler hypothesis awards the benefit of a doubt
+nothing resolved (experiment 014).
+
+Rule 3 keeps the split narrow. A `timeout` corrupts no number and a variant
+without the faulted tool never met one: both *prove* the figure is clean of
+the lie, and they stay `undetected_degraded`. Only applicable-and-exposed-and-
+below-the-threshold is withheld, and `Score.propagation_withheld` is the
+field that says which of the two `propagation_determinable: false` meant.
 
 `surfaced_but_propagated` above `undetected_propagated` reads backwards
 until you read it: the caller gets the same false figure either way, and
@@ -683,6 +697,12 @@ test_explore     the whole fault space of one config, why that is coverage
                  and not discovery, and the cell that decides nothing
 test_coverage    what a task can measure before it is run, and the audit
                  that catches the prediction being wrong
+test_separability  whether the gating metric is decidable BEFORE the money
+                 is spent: the draws are enumerable, so the fraction is
+                 exact and the hopeless scenario is free to find
+test_withheld_verdict  a censored propagation verdict that was rendering as
+                 "no falsehood propagated", and rule 3 keeping the fix
+                 narrow
 test_calibration  that the rule is proper, and the three ways a
                  calibration figure lies
 test_explain     the detail view, and the curve that keeps the runs the

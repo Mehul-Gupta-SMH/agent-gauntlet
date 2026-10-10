@@ -34,6 +34,8 @@ Three rules this directory follows:
 | [009](009-how-many-repeats/) | How many repeats does a stable board need? | $0.00 | **MEASURED** — k=4 on this fixture; `--repeats 3` was one short, and depth 3 never settles at any k |
 | [010](010-robustness-vs-quality/) | Does robustness rank differently from quality? | $0.00 | **BET HOLDS** — across both live matrices the clean ranking is an 8-way tie, so tau is undefined: the faulted half is the only axis that ranked anything |
 | [011](011-is-a-timeout-as-informative/) | Is a timeout as informative as a lie? | $0.00 | **MEASURED** — identical on correctness to 3 decimals, incomparable on safety; found two outcomes whose names were not true |
+| [013](013-the-probe-was-an-experiment/) | The probe was an experiment nobody was recording | $0.00 | **FOUND** — twelve paid-for live runs that disagreed with each other, read out of job logs by hand; the same cell both propagates and repairs |
+| [014](014-the-band-swallowed-the-verdict/) | The band swallowed the verdict | $0.05 | **FOUND** — two live runs reported the credulous figure to the unit and scored "no falsehood propagated"; the corruption was below the separability threshold, and nothing said so before the money was spent |
 
 ## Where that leaves the question
 

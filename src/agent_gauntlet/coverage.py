@@ -262,3 +262,129 @@ def audit(report: CoverageReport, results: Sequence) -> list[str]:
 
 
 __all__ = ["CoverageReport", "Family", "Property", "assess", "audit"]
+
+
+# --- separability: can this scenario decide propagation at all? -----------
+#
+# Reachability says propagation is measurable for this fault KIND. It can
+# still be undecidable for this scenario's ARITHMETIC, and that is decided
+# by which record the seed happens to pick. Two live `claude` runs on
+# `discontinued.yaml` reported the credulous figure to the unit and scored
+# with the verdict censored, because a 97 shift on a 668 total does not
+# clear twice the 66-wide band (experiment 014).
+#
+# The draw is a fixed set of multiples over a known set of records, so the
+# share of draws that would clear the threshold is computable before the
+# run -- exactly, by enumeration, with no interval. That makes it a
+# pre-flight fact rather than an after-the-fact disappointment.
+
+
+class ScenarioSeparability(BaseModel):
+    """What fraction of this scenario's possible corruptions is decidable."""
+
+    scenario_id: str
+    expected_total: int
+    threshold: int
+    """The shift a corruption must exceed: `separability_band`."""
+    decidable_draws: int
+    total_draws: int
+    largest_shift: int
+    """The biggest shift any single draw on any eligible record could make."""
+
+    @property
+    def share(self) -> float:
+        return self.decidable_draws / self.total_draws if self.total_draws else 0.0
+
+    @property
+    def hopeless(self) -> bool:
+        """No draw on any eligible record could clear the threshold.
+
+        A scenario whose records are all small relative to its total:
+        corrupting one of them cannot move the aggregate far enough to tell
+        a believed lie from a miscount, whatever the seed.
+        """
+        return self.total_draws > 0 and self.decidable_draws == 0
+
+
+class Separability(BaseModel):
+    """The pre-flight separability report for one task."""
+
+    task_id: str
+    applicable: bool
+    """False when the fault kind corrupts no number, or pins its own shift.
+
+    `OMISSION` withholds a whole record, so its shift is the record's value
+    and not a draw -- there is nothing to predict. `TIMEOUT` and
+    `INSTRUCTION` corrupt no number at all.
+    """
+    guaranteed: bool
+    """The task set `separable_faults`, so the injector pushes every
+    corruption past the threshold and every run can decide."""
+    scenarios: list[ScenarioSeparability] = Field(default_factory=list)
+
+    @property
+    def at_risk(self) -> list[ScenarioSeparability]:
+        """Scenarios where some draw would land undecidable."""
+        if self.guaranteed or not self.applicable:
+            return []
+        return [s for s in self.scenarios if s.share < 1.0]
+
+    @property
+    def hopeless(self) -> list[ScenarioSeparability]:
+        if self.guaranteed or not self.applicable:
+            return []
+        return [s for s in self.scenarios if s.hopeless]
+
+
+def separability(task) -> Separability:
+    """Enumerate the draws, before any money is spent.
+
+    Covered, not sampled: the corruption comes from a fixed set of
+    multiples applied to one of a known set of records, so this is an exact
+    fraction and carries no interval (the coverage-is-not-discovery rule).
+
+    The enumeration mirrors `_plausible_corruption` and shares its factor
+    table rather than restating it. It does not model the forced branch --
+    the one that pushes a value past a band it was given -- because that
+    branch only fires when `decidable_band` is set, which is the
+    `guaranteed` case this function reports separately.
+    """
+    from .faults import PLAUSIBLE_FACTORS
+    from .score import separability_band
+
+    kind = FaultKind(task.fault_kind)
+    rows: list[ScenarioSeparability] = []
+    applicable = kind in (FaultKind.WRONG_VALUE, FaultKind.POISONED_MEMORY)
+
+    if applicable:
+        for scenario in task.scenarios:
+            total = scenario.expected_total
+            threshold = separability_band(total, task.tolerance)
+            if kind is FaultKind.POISONED_MEMORY:
+                # The note holds the running total, so the corruption is
+                # drawn against the aggregate itself -- one target, not a
+                # record each.
+                values = [total]
+            else:
+                eligible = set(scenario.audited_ids or scenario.records)
+                values = [v for k, v in scenario.records.items() if k in eligible]
+            shifts = [
+                abs(max(1, int(round(v * f))) - v)
+                for v in values for f in PLAUSIBLE_FACTORS
+                if max(1, int(round(v * f))) != v
+            ]
+            rows.append(ScenarioSeparability(
+                scenario_id=scenario.id,
+                expected_total=total,
+                threshold=threshold,
+                decidable_draws=sum(1 for d in shifts if d > threshold),
+                total_draws=len(shifts),
+                largest_shift=max(shifts, default=0),
+            ))
+
+    return Separability(
+        task_id=task.id,
+        applicable=applicable,
+        guaranteed=bool(getattr(task, "separable_faults", False)),
+        scenarios=rows,
+    )

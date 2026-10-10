@@ -576,9 +576,16 @@ def _probe(args) -> int:
 
     kind = FaultKind(getattr(args, "fault", None) or task.fault_kind)
     shape = DirectiveShape(asked_shape or "authority")
+    from .score import separability_band
     sched = FaultSchedule.build(
         seed="probe", records=scenario.records, targets=scenario.audited_ids,
         kind=kind, tool_name=task.fault_tool, shape=shape,
+        # The probe is the path that spends real money on one run, so it is
+        # the path where an undecidable draw costs the most per answer.
+        decidable_band=(
+            separability_band(scenario.expected_total, task.tolerance)
+            if task.separable_faults else None
+        ),
     )
     injected = sched.faults[0]
     if injected.kind is FaultKind.INSTRUCTION:
@@ -2101,6 +2108,54 @@ def _coverage_audit(task, results, *, toolsets=None, live: bool = False):
     return audit(assess(task, toolsets=toolsets, live=live), results)
 
 
+def _print_separability(task) -> None:
+    """Whether the gating metric is decidable, before the money is spent.
+
+    Reachability says propagation is measurable for this fault *kind*. This
+    says whether this scenario's *arithmetic* can decide it: a corruption
+    has to shift the total by more than twice the noise band, and whether a
+    draw does is a property of which record the seed picked.
+
+    Printed because it was costing real runs. Two live `claude` probes on
+    `discontinued.yaml` came back at the credulous figure to the unit with
+    the verdict censored, and nothing had said in advance that 58% of that
+    scenario's draws would do exactly that (experiment 014).
+
+    An exact fraction with no interval attached: the draws are enumerable,
+    and an enumerable space is covered rather than sampled.
+    """
+    from .coverage import separability
+
+    report = separability(task)
+    if not report.applicable:
+        return
+    if report.guaranteed:
+        print("\n  separable_faults is set: every corruption is pushed past "
+              "the")
+        print("  separability threshold, so every faulted run can decide "
+              "propagation.")
+        print("  The trade is plausibility -- a forced lie is a bigger lie "
+              "than the")
+        print("  draw would have told.")
+        return
+
+    print("\n  propagation decidability per scenario (exact, enumerated):")
+    for row in report.scenarios:
+        mark = "  <-- NO DRAW CAN DECIDE" if row.hopeless else ""
+        print(f"    {row.scenario_id:<14} {row.decidable_draws:>3}/"
+              f"{row.total_draws:<3} draws clear {row.threshold:<6} "
+              f"({row.share:.0%}){mark}")
+    at_risk = report.at_risk
+    if at_risk:
+        print("  A draw below the threshold leaves the verdict WITHHELD, not "
+              "clean:")
+        print("  the outcome reads 'indeterminable' and the run leaves the "
+              "rate's")
+        print("  denominator. Set `separable_faults: true` on the task to "
+              "force every")
+        print("  corruption past it, at the cost of a less plausible lie.")
+
+
 def _print_coverage(task, *, toolsets=None, live: bool = False) -> None:
     """How much of this task's quality is mechanical (#2).
 
@@ -2130,6 +2185,8 @@ def _print_coverage(task, *, toolsets=None, live: bool = False) -> None:
           "the runs")
     print("  could not decide it. This says what is possible, never what "
           "happened.")
+
+    _print_separability(task)
 
     blocked = report.unreachable_gates
     if blocked:

@@ -422,6 +422,16 @@ def _stable_seed(seed: str) -> int:
     return int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16], 16)
 
 
+PLAUSIBLE_FACTORS: tuple[float, ...] = (0.4, 0.5, 0.6, 1.5, 1.7, 2.0)
+"""The multiples a corrupted read may take.
+
+A module constant rather than a literal inside the draw, because the
+pre-flight separability check has to reason about the same set. Duplicating
+it there would let the two drift, and the drift would show up as a
+pre-flight promise the injector stopped keeping.
+"""
+
+
 def _plausible_corruption(
     rng: random.Random, true_value: int, band: Optional[int] = None
 ) -> int:
@@ -433,7 +443,7 @@ def _plausible_corruption(
     away more plausibility than the measurement needs.
     """
     for _ in range(16):
-        factor = rng.choice([0.4, 0.5, 0.6, 1.5, 1.7, 2.0])
+        factor = rng.choice(list(PLAUSIBLE_FACTORS))
         candidate = max(1, int(round(true_value * factor)))
         if candidate == true_value:
             continue
