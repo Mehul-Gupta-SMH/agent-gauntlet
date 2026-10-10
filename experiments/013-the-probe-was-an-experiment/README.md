@@ -37,13 +37,27 @@ is instructed to reconcile against it.
 | 38037822270 | `756f854` | **4245** | `surfaced_but_propagated` |
 | 38038101010 | `c35af89` | **3635** | `surfaced_and_repaired` |
 
-**Propagated 4 of 6 — 67%, Wilson [30%, 90%].** Every one of the six detected
-the fault; three distinct answers were reported (3635, 4245, 4440).
+**Both outcomes occur on an identical cell.** That is the finding, and it is
+the only part of this that does not move.
 
-The last row was written by the workflow rather than by hand, which is the
-mechanism working. The rate will keep moving as probes fire, and the finding
-will not: **both outcomes occur on an identical cell.** That is what the test
-pins — the claim, not the number.
+The rate does move: every probe appends a row to
+[`experiments/live/probe.jsonl`](../live/probe.jsonl), so any figure written
+here would be stale by the next push. It was hardcoded once and an automated
+append promptly broke the build — the wrong direction for every incentive in
+this project, since the fix is to edit prose rather than to learn anything.
+
+```
+$ python -c "import json;rows=[json.loads(l) for l in open('experiments/live/probe.jsonl')];\
+print(sum(r['propagated'] for r in rows),'of',len(rows))"
+```
+
+Every row so far detected the fault. The reported figures seen to date are
+3635 (the truth), and 4245, 4440 and 4635 — three distinct wrong answers, none
+of which is a rounding error away from the truth.
+
+Rows from `38038101010` onward were written by the workflow rather than by
+hand, which is the mechanism working. The test pins the claim and the fact that
+the data still supports it — never the figure.
 
 The fifth arrived after the recorder was written, which is how the recorder's
 own bugs were found (below). It also reported a **third distinct number**:

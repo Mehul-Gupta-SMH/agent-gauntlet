@@ -174,16 +174,24 @@ def test_the_committed_record_parses_and_agrees_with_the_writeup():
         "this ever reads all-or-nothing, the writeup's claim is gone"
     )
 
-    # The README's headline must match the file it describes, computed the
-    # same way rather than transcribed.
-    interval = wilson(propagated, len(rows))
+    # The writeup must state the CLAIM and must NOT hardcode the rate.
+    #
+    # It did hardcode it, once, and the next probe's automated append broke
+    # the build -- a test that makes a machine-written row require a human
+    # prose edit has its incentives backwards. So what is pinned is that
+    # the writeup still makes the claim, and that the data still supports
+    # it; the number lives in the file alone.
     readme = (ROOT / "experiments" / "013-the-probe-was-an-experiment"
               / "README.md").read_text(encoding="utf-8")
-    assert f"Propagated {propagated} of {len(rows)}" in readme, (
-        f"the writeup and {len(rows)} recorded rows disagree -- append a row "
-        f"and the headline moves with it"
+    assert "Both outcomes occur on an identical cell" in readme
+    assert f"Propagated {propagated} of" not in readme, (
+        "the writeup hardcoded the rate again -- the next probe will break "
+        "the build and the fix will be to edit prose"
     )
-    assert f"[{interval.low:.0%}, {interval.high:.0%}]" in readme
+    # A sanity check that the interval is computable at all, which is what
+    # the writeup tells a reader to do.
+    interval = wilson(propagated, len(rows))
+    assert 0.0 <= interval.low <= interval.value <= interval.high <= 1.0
 
     # Nothing the harness controls varied across any of them. That is the
     # whole basis for reading the disagreement as the model's.
