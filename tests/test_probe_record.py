@@ -659,3 +659,26 @@ def test_the_workflow_publishes_the_probe_status_to_the_recorder():
     probe_step = text.split("- name: Probe the live path", 1)[1]
     assert probe_step.lstrip().startswith("id: probe"), (
         "steps.probe.outputs.status resolves to nothing without the id")
+
+
+def test_the_rotation_chooser_is_importable_without_luck():
+    """Seven tests imported `tools.probe_next` and nothing put the
+    repository root on `sys.path`.
+
+    It resolved anyway wherever an editable install happened to drop a
+    `.pth` for the project root, and failed wherever the install used an
+    import finder scoped to `src/` instead -- which is pip and setuptools
+    version dependent. Three commits went red on the runner while a clean
+    venv built the same way passed here.
+
+    `conftest.py` at the root now does it explicitly. This test fails if
+    that file is removed, rather than leaving the next person to find out
+    from a build they cannot read the log of.
+    """
+    import importlib
+    import sys
+
+    assert str(ROOT) in sys.path, (
+        "the root conftest.py is what makes `tools` importable -- without "
+        "it this suite passes or fails on which pip built the install")
+    assert importlib.import_module("tools.probe_next")
