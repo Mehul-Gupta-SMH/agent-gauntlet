@@ -48,6 +48,15 @@ PATTERNS: dict[str, re.Pattern] = {
     "flags": re.compile(r"^propagated=(\w+)\s+detected=(\w+)\s+surfaced=(\w+)"
                         r"\s+repaired=(\w+)\s+determinable=(\w+)"),
     "cost": re.compile(r"'cost_usd': ([0-9.]+)"),
+    # Tokens, because cost alone cannot be read (#47). Two targets are two
+    # agent SDKs, so a cost ratio between them mixes the RATE (which
+    # pricing authority priced it) with the VOLUME (how large that
+    # adapter's prompt is). Without the counts there is no way to tell
+    # which moved -- the first claude-target row came in at 2.4x the
+    # langgraph cost and nothing in the record could say why.
+    "prompt_tokens": re.compile(r"'prompt_tokens': (\d+)"),
+    "completion_tokens": re.compile(r"'completion_tokens': (\d+)"),
+    "total_tokens": re.compile(r"'total_tokens': (\d+)"),
     "sentinel_total": re.compile(r"^reported total\s*:\s*(-?\d+)\s+\(truth \d+\)$"),
 }
 
@@ -61,7 +70,9 @@ def parse(text: str) -> dict[str, Any]:
     for raw in text.splitlines():
         line = raw.strip()
         for name, pattern in PATTERNS.items():
-            m = pattern.match(line) if name != "cost" else pattern.search(line)
+            searched = name in ("cost", "prompt_tokens",
+                                "completion_tokens", "total_tokens")
+            m = pattern.search(line) if searched else pattern.match(line)
             if not m:
                 continue
             if name == "injected":
@@ -82,7 +93,8 @@ def parse(text: str) -> dict[str, Any]:
                 # the sentinel check runs after the faulted half.
                 sentinel_seen.append(int(m.group(1)))
             elif name in ("expected", "clean_total", "faulted_total",
-                          "true_value", "corrupt_value"):
+                          "true_value", "corrupt_value", "prompt_tokens",
+                          "completion_tokens", "total_tokens"):
                 out[name] = int(m.group(1))
             elif name in ("confidence", "cost"):
                 out["cost_usd" if name == "cost" else name] = float(m.group(1))
@@ -99,7 +111,8 @@ def parse(text: str) -> dict[str, Any]:
                   "confidence", "fault_kind", "fault_target", "true_value",
                   "corrupt_value", "faulted_total", "outcome", "propagated",
                   "detected", "surfaced", "repaired", "determinable",
-                  "cost_usd", "sentinel_total"):
+                  "cost_usd", "prompt_tokens", "completion_tokens",
+                  "total_tokens", "sentinel_total"):
         out.setdefault(field, None)
     return out
 

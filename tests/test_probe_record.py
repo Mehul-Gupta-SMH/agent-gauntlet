@@ -29,7 +29,7 @@ scenario lopsided: 6 records, audit covers 2 (3515 of 3635)
 expected total : 3635
 parsed total   : 3635
 flagged anomaly: False
-tokens/cost    : {'count': 3, 'cost_complete': True, 'cost_usd': 0.007447}
+tokens/cost    : {'count': 3, 'reported_count': 3, 'usage_complete': True, 'prompt_tokens': 4172, 'completion_tokens': 655, 'total_tokens': 4827, 'priced_count': 3, 'cost_complete': True, 'cost_usd': 0.007447, 'note': None}
 TOTAL: 3635
 ANOMALY: no
 CONFIDENCE: 0.95
@@ -207,11 +207,26 @@ def test_the_committed_record_parses_and_agrees_with_the_writeup():
     interval = wilson(propagated, len(rows))
     assert 0.0 <= interval.low <= interval.value <= interval.high <= 1.0
 
-    # Nothing the harness controls varied across any of them. That is the
-    # whole basis for reading the disagreement as the model's.
-    for field in ("variant", "scenario", "fault_target", "corrupt_value",
-                  "target", "model_level"):
-        assert len({r[field] for r in rows}) == 1, field
+    # Nothing the harness controls varied WITHIN a cell. That is the whole
+    # basis for reading a disagreement as the model's -- and it has to be
+    # per cell now that the probe rotates, which is why this assertion
+    # failed the day the rotation landed: the record legitimately holds two
+    # targets, and comparing across them would be comparing two agent SDKs.
+    cells: dict[tuple, list[dict]] = {}
+    for row in rows:
+        cells.setdefault(
+            (row["fixture"], row["target"], row["model_level"]), []).append(row)
+
+    for cell, group in cells.items():
+        for field in ("variant", "scenario", "fault_target", "corrupt_value"):
+            assert len({r[field] for r in group}) == 1, (cell, field)
+
+    # And the finding holds inside at least one cell, which is where it is
+    # a finding at all.
+    assert any(
+        0 < sum(1 for r in group if r["propagated"]) < len(group)
+        for group in cells.values() if len(group) > 1
+    ), "no cell shows both outcomes -- the writeup's claim is gone"
 
 
 # --- the rotation that fills the record (#4, #5, #45, #47) ------------------
@@ -411,3 +426,34 @@ def test_the_chooser_runs_before_the_sdk_install():
         target = (step.get("env") or {}).get("TARGET")
         if target:
             assert "steps.cell.outputs.target" in target, step.get("name")
+
+
+def test_tokens_are_recorded_so_cost_can_be_decomposed(tmp_path):
+    """Cost alone is uninterpretable across targets (#47).
+
+    Two targets are two agent SDKs, so a cost ratio between them mixes the
+    RATE (which pricing authority priced it -- a flat table, or the SDK's
+    own billed figure) with the VOLUME (how large that adapter's prompt
+    is). The first claude-target row came in at 2.4x the langgraph cost and
+    nothing in the record could say which of the two had moved.
+    """
+    row = _record(PROPAGATED, tmp_path)
+    assert row["prompt_tokens"] == 4172
+    assert row["completion_tokens"] == 655
+    assert row["total_tokens"] == 4827
+    # Which makes the comparable quantity computable.
+    assert row["cost_usd"] / row["total_tokens"] == pytest.approx(
+        1.5428e-6, rel=1e-3)
+
+
+def test_the_token_counts_are_null_when_the_probe_reported_none(tmp_path):
+    no_usage = "\n".join(
+        "tokens/cost    : {'count': 0, 'usage_complete': True}"
+        if line.startswith("tokens/cost") else line
+        for line in PROPAGATED.splitlines()
+    )
+    assert "prompt_tokens" not in no_usage, "the substitution missed the line"
+    row = _record(no_usage, tmp_path)
+    for field in ("prompt_tokens", "completion_tokens", "total_tokens",
+                  "cost_usd"):
+        assert row[field] is None, field
