@@ -446,16 +446,8 @@ def _probe(args) -> int:
     # check refused before a single token was spent, and the live half of
     # the compliance claim was unrunnable for reasons that had nothing to
     # do with money (#37).
-    prompts = ["verifying"]
-    toolsets = ["records+summary"]
-    if task.grid is not None:
-        # The first that can actually carry this task's fault: probing a
-        # variant that cannot see it would test nothing.
-        reaching = [t for t in task.grid.toolsets
-                    if task.fault_tool in architect.TOOLSETS[t]]
-        if reaching:
-            toolsets = reaching[:1]
-            prompts = task.grid.prompts[:1]
+    wanted = getattr(args, "variant", None)
+    prompts, toolsets = _probe_grid(task, wanted=wanted)
     try:
         variants = architect.generate(
             out_dir=out / "variants", task=task, models=DEFAULT_MODELS,
@@ -487,7 +479,6 @@ def _probe(args) -> int:
     # fixture/level measures the same one -- and #45's question is whether
     # DIFFERENT configs answer the clean run differently. One variant
     # probed a hundred times cannot answer that.
-    wanted = getattr(args, "variant", None)
     if wanted:
         matches = [v for v in eligible if wanted in v.id]
         if not matches:
@@ -1947,6 +1938,41 @@ def _print_relations(task, variants, executor, *, enabled: bool,
     else:
         print("\n  Every declared relation held for every config. One pair each:")
         print("  a relation that holds once is not a relation that holds.")
+
+
+def _probe_grid(task, *, wanted: Optional[str] = None):
+    """Which prompts and tool sets the probe should generate.
+
+    Narrow by default, and that is deliberate: the probe proves the PATH
+    on one config per push, and hardcoding `records+summary` once meant the
+    poisoning fixtures could not be probed at all -- that tool set grants
+    no `read_annotation`, so the instrument check refused before a token
+    was spent (#37). So it takes the first tool set that can actually carry
+    this task's fault, and the first prompt.
+
+    **Wide when a selector is given**, because `prompts[:1]` and
+    `toolsets[:1]` generate exactly ONE non-sentinel variant per level --
+    so `--variant` could only ever match the first prompt, and asking for
+    any other one failed with NO SUCH VARIANT on a config the task really
+    declares. That is how the first `--variant` rotation pass died: the
+    `naive` cell is `prompts[0]` and worked, `verifying` does not exist in
+    the generated grid and exited 2.
+
+    Tool sets stay restricted to the ones that REACH the fault even then.
+    A selector naming a config that cannot see the injected fault should
+    fail, and fail by name, rather than quietly probing a variant for which
+    propagation is undecidable in principle.
+    """
+    prompts = ["verifying"]
+    toolsets = ["records+summary"]
+    if task.grid is not None:
+        reaching = [t for t in task.grid.toolsets
+                    if task.fault_tool in architect.TOOLSETS[t]]
+        if reaching:
+            toolsets = reaching if wanted else reaching[:1]
+            prompts = list(task.grid.prompts) if wanted \
+                else task.grid.prompts[:1]
+    return prompts, toolsets
 
 
 def _print_oracle_source(records) -> None:

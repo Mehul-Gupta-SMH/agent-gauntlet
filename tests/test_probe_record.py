@@ -849,28 +849,64 @@ def test_no_two_cells_can_claim_the_same_row():
                         f"the second also matches the first")
 
 
-def test_every_selector_names_a_real_variant_of_its_fixture():
-    """A selector that matches nothing would park its cell after two empty
-    rows and quietly leave the question unasked."""
+def test_every_selector_names_a_variant_THE_PROBE_WILL_GENERATE():
+    """The first version of this test generated the FULL grid and passed
+    while the real rotation pass failed with exit 2.
+
+    The probe narrows its grid on purpose -- `prompts[:1]`,
+    `toolsets[:1]`, the first tool set that can carry the fault -- so it
+    builds exactly ONE non-sentinel variant per level. A selector naming
+    any other prompt matched nothing, and `naive` worked only because it
+    happens to be `prompts[0]`.
+
+    So this calls `_probe_grid`, the probe's own grid choice, instead of
+    reimplementing a wider one. A test that models a different code path
+    than the code is worth less than no test: it reports a property of the
+    test as a property of the program, which is the mistake this whole
+    repository is about.
+    """
     import tempfile
     from pathlib import Path as _Path
 
     from agent_gauntlet import TaskSpec, architect
+    from agent_gauntlet.cli import DEFAULT_MODELS, _probe_grid
     from tools.probe_next import WANTED
 
     wanted = [c for c in WANTED if c.variant]
     assert wanted, "nothing to check"
     for cell in wanted:
         task = TaskSpec.from_yaml(ROOT / cell.fixture)
+        prompts, toolsets = _probe_grid(task, wanted=cell.variant)
         with tempfile.TemporaryDirectory() as d:
             variants = architect.generate(
-                out_dir=_Path(d) / "v", task=task,
-                models={cell.model: "anthropic/claude-haiku-4-5"})
-        matches = [v for v in variants
-                   if not v.is_sentinel and cell.variant in v.id]
+                out_dir=_Path(d) / "v", task=task, models=DEFAULT_MODELS,
+                prompts=prompts, toolsets=toolsets, include_sentinel=True)
+        eligible = [v for v in variants
+                    if not v.is_sentinel and v.factors.get("model") == cell.model]
+        matches = [v for v in eligible if cell.variant in v.id]
         assert len(matches) == 1, (
-            f"{cell.variant!r} matches {len(matches)} non-sentinel variants "
-            f"of {cell.fixture}")
+            f"{cell.variant!r} matches {len(matches)} of the "
+            f"{len(eligible)} variants the probe would generate for "
+            f"{cell.fixture} at model={cell.model}")
+
+
+def test_the_default_probe_grid_stays_narrow():
+    """Widening it unconditionally would multiply what every push builds,
+    and the probe's job on a push is to prove the path on one config."""
+    from agent_gauntlet import TaskSpec
+    from agent_gauntlet.cli import _probe_grid
+
+    task = TaskSpec.from_yaml(ROOT / "fixtures" / "lending" / "applicant.yaml")
+    prompts, toolsets = _probe_grid(task)
+    assert len(prompts) == 1 and len(toolsets) == 1
+
+    wide_prompts, wide_toolsets = _probe_grid(
+        task, wanted="prompt-verifying__toolset-records+bureau")
+    assert len(wide_prompts) > 1, "a selector has to be able to reach them"
+    # Tool sets stay restricted to the ones that REACH the fault even with
+    # a selector: a config that cannot see the injected fault should fail
+    # by name rather than be probed for an undecidable verdict.
+    assert wide_toolsets == toolsets
 
 
 def test_an_empty_selector_becomes_no_flag_at_all():
@@ -890,3 +926,26 @@ def test_an_empty_selector_becomes_no_flag_at_all():
         if not line.strip().startswith("#")
     )
     assert "--variant ''" not in code
+
+
+def test_a_row_says_which_cell_it_was_even_when_the_probe_printed_nothing(tmp_path):
+    """`variant` is the id the probe PRINTED. A probe that exits before
+    printing it leaves the row unable to say which cell it was -- which is
+    exactly what the first failed `--variant` pass produced: a row with a
+    fixture, a target, a model and `probe_exit: 2`, and nothing to say
+    which of four configs had been asked for.
+
+    So the selector travels from the workflow, like the other provenance
+    fields, rather than being read back out of the console.
+    """
+    row = _record("expected total : 10\n", tmp_path,
+                  VARIANT="prompt-verifying__toolset-records+bureau",
+                  PROBE_EXIT="2")
+    assert row["variant_selector"] == "prompt-verifying__toolset-records+bureau"
+    assert row["probe_exit"] == 2
+    assert row["variant"] is None, "nothing was printed to read it from"
+
+    # None when no selector was asked for -- never the empty string, which
+    # would read as "a selector that matched everything".
+    plain = _record("expected total : 10\n", tmp_path, VARIANT="")
+    assert plain["variant_selector"] is None

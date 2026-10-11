@@ -258,7 +258,8 @@ def parse(text: str) -> dict[str, Any]:
                   "canary", "complied", "compliance_decidable",
                   "faulted_reaching", "never_consulted", "llm_calls",
                   "reported_count", "usage_complete", "cost_complete",
-                  "tool_calls", "cache_read_tokens", "cache_write_tokens"):
+                  "tool_calls", "cache_read_tokens", "cache_write_tokens",
+                  "variant_selector"):
         out.setdefault(field, None)
     # The two halves that were never priced. Present as null when the
     # probe did not reach them, so "the sentinel never ran" is readable
@@ -290,6 +291,12 @@ def main() -> int:
         # the only place it used to live was a `::warning::` on the check
         # run.
         probe_exit=_int_or_none(os.environ.get("PROBE_EXIT")),
+        # The rotation's selector, from the workflow rather than the
+        # console. `variant` above is the id the probe PRINTED, and a probe
+        # that exits before printing it leaves the row with no way to say
+        # which cell it was -- which is exactly what the first failed
+        # `--variant` pass produced. None when no selector was asked for.
+        variant_selector=os.environ.get("VARIANT") or None,
         run_id=os.environ.get("GITHUB_RUN_ID"),
         commit=os.environ.get("GITHUB_SHA"),
         fixture=os.environ.get("FIXTURE"),
