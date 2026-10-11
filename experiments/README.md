@@ -37,7 +37,7 @@ Three rules this directory follows:
 | [013](013-the-probe-was-an-experiment/) | The probe was an experiment nobody was recording | $0.00 | **FOUND** — twelve paid-for live runs that disagreed with each other, read out of job logs by hand; the same cell both propagates and repairs |
 | [014](014-the-band-swallowed-the-verdict/) | The band swallowed the verdict | $0.05+ | **FOUND** — two live runs reported the credulous figure to the unit and scored "no falsehood propagated"; the corruption was below the separability threshold, and nothing said so before the money was spent. The cost is a floor: see 015 |
 | [015](015-what-the-flat-table-misses/) | What the flat table misses, and in which direction | $0.00 | **MEASURED** — #47's ratio, from probes already paid for: the flat table underprices by 1.83×–2.29×, the opposite direction from the premise. Also found that every live row's cost is the clean half's while its outcome is the faulted half's |
-| [016](016-the-clean-tie-and-the-faulted-split/) | The clean tie and the faulted split | ~$0.03 | **IN PROGRESS, 2 of 4 cells** — two configs with the identical correct clean answer land at opposite ends of the severity scale under fault. #4's predicted shape, n=1 each, on a fixture that had never been run live |
+| [016](016-the-clean-tie-and-the-faulted-split/) | The clean tie and the faulted split | ~$0.20 | **MEASURED** — all four configs give the identical correct clean answer and split 3–1 under fault. #45's own best candidate fixture does not break the clean ceiling; n=1 each, and one config's answer is already known to be unstable across repeats |
 
 ## Where that leaves the question
 

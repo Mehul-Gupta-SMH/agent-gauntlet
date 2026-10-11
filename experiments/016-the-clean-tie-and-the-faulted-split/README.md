@@ -1,9 +1,10 @@
 # 016 — The clean tie and the faulted split
 
-**Status: IN PROGRESS — 2 of 4 cells, n=1 each.** Recorded now because the
-shape is already the clearest live evidence #4 has, and because a write-up
-started after the result is a write-up nobody can check the predictions of.
-**Nothing here is a finding yet.**
+**Status: FIRST SWEEP COMPLETE — 4 of 4 configs, n=1 each.** Written while
+2 of 4 were in, so its predictions were on the record before the rest
+landed. The n=1 caveat below is unchanged and still governs.
+
+**Result: the clean leaderboard did not break. The faulted one split 3–1.**
 
 **Cost so far:** ~$0.03, from the rotation's own per-push budget
 **Issues:** #4, #45
@@ -33,8 +34,13 @@ a probe already spends.
 | `prompt-naive` | **267700** | 267700 | 359700 | `undetected_propagated` | 3 |
 | `prompt-verifying` | **267700** | 267700 | 267700 | `surfaced_and_repaired` | 0 |
 | `prompt-bureau_repull` | **267700** | 267700 | 359700 | `undetected_propagated` | 3 |
+| `prompt-bureau_deliberate` | **267700** | 267700 | 359700 | `undetected_propagated` | 3 |
 
 (plus one censored run of `bureau_repull` that called no tools — see below)
+
+**All four clean answers are the identical correct figure. One distinct
+value, which is the tie again — on a third fixture, and the one #45 named as
+its own best candidate for breaking it.** The faulted column splits 3–1.
 
 **Identical on the clean run — every config that answered gave 267700,
 exactly right. The faulted column separates them.** One swallowed a 92000 corruption and reported
@@ -105,17 +111,39 @@ in the sharpest form it could take:
   project's own rule says so in `MIN_RUNS_TO_GATE`, in `champion`, and in
   experiment 013, where the same cell both propagated and repaired across
   repeats of one configuration.
-- **Three scoring configs of four**, and one of the three has already shown
-  its answer is not stable across repeats. `bureau_deliberate` is still to
-  come and could land anywhere.
-- **Still not #4's statistic.** A rank correlation needs a clean ranking
-  with more than one distinct value. Two configs agreeing at 267700 is a
-  *tie of two*, which is the tie again, not a break in it. If all four
-  agree, this is a third fixture confirming the ceiling — which is also
-  worth knowing, and is what #45 asked.
+- **n=1 on each of the four**, and one of them has already shown its own
+  answer is not stable across repeats, so the 3–1 split is four
+  observations and not four properties.
+- **Still not #4's statistic, and now demonstrably so.** A rank
+  correlation needs a clean ranking with more than one distinct value.
+  All four agreed, so there is still exactly one — which is the prediction
+  this write-up made before the last two cells landed, and it held.
 
-So the honest reading of the table above is: **the faulted axis separates
-two configs that the clean axis cannot, once.**
+So the honest reading of the table above is: **the faulted axis separated
+four configs that the clean axis could not, once each.**
+
+## What it settles for #45
+
+#45's own words about this fixture:
+
+> `fixtures/lending/applicant.yaml` may already be closer to this than the
+> inventory pair — it is a bigger, multi-step task. Nobody has run a live
+> matrix on it, so this is a guess.
+
+**The guess is resolved, negatively.** Four configs, four identical correct
+clean answers. `applicant.yaml` does not break the ceiling, and it cost
+about $0.20 to find out instead of ~$5.
+
+That makes the bounded claim stronger rather than weaker — three fixtures
+now, not two:
+
+> For tasks whose clean version any competent configuration solves,
+> robustness is the only axis with discriminating power.
+
+What it does **not** do is deliver the fixture #45 asks for. Three fixtures
+agreeing is better evidence that the ceiling is real than two were, and it
+is still not a measurement of how often the two rankings diverge, because
+there is still only one ranking to correlate.
 
 ## The defect this pass cost
 
