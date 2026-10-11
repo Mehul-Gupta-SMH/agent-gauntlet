@@ -69,6 +69,47 @@ conversation's cost.
 **The ~2.2× is approximately the number of turns the token counts omit.** It
 is not a caching discount, and it is not a bias in the rate table.
 
+### The cause, upstream
+
+`ModelUsage` — the typed dict the claude adapter reads — declares **four**
+input-side counts:
+
+```python
+inputTokens: int
+outputTokens: int
+cacheReadInputTokens: int
+cacheCreationInputTokens: int
+```
+
+`commonadk/runners/claude_agent.py` summed the first and last and discarded
+the two in the middle. For a multi-turn agent run that is most of the input,
+because every turn after the first reads the prefix from cache — so
+`prompt_tokens` is the small, nearly constant *uncached* delta while
+`total_cost_usd` bills all of it.
+
+That accounts for every observation here: the near-constant 1206, the ~2.2×
+gap, and the faulted half's lower ratio (its input is proportionally more
+cache *reads*, billed at a tenth, so its cost sits closer to the uncached
+estimate).
+
+**Fixed upstream.** `LLMCall` now carries `cache_read_tokens` and
+`cache_write_tokens`, the rollup sums them, and the rollup's `note` states
+that `prompt_tokens` is the uncached portion whenever cache tokens are
+present. They are kept separate from `prompt_tokens` rather than folded in,
+because a read bills at a fraction of the input rate and a write at a
+premium: one number cannot carry three rates, and folding them in would fix
+the magnitude and break the pricing.
+
+The regression test that should have caught it had both cache fields pinned
+at `0` — where a dropped zero is indistinguishable from a carried one. It
+now uses non-zero counts, verified failing without the fix.
+
+`tools/probe_record.py` captures both fields **already**, before the release
+that provides them, and records null until then. A recorder that learns
+about a field when somebody notices it missing is how twelve probes got paid
+for with nobody reading them (experiment 013) and how this very number came
+to be priced as the whole input.
+
 ### And `usage_complete` cannot catch it
 
 It reads `True` on every one of these rows. Its definition, from

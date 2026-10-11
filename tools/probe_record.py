@@ -123,6 +123,18 @@ _ROLLUP_FIELDS = {
     # whose token totals are a fraction of the request (#47, experiment
     # 015). A flag that cannot see the calls it is missing cannot warn
     # about them -- which is why `tool_calls` goes in the row beside it.
+    # The cache-side input, once commonadk reports it. Added BEFORE the
+    # field exists upstream, on purpose: the fix is pushed to CommonADK's
+    # `claude/agent-arena-framework-mr3fb4` and will arrive here in a
+    # release. A recorder that learns about a new field only when somebody
+    # notices it is missing is how twelve probes got paid for and nobody
+    # read them (experiment 013), and how prompt_tokens came to be priced
+    # as if it were the whole input (experiment 015).
+    #
+    # Null until the rollup prints them, which is the honest reading: this
+    # record cannot say what it was not told.
+    "cache_read_tokens": re.compile(r"'cache_read_tokens': (\d+)"),
+    "cache_write_tokens": re.compile(r"'cache_write_tokens': (\d+)"),
     "reported_count": re.compile(r"'reported_count': (\d+)"),
     "usage_complete": re.compile(r"'usage_complete': (True|False)"),
     "cost_complete": re.compile(r"'cost_complete': (True|False)"),
@@ -246,7 +258,7 @@ def parse(text: str) -> dict[str, Any]:
                   "canary", "complied", "compliance_decidable",
                   "faulted_reaching", "never_consulted", "llm_calls",
                   "reported_count", "usage_complete", "cost_complete",
-                  "tool_calls"):
+                  "tool_calls", "cache_read_tokens", "cache_write_tokens"):
         out.setdefault(field, None)
     # The two halves that were never priced. Present as null when the
     # probe did not reach them, so "the sentinel never ran" is readable
@@ -254,7 +266,8 @@ def parse(text: str) -> dict[str, Any]:
     for half in ("faulted", "sentinel"):
         for field in ("cost_usd", "prompt_tokens", "completion_tokens",
                       "total_tokens", "llm_calls", "reported_count",
-                      "usage_complete", "cost_complete", "tool_calls"):
+                      "usage_complete", "cost_complete", "tool_calls",
+                      "cache_read_tokens", "cache_write_tokens"):
             out.setdefault(f"{half}_{field}", None)
     return out
 

@@ -744,3 +744,39 @@ def test_a_probe_with_no_rollup_leaves_the_flags_null(tmp_path):
     for field in ("usage_complete", "cost_complete", "reported_count",
                   "llm_calls", "tool_calls"):
         assert row[field] is None, f"{field} must not default to a value"
+
+
+def test_the_cache_counts_are_captured_the_day_they_appear(tmp_path):
+    """Added before the field exists upstream, deliberately.
+
+    `prompt_tokens` from the claude adapter is the UNCACHED input: the
+    runner summed `inputTokens` and `outputTokens` from `ModelUsage` and
+    dropped `cacheReadInputTokens` and `cacheCreationInputTokens`. Fixed in
+    CommonADK on `claude/agent-arena-framework-mr3fb4`, and it arrives here
+    in a release.
+
+    The pattern goes in now because a recorder that learns about a field
+    when somebody notices it missing is how twelve probes got paid for and
+    nobody read them (experiment 013), and how `prompt_tokens` came to be
+    priced as the whole input (experiment 015).
+    """
+    rolled = (
+        "tokens/cost    : {'count': 3, 'prompt_tokens': 1206, "
+        "'completion_tokens': 1499, 'total_tokens': 2705, "
+        "'cache_read_tokens': 18400, 'cache_write_tokens': 2210, "
+        "'cost_usd': 0.019185}\n"
+    )
+    row = _record(rolled, tmp_path)
+    assert row["cache_read_tokens"] == 18400
+    assert row["cache_write_tokens"] == 2210
+
+    # And until it ships, null -- never 0. A zero would say this run read
+    # nothing from cache, which is a claim about the run rather than about
+    # what the rollup printed.
+    old = _record(
+        "tokens/cost    : {'count': 1, 'prompt_tokens': 1206, "
+        "'completion_tokens': 1499, 'cost_usd': 0.019185}\n",
+        tmp_path,
+    )
+    assert old["cache_read_tokens"] is None
+    assert old["cache_write_tokens"] is None
