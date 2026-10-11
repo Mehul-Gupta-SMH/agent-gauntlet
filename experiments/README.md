@@ -283,16 +283,33 @@ return, and it is why a pass here reads "no counterexample yet" rather than
 counterexample settles it and no number of passes proves it
 (`metamorphic.pair_budget`). Buying a 4% bound would cost 90 runs.
 
-### The first pair, live
+### Both pairs, live
 
 | run | paraphrase | clean | expected | faulted | outcome |
 |---|---|---|---|---|---|
 | baseline | — | 3635 | 3635 | 3635 | `surfaced_and_repaired` |
 | restated | 1 | **3635** | 3635 | 3635 | `surfaced_and_repaired` |
+| restated | 2 | **3635** | 3635 | — | — |
 
-Same config, same seed, same world, different words. `3635 == 3635`, so
-**no counterexample** — and the faulted halves agreed too, which the pair
-did not have to produce and nothing asked for.
+Same config, same seed, same world, different words. `3635 == 3635` on both,
+so **no counterexample in either** — and pair 1's faulted halves agreed too,
+which the pair did not have to produce and nothing asked for.
+
+`tools/paraphrase_verdict.py` computes it rather than leaving it to be read
+off two rows by eye:
+
+```
+  no c/ex  rephrased.yaml p1 [model-cheap__prompt-verifying__...] -- 3635 vs 3635
+  no c/ex  rephrased.yaml p2 [model-cheap__prompt-verifying__...] -- 3635 vs 3635
+
+  no counterexample in 2 decidable pair(s), which bounds the violation
+  rate at 66% -- NOT 'the relation holds'
+```
+
+A manual join is not a mechanical check, however exact the `==` at the end
+of it is. Two `None` totals compare equal, so an undecidable pair reports
+`None` and never `False`: comparing two failed runs would otherwise call
+them an agreement.
 
 The paraphrase row carries `derived_fingerprint: 4c60d47ade2cf354`, which
 differs from the fixture's `d8172b917498efeb` because the agent was shown a
