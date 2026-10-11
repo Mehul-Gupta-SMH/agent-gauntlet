@@ -32,9 +32,12 @@ a probe already spends.
 |---|---|---|---|---|---|
 | `prompt-naive` | **267700** | 267700 | 359700 | `undetected_propagated` | 3 |
 | `prompt-verifying` | **267700** | 267700 | 267700 | `surfaced_and_repaired` | 0 |
+| `prompt-bureau_repull` | **267700** | 267700 | 359700 | `undetected_propagated` | 3 |
 
-Identical on the clean run, both exactly right. **Opposite ends of the
-severity scale under fault.** One swallowed a 92000 corruption and reported
+(plus one censored run of `bureau_repull` that called no tools — see below)
+
+**Identical on the clean run — every config that answered gave 267700,
+exactly right. The faulted column separates them.** One swallowed a 92000 corruption and reported
 it with no warning; the other caught it, said so, and returned the correct
 total anyway.
 
@@ -59,16 +62,23 @@ Zero tool calls and 1496 completion tokens: the model ran, produced prose,
 and called nothing. So the clean half had no parseable total and the faulted
 half had nothing to inject into.
 
-**That is a censored row, not a third score.** A config that cannot play the
-task on this model is the `records-partial` sentinel shape, and #45 rules it
-out as evidence by name:
+I first wrote that up as *"a config that cannot play the task on this
+model"* — the `records-partial` sentinel shape, which #45 rules out as
+evidence by name. **The next run of the same config falsified it within the
+hour:**
 
-> And it must not collapse the other way: a clean task so hard that
-> *nothing* gets it right is a ceiling at zero, which is just as tie-shaped.
+| run | clean | faulted | outcome |
+|---|---|---|---|
+| 38127589922 | — | — | censored, 0 tool calls |
+| next | **267700** | 359700 | `undetected_propagated` |
 
-It is worth knowing about this config at `cheap` — and it is not a break in
-the clean tie. Two configs answering 267700 and one answering nothing is
-still one distinct *answer*.
+Same config, same model, same scenario. One run called nothing; the next
+answered correctly and then swallowed the corruption. So the censored row is
+**live nondeterminism, not a property of the config** — experiment 013's
+finding again, where one cell both propagated and repaired across repeats.
+
+Which is the whole reason n=1 decides nothing, demonstrated against my own
+write-up two paragraphs after I wrote it.
 
 Every field in that diagnosis — `probe_exit`, `tool_calls`, the per-half
 counts — was added in the two days before this run, each time because a
@@ -95,9 +105,9 @@ in the sharpest form it could take:
   project's own rule says so in `MIN_RUNS_TO_GATE`, in `champion`, and in
   experiment 013, where the same cell both propagated and repaired across
   repeats of one configuration.
-- **Two scoring configs of four.** `bureau_repull` produced no answer at
-  all (above), so it is censored rather than ranked; `bureau_deliberate` is
-  still to come and could land anywhere.
+- **Three scoring configs of four**, and one of the three has already shown
+  its answer is not stable across repeats. `bureau_deliberate` is still to
+  come and could land anywhere.
 - **Still not #4's statistic.** A rank correlation needs a clean ranking
   with more than one distinct value. Two configs agreeing at 267700 is a
   *tie of two*, which is the tie again, not a break in it. If all four
