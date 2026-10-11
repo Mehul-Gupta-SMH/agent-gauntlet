@@ -303,6 +303,23 @@ honest reading is "not violated here, once" — which is what a falsification
 search buys, and why the write-up says it in those words instead of "the
 relation holds". ~$0.04 for the pair.
 
+### The rotation advances on CODE pushes, not on every push
+
+Worth knowing before reading a gap in the record as a gap in the evidence:
+`live-probe.yml` carries `paths-ignore` for `**/*.md`, `experiments/**` and
+`LICENSE`. A documentation-only commit spends nothing, which is correct —
+but it also means **the rotation does not advance on one**, so a day of
+write-ups fills no cells.
+
+The daily `schedule` (`17 6 * * *`) is what keeps it turning regardless, at
+one cell per day. So the record's cadence is "one per code push, plus one a
+day", not "one per commit", and a cell sitting at zero may simply be waiting
+for tomorrow rather than for a decision.
+
+I got this wrong once already: reported paraphrase 2 as "the cell the next
+push takes" immediately before two documentation-only pushes that took
+nothing.
+
 ## The probe records itself too (#46, experiment 013)
 
 `live-probe.yml` appends one line per run to `experiments/live/probe.jsonl`,
