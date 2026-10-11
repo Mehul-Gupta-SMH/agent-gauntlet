@@ -17,7 +17,9 @@ from . import events
 from .faults import DirectiveShape, FaultKind, FaultSchedule
 from .interpose import run_context, unreachable
 from .live import provider_unreachable
-from .ledger import Ledger, RunRecord
+from .ledger import (
+    ORACLE_DECLARED, ORACLE_OPERATOR_TOOL, Ledger, RunRecord,
+)
 from .offline import run_policy
 from .score import Answer, score_run, separability_band
 from .spec import TaskSpec, VariantSpec
@@ -294,6 +296,18 @@ def run_matrix(
                         run_id=uuid.uuid4().hex[:12],
                         task_id=task.id,
                         task_fingerprint=fingerprint,
+                        # What defined the truth this run was graded
+                        # against (#48). `user_tools` is supplied on
+                        # exactly one path -- a project run, where the
+                        # scenario's records were calibrated from the
+                        # operator's own tool -- so its presence IS the
+                        # distinction. A fixture run grades against records
+                        # the spec declares, which are versioned and
+                        # covered by the task fingerprint.
+                        oracle_source=(
+                            ORACLE_OPERATOR_TOOL if user_tools
+                            else ORACLE_DECLARED
+                        ),
                         variant_id=variant.id,
                         model=variant.model,
                         variant_fingerprint=variant.fingerprint,

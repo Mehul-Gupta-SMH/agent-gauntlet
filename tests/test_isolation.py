@@ -347,3 +347,98 @@ def test_numbers_still_calibrate(project):
     for source, expected in (("    return 42\n", 42), ("    return 7.5\n", 7.5)):
         tool = _tool(project, "def probe(x):\n" + source)
         assert list(_calibrate(project, tool).values()) == [expected]
+
+
+# --- #48: a board that cannot say where its truth came from ---------------
+
+
+def test_a_fixture_run_records_the_spec_as_its_oracle(tmp_path):
+    """The distinction the board could not make.
+
+    Every propagation verdict and the gate's pass/fail is a comparison
+    against the oracle. A fixture run compares against records the spec
+    declares -- versioned, readable, covered by the task fingerprint. A
+    project run compares against a table the operator's tool calibrated,
+    which the tool controls and nothing cross-checks. Until this field
+    existed the two were indistinguishable on the board.
+    """
+    from agent_gauntlet import Ledger, TaskSpec, architect
+    from agent_gauntlet.ledger import (
+        ORACLE_DECLARED, ORACLE_OPERATOR_TOOL, oracle_sources,
+    )
+    from agent_gauntlet.matrix import run_matrix
+
+    root = Path(__file__).resolve().parents[1]
+    task = TaskSpec.from_yaml(root / "fixtures" / "inventory" / "audited.yaml")
+    variants = architect.generate(
+        out_dir=tmp_path / "v", task=task,
+        models={"cheap": "openai/gpt-4o-mini"})[:2]
+    ledger = Ledger(tmp_path / "runs.jsonl")
+    run_matrix(task=task, variants=variants, ledger=ledger, base_seed="s",
+               repeats=1, offline=True)
+
+    records = ledger.records()
+    assert records
+    assert oracle_sources(records) == {ORACLE_DECLARED}
+    assert ORACLE_OPERATOR_TOOL not in oracle_sources(records)
+
+
+def test_an_operator_tool_run_says_so(tmp_path):
+    """`user_tools` is supplied on exactly one path -- a project run, whose
+    records were calibrated from the operator's own tool -- so its presence
+    IS the distinction."""
+    from agent_gauntlet import Ledger, Scenario, TaskSpec, architect
+    from agent_gauntlet.ledger import ORACLE_OPERATOR_TOOL, oracle_sources
+    from agent_gauntlet.matrix import run_matrix
+
+    task = TaskSpec(id="t", statement="total", oracle="full", tolerance=0,
+                    scenarios=[Scenario(id="s", records={"a": 7, "b": 11})])
+    variants = architect.generate(
+        out_dir=tmp_path / "v", task=task,
+        models={"cheap": "openai/gpt-4o-mini"})[:1]
+    ledger = Ledger(tmp_path / "runs.jsonl")
+    run_matrix(task=task, variants=variants, ledger=ledger, base_seed="s",
+               repeats=1, offline=True,
+               user_tools={"fetch_record": object()})
+
+    assert oracle_sources(ledger.records()) == {ORACLE_OPERATOR_TOOL}
+
+
+def test_an_unrecorded_oracle_is_not_assumed_to_be_the_spec():
+    """Every record written before the field existed reads as unrecorded,
+    and guessing would print the reassuring answer on a board that never
+    said it -- the censoring rule, in the one column that decides whether a
+    published board can be trusted."""
+    from pathlib import Path as _Path
+
+    from agent_gauntlet.ledger import oracle_sources
+
+    source = (_Path(__file__).resolve().parents[1] / "src" / "agent_gauntlet"
+              / "cli.py").read_text(encoding="utf-8")
+    printer = source.split("def _print_oracle_source", 1)[1].split(
+        "\ndef ", 1)[0]
+    assert "UNRECORDED" in printer
+    assert "Not assumed to be the" in printer
+
+    class _R:
+        oracle_source = None
+
+    assert oracle_sources([_R(), _R()]) == set()
+
+
+def test_a_mixed_ledger_is_named_as_not_one_board():
+    """Half a board graded against a versioned spec and half against a
+    table a tool supplied is not one board, and no column says which rows
+    are which."""
+    from pathlib import Path as _Path
+
+    source = (_Path(__file__).resolve().parents[1] / "src" / "agent_gauntlet"
+              / "cli.py").read_text(encoding="utf-8")
+    printer = source.split("def _print_oracle_source", 1)[1].split(
+        "\ndef ", 1)[0]
+    assert "MIXED" in printer
+    assert "not one board" in printer
+    # The source wraps it across two string literals, so match on the
+    # rendered text rather than on how the line happens to break.
+    rendered = printer.replace('"\n          "', "")
+    assert "Split the ledger" in rendered

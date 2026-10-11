@@ -1011,6 +1011,8 @@ def _run(args) -> int:
                   "wrong authority")
             print("            got pinned (#47).")
 
+    _print_oracle_source(records)
+
     kinds = ledger_fault_kinds(records)
     if len(kinds) > 1:
         print(f"\nWARNING: this ledger holds runs faulted {len(kinds)} "
@@ -1945,6 +1947,73 @@ def _print_relations(task, variants, executor, *, enabled: bool,
     else:
         print("\n  Every declared relation held for every config. One pair each:")
         print("  a relation that holds once is not a relation that holds.")
+
+
+def _print_oracle_source(records) -> None:
+    """What defined the truth these numbers were graded against (#48).
+
+    Every propagation verdict, every accuracy figure and the gate's
+    pass/fail is a comparison against the oracle. When that oracle is a
+    table calibrated from the operator's own tool, the tool controls it and
+    the harness has no second source to check it with -- by design, since
+    the tool IS the source.
+
+    That is fine when you run your own code on your own machine: you cannot
+    be deceived by your own tool in a way that matters to you. It stops
+    being fine the moment a board is published or a certificate issued from
+    a project whose tools somebody else supplied -- and until this line
+    existed the two kinds of board were indistinguishable.
+
+    Printing it does not decide whether the operator must approve the table
+    before it judges anyone; that is #48's open point and #12's hosting
+    threshold. It removes the case where a reader cannot tell which kind of
+    board they are holding.
+    """
+    from .ledger import ORACLE_DECLARED, ORACLE_OPERATOR_TOOL, oracle_sources
+
+    sources = oracle_sources(records)
+    if not sources:
+        # Unrecorded, not assumed to be the spec: every record written
+        # before the field existed reads this way, and guessing would put
+        # the reassuring answer on a board that never said it.
+        print("\noracle      UNRECORDED -- these runs predate the field that "
+              "says what")
+        print("            defined their truth (#48). Not assumed to be the "
+              "spec.")
+        return
+    if sources == {ORACLE_DECLARED}:
+        print("\noracle      the task spec: versioned, readable, and covered "
+              "by the task")
+        print("            fingerprint, so a change to the truth moves the "
+              "hash.")
+        return
+    if ORACLE_OPERATOR_TOOL in sources and len(sources) == 1:
+        print("\noracle      CALIBRATED FROM THE OPERATOR'S OWN TOOL. That "
+              "table is the")
+        print("            ground truth for every verdict here, the tool "
+              "controls it, and")
+        print("            there is no second source to check it against -- "
+              "by design,")
+        print("            since the tool is the source. Nothing executes in "
+              "this")
+        print("            process; this is attacker-controlled DATA in the "
+              "oracle, not")
+        print("            code execution (#48, #42 retracted). Fine for your "
+              "own tools")
+        print("            on your own machine. Before publishing this board "
+              "or issuing")
+        print("            a certificate from it, show the calibrated table "
+              "to whoever")
+        print("            will read the result.")
+        return
+    print("\noracle      MIXED: these rows were graded against "
+          f"{len(sources)} different")
+    print("            authorities -- some against the task spec, some "
+          "against a table")
+    print("            an operator's tool supplied. That is not one board, "
+          "and no")
+    print("            column below says which rows are which. Split the "
+          "ledger.")
 
 
 def _price_authority(records) -> str:

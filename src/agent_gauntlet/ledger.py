@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional, Union
+from typing import Any, Iterable, Iterator, Optional, Sequence, Union
 
 from pydantic import BaseModel, Field
 
@@ -127,6 +127,33 @@ class RunRecord(BaseModel):
     the price table the cost was computed against, pinned into the record.
     Without it, two matrices run a month apart average into one cost column
     with no way to tell the rates moved underneath them."""
+
+    oracle_source: Optional[str] = None
+    """What defined the truth this run was graded against (#48).
+
+    `ORACLE_DECLARED` when the scenario's records come from the task spec:
+    the oracle is in version control and covered by
+    `TaskSpec.fingerprint()`, so a reader can see it and a change to it
+    moves the hash.
+
+    `ORACLE_OPERATOR_TOOL` when the records were calibrated from the
+    operator's own tool. That table **is** the ground truth -- every
+    propagation verdict, every accuracy figure and the gate's pass/fail is
+    a comparison against it -- and the harness has no second source to
+    check it with, by design, since the tool is the source.
+
+    Fine under the honest framing: you cannot be deceived by your own tool
+    in a way that matters to you. It stops being fine the moment a board is
+    published or a certificate issued from a project whose tools somebody
+    else supplied, and until this field existed **the two were
+    indistinguishable on the board**. Naming the authority is the same move
+    `prices` makes for the cost column: it does not decide whether the
+    operator must approve the table before it judges anyone (#48 point 1,
+    still open, and #12's hosting threshold), it removes the case where a
+    reader cannot tell which kind of board they are holding.
+
+    None on every record written before this field existed.
+    """
 
     provenance: Optional[str] = None
     """Where this run's scenario world came from, as declared (#15).
@@ -413,3 +440,28 @@ def variant_drift(records: Iterable["RunRecord"]) -> dict[str, set[str]]:
         if r.variant_fingerprint:
             seen.setdefault(r.variant_id, set()).add(r.variant_fingerprint)
     return {vid: fps for vid, fps in seen.items() if len(fps) > 1}
+
+
+ORACLE_DECLARED = "declared"
+"""The truth came from the task spec: visible, versioned, fingerprinted."""
+
+ORACLE_OPERATOR_TOOL = "operator_tool"
+"""The truth was calibrated from the operator's own tool (#48).
+
+Nothing executes in the harness process -- that premise was retracted with
+#42 and disproven twice. This is the narrower claim that survived: the
+tool controls its own calibrated values, those values cross into the parent
+as JSON and become the oracle, and no second source exists to notice a
+tool that returns a different-but-plausible number than the operator
+believes it returns.
+"""
+
+
+def oracle_sources(records: Sequence[RunRecord]) -> set[str]:
+    """Which authorities defined the truth across these records.
+
+    A set rather than one value, because a ledger can hold both and that is
+    the case most worth seeing: half a board graded against a versioned
+    spec and half against a table a tool supplied is not one board.
+    """
+    return {r.oracle_source for r in records if r.oracle_source}
