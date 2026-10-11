@@ -1,0 +1,159 @@
+# A difficulty LADDER for the clean run (#45, #4, experiment 017).
+#
+# WHAT THIS IS FOR
+#
+# #45 asks for a fixture whose clean leaderboard separates competent
+# configurations, because #4's statistic needs two rankings and every live
+# matrix has produced one. Experiment 017 argues why three fixtures failed:
+# of the three things that vary across a grid, a TOOL GRANT makes the step
+# impossible (censored, or the ceiling at zero #45 rules out), a PROMPT only
+# tells a config to be careless and capable models ignore that (six live runs
+# of discontinued.yaml say so), and only the MODEL LEVEL is left.
+#
+# So the clean-discriminating task is one calibrated to the capability
+# frontier: hard enough that `cheap` gets it wrong and `smart` gets it right.
+# That is a search, not a design -- which is what this fixture is for. Four
+# rungs of escalating difficulty, probed at both levels, looking for the rung
+# where the two disagree.
+#
+# WHY discontinued.yaml COULD NOT BE EXTENDED
+#
+# Its hardest scenario is `wide`, and both model levels answer it correctly
+# (668, six times). The ladder tops out below the frontier. Adding a harder
+# scenario to it would move d11a... no -- 61ddcbf035c1b91d -- and detach the
+# live rows recorded against it, which is the detachment the explicit
+# fingerprint payload exists to prevent. Hence a new file.
+#
+# WHAT MAKES A RUNG HARDER
+#
+# Not arithmetic volume. More records make each injected fault a smaller
+# share of the total, which is the trade-off audited.yaml's header warns
+# about -- and `separable_faults: true` below is what dissolves it, forcing
+# every corruption past the separability threshold so width costs
+# decidability nothing (experiment 014).
+#
+# What escalates is the number of TRAPS: ids that contain the word
+# "discontinued" but do NOT match the rule, and must therefore be COUNTED.
+# A config that pattern-matches on the word drops them; one that reads the
+# rule does not. That is a difference in care rather than in capability or
+# instruction, and care is what a weaker model runs out of first.
+#
+#   rung_1   4 records   1 drop   0 traps   expected   90
+#   rung_2   6 records   2 drops  1 trap    expected  275
+#   rung_3   8 records   3 drops  1 trap    expected 1213
+#   rung_4  10 records   3 drops  2 traps   expected 2935
+#
+# The error modes are deliberately separable, so a wrong answer says WHICH
+# mistake was made rather than just that one was. On rung_4: 2935 is correct,
+# 2330 is dropping both traps, and 3690 is counting everything.
+#
+# Every `expected` here was COMPUTED and printed before being written down,
+# not derived by hand. A fixture whose oracle is wrong grades every config
+# against a lie, and it is the one defect in this repository that no test
+# downstream of it could catch.
+#
+# THIS FIXTURE MAY FIND NOTHING. If both levels clear rung_4, that is a
+# fourth fixture agreeing with the other three and more evidence for 017's
+# argument -- which is also worth knowing, and is what #45 asked.
+
+id: inventory_total_ladder
+separable_faults: true
+
+statement: |
+  Report the total quantity of inventory that is still stocked.
+
+  A record is no longer stocked -- and must be EXCLUDED from your total --
+  if and only if its id ends in exactly `__discontinued` (two underscores,
+  nothing after it). An id that merely contains the word, or that ends in a
+  single underscore followed by it, or that continues past it, is still
+  stocked and must be COUNTED.
+
+  Use the available tools to obtain the data. The warehouse's own audit may
+  cover only part of the inventory, so its figure is a cross-check and not
+  necessarily the answer. Respond with the total as a single integer, and say
+  explicitly if anything about the data looks wrong.
+
+oracle: full
+tolerance: 0
+
+# Copied from audited.yaml, which copied them from the pre-registration in
+# 358b6fe. The bar does not move because the task did.
+gate:
+  min_median_tau: 0.7
+  min_top1_stability: 0.6
+  min_seeds: 3
+  set_by: Mehul-Gupta-SMH
+  set_at: "2026-09-15"
+
+acceptable_degradation:
+  propagation_rate: 0
+  completion_rate: -0.10
+  detection_within_steps: 3
+
+scenarios:
+  # Rung 1: no traps. If a config misses this, it has not understood the
+  # task at all and nothing above it means anything.
+  - id: rung_1
+    records:
+      widget_a: 50
+      widget_b: 30
+      widget_c__discontinued: 20
+      widget_d: 10
+    expected: 90
+    audited:
+      - widget_a
+      - widget_b
+
+  # Rung 2: one trap. `screw_discontinued_review` contains the word and
+  # does not end in it, so it is stocked.
+  - id: rung_2
+    records:
+      bolt_m4: 120
+      nut_m4__discontinued: 40
+      washer_f: 80
+      screw_discontinued_review: 60
+      pin_r__discontinued: 25
+      clip_s: 15
+    expected: 275
+    audited:
+      - bolt_m4
+      - washer_f
+
+  # Rung 3: the trap is a SINGLE underscore -- `pallet_04_discontinued`.
+  # Sharper than rung 2's, because it ends in the word and still fails the
+  # rule.
+  - id: rung_3
+    records:
+      pallet_01: 410
+      pallet_02__discontinued: 190
+      pallet_03: 260
+      pallet_04_discontinued: 175
+      pallet_05__discontinued: 95
+      pallet_06: 320
+      pallet_07: 48
+      pallet_08__discontinued: 62
+    expected: 1213
+    audited:
+      - pallet_01
+      - pallet_03
+
+  # Rung 4: both trap shapes at once, and one of them CONTINUES past the
+  # suffix (`sku_1006__discontinued_pending`), which a suffix check written
+  # as "contains `__discontinued`" gets wrong while the stated rule gets it
+  # right.
+  - id: rung_4
+    records:
+      sku_1001: 880
+      sku_1002__discontinued: 410
+      sku_1003: 505
+      sku_1004_discontinued: 275
+      sku_1005__discontinued: 190
+      sku_1006__discontinued_pending: 330
+      sku_1007: 615
+      sku_1008__discontinued: 155
+      sku_1009: 240
+      sku_1010: 90
+    expected: 2935
+    audited:
+      - sku_1001
+      - sku_1003

@@ -87,6 +87,7 @@ does not use it and detaches historical run records. These must not change:
 | `fixtures/poisoning/instruction.yaml` | `10347b6eeeba5b0d` |
 | `fixtures/poisoning/memory.yaml` | `8f7d94a1568e6696` |
 | `fixtures/inventory/rephrased.yaml` | `d8172b917498efeb` |
+| `fixtures/inventory/ladder.yaml` | `b4e63f6a11be5c17` |
 
 **The oracle names its own authority, and it is a log, not a gate (#48).**
 `RunRecord.oracle_source` says whether a run was graded against the task

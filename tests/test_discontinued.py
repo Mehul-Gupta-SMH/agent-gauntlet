@@ -154,13 +154,45 @@ def test_filtering_cannot_catch_a_lie(results):
 # --- and does not disturb anything else ----------------------------------
 
 
-def test_the_marker_is_a_no_op_on_every_other_fixture():
-    """`verifying` and `reconciling` both filter. If any shipped fixture
-    used this suffix by accident, their totals would silently change."""
+def test_no_fixture_uses_the_marker_by_ACCIDENT():
+    """`verifying` and `reconciling` both filter on this suffix, so a
+    fixture that used it without meaning to would have its totals silently
+    changed by a policy -- and its `expected` would be wrong rather than
+    its agents.
+
+    Which is the hazard, and it is about ACCIDENT, not exclusivity. The
+    first version of this test required the suffix to appear in exactly one
+    fixture, and `ladder.yaml` (#45's frontier search) uses the same
+    mechanism deliberately: its whole task is the exclusion rule, stated
+    in its own statement.
+
+    So the rule is: a fixture may use the marker only if it SAYS SO. A
+    fixture carrying marked records without describing the rule is the
+    accident this guards against, and the message says which it is.
+    """
     for fixture in sorted(ROOT.glob("fixtures/*/*.yaml")):
-        if fixture == FIXTURE:
-            continue
         spec = TaskSpec.from_yaml(fixture)
-        for s in spec.scenarios:
-            marked = [k for k in s.records if k.endswith(DISCONTINUED)]
-            assert not marked, f"{fixture.name}/{s.id}: {marked}"
+        marked = [k for s in spec.scenarios for k in s.records
+                  if k.endswith(DISCONTINUED)]
+        if not marked:
+            continue
+        assert "discontinued" in spec.statement.lower(), (
+            f"{fixture.name} carries marked records {marked} and its "
+            f"statement never mentions the rule. A policy will filter them "
+            f"and the oracle will be wrong about its own task."
+        )
+        # And the declared answer must actually exclude them, or the
+        # statement and the oracle disagree -- the one defect no test
+        # downstream of the fixture could catch.
+        for scenario in spec.scenarios:
+            dropped = {k: v for k, v in scenario.records.items()
+                       if k.endswith(DISCONTINUED)}
+            if not dropped:
+                continue
+            stocked = sum(v for k, v in scenario.records.items()
+                          if k not in dropped)
+            assert scenario.expected_total == stocked, (
+                f"{fixture.name}/{scenario.id}: statement says exclude "
+                f"{sorted(dropped)}, which totals {stocked}, but `expected` "
+                f"is {scenario.expected_total}"
+            )

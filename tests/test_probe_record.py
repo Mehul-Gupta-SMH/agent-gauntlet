@@ -426,6 +426,7 @@ def test_parking_every_cell_still_returns_one(tmp_path):
              # cell is claimed only by rows matching every dimension of it,
              # so a row missing one is evidence for no cell at all.
              "paraphrase": c.paraphrase,
+             "scenario": c.scenario,
              "outcome": None}
             for c in probe_next.WANTED for _ in range(probe_next.MAX_EMPTY)]
     record.write_text("\n".join(json.dumps(r) for r in rows) + "\n",
@@ -852,7 +853,7 @@ def test_no_two_cells_can_claim_the_same_row():
     by_slot = defaultdict(list)
     for cell in WANTED:
         by_slot[(cell.fixture, cell.target, cell.model,
-                 cell.paraphrase)].append(cell.variant)
+                 cell.paraphrase, cell.scenario)].append(cell.variant)
 
     for slot, selectors in by_slot.items():
         if len(selectors) == 1:
@@ -1071,3 +1072,60 @@ def test_an_empty_paraphrase_becomes_no_flag():
     code = "\n".join(l for l in body.splitlines()
                      if not l.strip().startswith("#"))
     assert "--paraphrase ''" not in code
+
+
+def test_every_cell_passes_its_optional_fields_by_keyword():
+    """A NamedTuple will not complain when a field is inserted in the
+    middle of it, and nothing downstream will either.
+
+    Adding `scenario` before `paraphrase` silently turned
+    `Cell(..., "cheap", None, 1)` from `paraphrase=1` into `scenario=1` on
+    three existing cells. They simply stopped matching their own rows, the
+    rotation thought them uncovered, and the only symptom would have been
+    re-probing cells that already had evidence -- at $0.05 a time, for as
+    long as it took somebody to notice.
+
+    So the source is checked, not just the values: every `Cell(` literal
+    with more than three arguments has to name them.
+    """
+    import re
+
+    source = (ROOT / "tools" / "probe_next.py").read_text(encoding="utf-8")
+    body = source.split("WANTED:", 1)[1].split("\ndef ", 1)[0]
+    literals = re.findall(r"Cell\((.*?)\),\n", body, re.S)
+    assert literals, "no cells found -- has the list moved?"
+    for literal in literals:
+        args = [a.strip() for a in literal.split(",") if a.strip()]
+        positional = [a for a in args if "=" not in a]
+        assert len(positional) <= 3, (
+            "a cell passes more than fixture/target/model positionally:\n"
+            f"  Cell({literal.strip()})\n"
+            "Name the optional fields -- inserting one in the middle has "
+            "already reinterpreted three cells once."
+        )
+
+
+def test_a_scenario_cell_claims_only_its_own_rung():
+    """The frontier search asks whether `cheap` and `smart` disagree on a
+    given rung, so a rung's rows must not be pooled with another's."""
+    from tools.probe_next import _cell_for
+
+    base = {
+        "fixture": "fixtures/inventory/ladder.yaml",
+        "target": "claude",
+        "model_level": "cheap",
+        "variant": "model-cheap__prompt-verifying__toolset-records+summary",
+        "paraphrase": None,
+    }
+    four = _cell_for(dict(base, scenario="rung_4"))
+    three = _cell_for(dict(base, scenario="rung_3"))
+    assert four is not None and four.scenario == "rung_4"
+    assert three is not None and three.scenario == "rung_3"
+    assert four != three
+
+    # A rung nobody declared a cell for is evidence for nothing.
+    assert _cell_for(dict(base, scenario="rung_1")) is None
+
+    # And the level is part of it: the whole question is cheap vs smart.
+    smart = _cell_for(dict(base, model_level="smart", scenario="rung_4"))
+    assert smart is not None and smart.model == "smart" and smart != four

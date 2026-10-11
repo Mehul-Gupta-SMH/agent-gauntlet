@@ -53,6 +53,22 @@ class Cell(NamedTuple):
     coverage would double-count itself. Enforced by a test.
     """
 
+    scenario: Optional[str] = None
+    """Which scenario to probe, or None for the task's hardest.
+
+    **Pass every optional field by KEYWORD.** Inserting this one into the
+    middle of the tuple silently reinterpreted three existing cells --
+    `Cell(..., "cheap", None, 1)` went from `paraphrase=1` to
+    `scenario=1` -- and a NamedTuple will not complain. Nothing downstream
+    would have either: the cells simply stopped matching their own rows.
+
+    The frontier search needs it (#45, experiment 017): the question is
+    whether `cheap` and `smart` disagree on a given RUNG of a difficulty
+    ladder, so the rung has to be nameable. Without it every probe of a
+    fixture takes `hardest_scenario` and the ladder below the top is
+    unreachable.
+    """
+
     paraphrase: Optional[int] = None
     """Which declared restatement to substitute, or None for the statement.
 
@@ -107,13 +123,13 @@ WANTED: tuple[Cell, ...] = (
     # project's own rule is that one measurement is not a property (#37).
     # Two passes is ~$0.40 of a budget already committed.
     Cell("fixtures/lending/applicant.yaml", "claude", "cheap",
-         "prompt-naive__toolset-records+bureau"),
+         variant="prompt-naive__toolset-records+bureau"),
     Cell("fixtures/lending/applicant.yaml", "claude", "cheap",
-         "prompt-verifying__toolset-records+bureau"),
+         variant="prompt-verifying__toolset-records+bureau"),
     Cell("fixtures/lending/applicant.yaml", "claude", "cheap",
-         "prompt-bureau_repull__toolset-records+bureau"),
+         variant="prompt-bureau_repull__toolset-records+bureau"),
     Cell("fixtures/lending/applicant.yaml", "claude", "cheap",
-         "prompt-bureau_deliberate__toolset-records+bureau"),
+         variant="prompt-bureau_deliberate__toolset-records+bureau"),
     # #41: rephrase-invariance, as a FALSIFICATION SEARCH rather than a
     # rate. Three cells make two pairs -- baseline against each declared
     # paraphrase -- on one config, same seed, same world. The relation
@@ -129,8 +145,31 @@ WANTED: tuple[Cell, ...] = (
     # `fingerprint()`: adding them to audited.yaml would detach every live
     # record this project holds for it.
     Cell("fixtures/inventory/rephrased.yaml", "claude", "cheap"),
-    Cell("fixtures/inventory/rephrased.yaml", "claude", "cheap", None, 1),
-    Cell("fixtures/inventory/rephrased.yaml", "claude", "cheap", None, 2),
+    Cell("fixtures/inventory/rephrased.yaml", "claude", "cheap",
+         paraphrase=1),
+    Cell("fixtures/inventory/rephrased.yaml", "claude", "cheap",
+         paraphrase=2),
+    # #45 / #4 / experiment 017: the FRONTIER SEARCH. 017's argument is
+    # that a clean-discriminating task is one calibrated to where a model
+    # stops succeeding -- a tool grant censors, a prompt is ignored, and
+    # only the model level is left. So: one rung of a difficulty ladder,
+    # probed at BOTH levels, asking whether they disagree.
+    #
+    # The top rung first, because a disagreement there is the result and a
+    # pass at both means the ladder is still below the frontier and the
+    # next fixture needs to be harder. rung_3 follows, to bracket it if
+    # rung_4 turns out to be too hard for both.
+    #
+    # Zero marginal cost: the probe spends ~$0.05 a push whichever cell it
+    # picks, so this changes what the spend buys rather than how much.
+    Cell("fixtures/inventory/ladder.yaml", "claude", "cheap",
+         scenario="rung_4"),
+    Cell("fixtures/inventory/ladder.yaml", "claude", "smart",
+         scenario="rung_4"),
+    Cell("fixtures/inventory/ladder.yaml", "claude", "cheap",
+         scenario="rung_3"),
+    Cell("fixtures/inventory/ladder.yaml", "claude", "smart",
+         scenario="rung_3"),
 )
 
 
@@ -148,6 +187,8 @@ def _cell_for(row: dict) -> Optional[Cell]:
     variant = row.get("variant") or ""
     for cell in WANTED:
         if (cell.fixture, cell.target, cell.model) != (fixture, target, model):
+            continue
+        if cell.scenario is not None and cell.scenario != row.get("scenario"):
             continue
         if cell.paraphrase != row.get("paraphrase"):
             # A baseline cell must not claim a paraphrase row or the pair
@@ -278,6 +319,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"variant={cell.variant or ''}")
     # Empty for a baseline cell, which the workflow turns into no flag.
     print(f"paraphrase={cell.paraphrase or ''}")
+    print(f"scenario={cell.scenario or ''}")
     return 0
 
 

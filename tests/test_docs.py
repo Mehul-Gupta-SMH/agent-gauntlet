@@ -212,3 +212,20 @@ def test_prior_art_cites_identifiers_not_just_names():
     ):
         assert work in text, f"{work} is not cited"
         assert ident in text, f"{work} is cited without a resolvable id"
+
+
+def test_ci_runs_every_fixture_end_to_end():
+    """The loop is the only thing that would notice a new fixture crashing,
+    and neither `rephrased.yaml` nor `ladder.yaml` was in it when they
+    landed. A fixture outside it is a path nothing exercises."""
+    import yaml
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    e2e = next(s["run"] for s in workflow["jobs"]["test"]["steps"]
+               if "End-to-end" in (s.get("name") or ""))
+    for fixture in sorted(ROOT.glob("fixtures/*/*.yaml")):
+        stem = f"{fixture.parent.name}/{fixture.stem}"
+        assert stem in e2e, (
+            f"ci.yml's end-to-end loop does not run {stem} -- a crash in "
+            f"its path would reach nobody")

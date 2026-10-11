@@ -70,7 +70,19 @@ jobs:
           # through the interposer and the scorer -- a crash in the
           # instruction or memory path would otherwise only show up when
           # somebody ran that fixture by hand.
-          for fixture in inventory/task inventory/audited lending/applicant \
+          # Every fixture, including the two added for #41 and #45. A new
+          # fixture that crashes end to end should fail the build, and
+          # this loop is the only thing that would notice -- neither was
+          # covered when they landed.
+          #
+          # `inventory/ladder` also pins the one contrast worth having in
+          # CI: it sets `separable_faults`, so every faulted run can
+          # decide propagation, while `inventory/rephrased` inherits
+          # audited.yaml's scenarios without it and loses 38 runs from the
+          # gate's denominator (experiment 014).
+          for fixture in inventory/task inventory/audited inventory/discontinued \
+                         inventory/rephrased inventory/ladder \
+                         lending/applicant \
                          poisoning/instruction poisoning/memory; do
             name="${fixture//\//-}"
             gauntlet run "fixtures/$fixture.yaml" \
