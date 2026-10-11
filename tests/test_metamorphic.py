@@ -931,3 +931,73 @@ def test_every_paraphrase_restates_rather_than_simplifies():
     # And they must be genuinely different wordings, not whitespace edits.
     bodies = [" ".join(t.split()) for t in [task.statement, *task.paraphrases]]
     assert len(set(bodies)) == len(bodies)
+
+
+# --- the pair join, because it was being done by eye -------------------
+
+
+def _row(**kw):
+    base = {"fixture": "fixtures/inventory/rephrased.yaml", "target": "claude",
+            "model_level": "cheap", "variant": "model-cheap__prompt-verifying",
+            "paraphrase": None, "clean_total": 3635}
+    base.update(kw)
+    return base
+
+
+def test_a_pair_is_two_rows_of_the_SAME_config():
+    """A baseline matched against a different config's restatement would
+    compare two variables at once -- the error this module warns about in
+    three other places, and the one a manual join makes easiest."""
+    from agent_gauntlet.metamorphic import paraphrase_outcomes
+
+    rows = [
+        _row(),
+        _row(paraphrase=1, clean_total=3635),
+        # Same fixture, DIFFERENT config: not a pair with the baseline above.
+        _row(variant="model-cheap__prompt-naive", paraphrase=2,
+             clean_total=9999),
+    ]
+    outcomes = paraphrase_outcomes(rows)
+    assert len(outcomes) == 1, "the orphaned restatement is not a pair"
+    assert outcomes[0].paraphrase == 1
+    assert outcomes[0].violated is False
+
+
+def test_a_violation_is_one_counterexample():
+    from agent_gauntlet.metamorphic import paraphrase_outcomes, paraphrase_verdict
+
+    outcomes = paraphrase_outcomes([_row(), _row(paraphrase=1, clean_total=3700)])
+    assert outcomes[0].violated is True
+    verdict = paraphrase_verdict(outcomes)
+    assert "VIOLATED" in verdict
+    assert "One counterexample settles it" in verdict
+
+
+def test_a_missing_total_is_undecidable_and_never_agreement():
+    """Two `None`s compare equal. That would call a pair of failed runs an
+    agreement, which is the censoring rule broken in the one place it
+    would be least visible."""
+    from agent_gauntlet.metamorphic import paraphrase_outcomes, paraphrase_verdict
+
+    both_missing = paraphrase_outcomes([
+        _row(clean_total=None), _row(paraphrase=1, clean_total=None)])
+    assert both_missing[0].decidable is False
+    assert both_missing[0].violated is None, "None, never False"
+
+    one_missing = paraphrase_outcomes([_row(), _row(paraphrase=1, clean_total=None)])
+    assert one_missing[0].violated is None
+
+    assert "not a pass" in paraphrase_verdict(both_missing)
+
+
+def test_a_clean_sweep_is_never_reported_as_the_relation_holding():
+    """The sentence this whole family is about."""
+    from agent_gauntlet.metamorphic import paraphrase_outcomes, paraphrase_verdict
+
+    outcomes = paraphrase_outcomes([
+        _row(), _row(paraphrase=1), _row(paraphrase=2)])
+    verdict = paraphrase_verdict(outcomes)
+    assert "no counterexample in 2 decidable pair(s)" in verdict
+    assert "bounds the violation rate" in verdict
+    assert "NOT 'the relation holds'" in verdict
+    assert "holds" not in verdict.replace("NOT 'the relation holds'", "")

@@ -38,6 +38,7 @@ Three rules this directory follows:
 | [014](014-the-band-swallowed-the-verdict/) | The band swallowed the verdict | $0.05+ | **FOUND** — two live runs reported the credulous figure to the unit and scored "no falsehood propagated"; the corruption was below the separability threshold, and nothing said so before the money was spent. The cost is a floor: see 015 |
 | [015](015-what-the-flat-table-misses/) | What the flat table misses, and in which direction | $0.00 | **MEASURED** — #47's ratio, from probes already paid for: the flat table underprices by 1.83×–2.29×, the opposite direction from the premise. Also found that every live row's cost is the clean half's while its outcome is the faulted half's |
 | [016](016-the-clean-tie-and-the-faulted-split/) | The clean tie and the faulted split | ~$0.20 | **MEASURED** — all four configs give the identical correct clean answer and split 3–1 under fault. #45's own best candidate fixture does not break the clean ceiling; n=1 each, and one config's answer is already known to be unstable across repeats |
+| [017](017-why-no-fixture-discriminates-clean/) | Why no fixture discriminates on the clean run | $0.00 | **ARGUED** — the scenario model is not the constraint (`Scenario.expected` exists and `discontinued.yaml` uses it). The three levers that vary across a grid each collapse: a tool grant censors, a prompt is ignored by capable models six times over, and only the model level is left — so #45's fixture is a calibration against a moving capability frontier, not a design |
 
 ## Where that leaves the question
 

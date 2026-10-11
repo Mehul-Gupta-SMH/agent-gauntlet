@@ -739,6 +739,103 @@ def paraphrase_violation_is_exact() -> str:
     )
 
 
+class ParaphraseOutcome(BaseModel):
+    """One pair's verdict: a baseline run against one restated run."""
+
+    fixture: str
+    variant: str
+    paraphrase: int
+    baseline_total: Optional[int] = None
+    restated_total: Optional[int] = None
+
+    @property
+    def decidable(self) -> bool:
+        """Both sides answered. A run that produced no total decides
+        nothing -- and must not read as agreement, which is what comparing
+        two `None`s with `==` would do."""
+        return (self.baseline_total is not None
+                and self.restated_total is not None)
+
+    @property
+    def violated(self) -> Optional[bool]:
+        """`None` when undecidable, never False. The censoring rule: a pair
+        with a missing side is not a pair that held."""
+        if not self.decidable:
+            return None
+        return self.baseline_total != self.restated_total
+
+
+def paraphrase_outcomes(rows: Sequence[dict]) -> list[ParaphraseOutcome]:
+    """Join a live record into pair verdicts (#41).
+
+    Written because the comparison was being done by eye. A relation whose
+    verdict depends on somebody reading two rows side by side is not a
+    mechanical check, however exact the comparison itself is -- and "no
+    threshold, no judge" is worth very little if the join is manual.
+
+    A pair is two rows agreeing on fixture, target, model and variant, one
+    with no paraphrase and one with a paraphrase index. Anything else is
+    not a pair: a baseline matched against a different config's restatement
+    would compare two variables at once, which is the error this file warns
+    about in three other places.
+    """
+    baselines: dict[tuple, dict] = {}
+    restated: list[dict] = []
+    for row in rows:
+        key = (row.get("fixture"), row.get("target"),
+               row.get("model_level"), row.get("variant"))
+        if None in key:
+            continue
+        if row.get("paraphrase") is None:
+            # Last baseline wins, deliberately: a re-probe of the same cell
+            # is a fresher measurement of the same thing, and averaging two
+            # runs of one config would smuggle a mean into a comparison
+            # that is supposed to be exact.
+            baselines[key] = row
+        else:
+            restated.append(row)
+
+    out: list[ParaphraseOutcome] = []
+    for row in restated:
+        key = (row.get("fixture"), row.get("target"),
+               row.get("model_level"), row.get("variant"))
+        base = baselines.get(key)
+        if base is None:
+            continue
+        out.append(ParaphraseOutcome(
+            fixture=key[0], variant=key[3], paraphrase=int(row["paraphrase"]),
+            baseline_total=base.get("clean_total"),
+            restated_total=row.get("clean_total"),
+        ))
+    return sorted(out, key=lambda o: (o.fixture, o.variant, o.paraphrase))
+
+
+def paraphrase_verdict(outcomes: Sequence[ParaphraseOutcome]) -> str:
+    """What a set of pair verdicts is allowed to say.
+
+    Never "the relation holds". A relation is a binary property: one
+    counterexample settles it and no number of passes proves it, so a clean
+    sweep is "no counterexample in N pairs" with the bound those N pairs
+    bought (`pair_budget`).
+    """
+    decidable = [o for o in outcomes if o.decidable]
+    violations = [o for o in decidable if o.violated]
+    if not decidable:
+        return "no decidable pair yet -- nothing to say, and not a pass"
+    if violations:
+        return (
+            f"VIOLATED in {len(violations)} of {len(decidable)} decidable "
+            f"pair(s). One counterexample settles it: rephrasing the "
+            f"statement changed the answer"
+        )
+    bound = wilson(0, len(decidable))
+    return (
+        f"no counterexample in {len(decidable)} decidable pair(s), which "
+        f"bounds the violation rate at {bound.high:.0%} -- NOT 'the "
+        f"relation holds'"
+    )
+
+
 def paraphrase_is_vacuous_offline() -> str:
     """Why this family is never scored against scripted policies.
 

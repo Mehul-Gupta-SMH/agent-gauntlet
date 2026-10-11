@@ -33,7 +33,7 @@ flowchart TD
     ANALYZE["<b>analyze</b> · 193<br/>kendall_tau · stability"]
     CERT["<b>certify</b> · 414<br/>Certificate · compare · 3 verdicts"]
     STATS["<b>stats</b> · 204<br/>wilson · bootstrap · MDE"]
-    META["<b>metamorphic</b> · 721<br/>relations · perturbations"]
+    META["<b>metamorphic</b> · 850<br/>relations · perturbations"]
     ATTR["<b>attribution</b> · 442<br/>exact Shapley · interaction · refusals"]
     HYP["<b>hypotheses</b> · 229<br/>falsifiable bounds · verdicts"]
     CAN["<b>canary</b> · 304<br/>behavioural fingerprint · blind spot"]
