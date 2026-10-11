@@ -1654,11 +1654,19 @@ def _print_paraphrases(task, variants, *, live: bool) -> None:
         print("  variable that changes between runs, so a config could pass")
         print("  on Monday and fail on Tuesday without having moved.")
         print("  Declared ones join `fingerprint()`, which pre-registers them.")
+        _print_pair_budget(len(variants))
         return
 
     cost = metamorphic.paraphrase_cost(task, variants)
+    budget = metamorphic.pair_budget(len(pairs), len(variants))
+    bound = budget.violation_rate_bound
     print(f"  {len(pairs)} paraphrase(s) declared, {cost} extra run(s) on this "
           f"grid.")
+    if bound is not None:
+        print(f"  Seeing zero violations over those {budget.extra_runs} run(s) "
+              f"would bound")
+        print(f"  the violation rate at {bound:.0%} -- which is ALL the passes "
+              f"would buy.")
     print("  Each pair needs the variant REGENERATED -- the statement lives in")
     print("  its `skill.md` -- so the variant fingerprint moves too, which is")
     print("  correct: the two runs are genuinely different variants.")
@@ -1675,6 +1683,43 @@ def _print_paraphrases(task, variants, *, live: bool) -> None:
     print("\n  n/a for every config -- the live checker is not built (#41).")
     print("  The declaration and its cost are recorded; the comparison is")
     print("  not, and reporting `ok` here would be the vacuous pass again.")
+
+
+def _print_pair_budget(n_variants: int) -> None:
+    """What a paraphrase budget would buy, before anyone spends it (#41.2).
+
+    #41's second pre-condition is "how many pairs", and for this family it
+    is arithmetic rather than a judgement call. A metamorphic relation is a
+    BINARY property (#27): it claims a perturbation cannot change the
+    answer, so one counterexample settles it and no number of passes proves
+    it. Running pairs and seeing none does not establish the relation -- it
+    bounds how often it could be violated, and that bound is the only thing
+    the passes bought.
+
+    Printed in the no-paraphrases branch too, deliberately: the decision
+    this informs is whether to write any.
+    """
+    from . import metamorphic
+
+    print("\n  What a budget would buy, before writing one (#41, "
+          "pre-condition 2):")
+    print("    pairs/variant   extra runs   0 violations bounds the rate at")
+    for pairs in (1, 3, 10, 20):
+        budget = metamorphic.pair_budget(pairs, n_variants)
+        bound = budget.violation_rate_bound
+        shown = f"{bound:.0%}" if bound is not None else "n/a"
+        print(f"    {pairs:>13}   {budget.extra_runs:>10}   {shown:>12}")
+    print("  A relation is a BINARY property: one counterexample settles it, "
+          "and no")
+    print("  number of passes proves it. So pairs buy a FALSIFICATION SEARCH, "
+          "not a")
+    print("  rate -- spend until a counterexample turns up or the bound is "
+          "tight")
+    print("  enough to act on, and report the bound either way, never "
+          "\"it holds\".")
+    print("  Which is this project's own rule one family over: upholding a "
+          "zero-bound")
+    print("  is not proof of zero.")
 
 
 def _print_sources(task, variants, executor, *, enabled: bool,

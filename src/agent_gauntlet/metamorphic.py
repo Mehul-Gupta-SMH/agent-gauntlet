@@ -38,7 +38,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
 
+from pydantic import BaseModel
+
 from .spec import Provenance, Scenario, TaskSpec, VariantSpec
+from .stats import wilson
 
 SCALE_FACTOR = 3
 """What `scale` multiplies by. Three, not two: doubling is the one factor a
@@ -643,6 +646,65 @@ def paraphrase_cost(task: TaskSpec, variants: Sequence[VariantSpec]) -> int:
     means a paraphrase suite cannot reuse a generated grid.
     """
     return len(task.paraphrases) * len(variants)
+
+
+class PairBudget(BaseModel):
+    """What a given number of pairs per variant buys, and what it costs.
+
+    #41's second pre-condition, "how many pairs", read as arithmetic rather
+    than as a judgement call -- because for this family it is one.
+    """
+
+    pairs: int
+    variants: int
+    extra_runs: int
+    violation_rate_bound: Optional[float] = None
+    """Wilson 95% upper bound on the violation rate, given ZERO violations
+    observed over `extra_runs`.
+
+    `None` when there are no runs to bound anything with -- not 0, which
+    would read as "this relation is never violated" off a suite that
+    observed nothing.
+    """
+
+
+def pair_budget(pairs: int, variants: int) -> PairBudget:
+    """How many pairs is enough? For *establishing* a relation, more than
+    anyone will pay for. For *falsifying* one, a single pair.
+
+    A metamorphic relation is a binary property, not a statistical one
+    (#27): it claims a perturbation cannot change the answer, so one
+    counterexample settles it and no number of passes proves it. Running
+    `n` pairs and seeing none therefore does not establish the relation --
+    it bounds how often it could be violated, and that bound is the only
+    thing the passes bought:
+
+    | pairs/variant x variants | 0 violations bounds the rate at |
+    |---|---|
+    | 3 x 1 = 3 | 56% |
+    | 3 x 8 = 24 | 14% |
+    | 10 x 8 = 80 | 4.6% |
+
+    Which is why the offline suite's "3 relations x 3 pairs, 3/3" is worth
+    so much less than it reads: three pairs on one variant rules out
+    nothing below a coin flip. The honest use of a paraphrase budget is a
+    **falsification search** -- spend until you find a counterexample or
+    until the bound is tight enough to act on, and report the bound either
+    way, never "the relation holds".
+
+    Which is this project's own zero-bound rule, one family over:
+    "Upholding a zero-bound is not proof of zero."
+    """
+    if pairs < 0 or variants < 0:
+        raise ValueError("pairs and variants must be non-negative")
+    extra = pairs * variants
+    bound = wilson(0, extra) if extra else None
+    return PairBudget(
+        pairs=pairs,
+        variants=variants,
+        extra_runs=extra,
+        violation_rate_bound=bound.high if bound else None,
+    )
 
 
 def paraphrase_is_vacuous_offline() -> str:

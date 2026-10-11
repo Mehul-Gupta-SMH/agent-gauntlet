@@ -742,3 +742,71 @@ def test_offline_vacuity_is_stated_not_scored():
     body = inspect.getsource(cli._print_paraphrases)
     assert "n/a for every config" in body
     assert "'ok'" not in body and '"ok"' not in body
+
+# --- #41 pre-condition 2: "how many pairs" is arithmetic ------------------
+
+
+def test_pairs_bound_a_rate_they_do_not_establish_a_relation():
+    """A metamorphic relation is a BINARY property (#27).
+
+    It claims a perturbation cannot change the answer, so one
+    counterexample settles it and no number of passes proves it. Running
+    `n` pairs and seeing none bounds how often it could be violated -- that
+    bound is all the passes bought.
+    """
+    from agent_gauntlet.metamorphic import pair_budget
+
+    one = pair_budget(1, 1)
+    assert one.extra_runs == 1
+    assert one.violation_rate_bound is not None
+    assert one.violation_rate_bound > 0.7, (
+        "a single clean pair rules out almost nothing")
+
+    # The offline suite's own shape: three pairs on one variant.
+    three = pair_budget(3, 1)
+    assert three.violation_rate_bound > 0.5, (
+        "three clean pairs on one variant does not rule out a coin flip -- "
+        "which is why '3/3' reads for so much more than it bought")
+
+    # And the bound tightens monotonically with the runs, never reaching 0.
+    bounds = [pair_budget(n, 8).violation_rate_bound for n in (1, 3, 10, 20)]
+    assert bounds == sorted(bounds, reverse=True)
+    assert all(b > 0 for b in bounds), "a bound is never proof of zero"
+
+
+def test_no_runs_bounds_nothing_and_says_so():
+    """`None`, not 0. A zero would read as "never violated" off a suite
+    that observed nothing -- the censoring rule in one field."""
+    from agent_gauntlet.metamorphic import pair_budget
+
+    for pairs, variants in ((0, 8), (3, 0), (0, 0)):
+        budget = pair_budget(pairs, variants)
+        assert budget.extra_runs == 0
+        assert budget.violation_rate_bound is None
+
+
+def test_the_budget_refuses_negative_counts():
+    import pytest as _pytest
+
+    from agent_gauntlet.metamorphic import pair_budget
+
+    for bad in ((-1, 8), (3, -1)):
+        with _pytest.raises(ValueError):
+            pair_budget(*bad)
+
+
+def test_the_budget_is_printed_before_anyone_writes_a_paraphrase():
+    """The decision it informs is whether to write any, so it has to show
+    in the branch where none are declared."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "src" / "agent_gauntlet"
+              / "cli.py").read_text(encoding="utf-8")
+    block = source.split("def _print_paraphrases", 1)[1].split(
+        "\ndef ", 1)[0]
+    no_paraphrases = block.split("if not pairs:", 1)[1].split("return", 1)[0]
+    assert "_print_pair_budget" in no_paraphrases, (
+        "a budget shown only once paraphrases exist is shown too late")
+    printer = source.split("def _print_pair_budget", 1)[1].split("\ndef ", 1)[0]
+    assert "FALSIFICATION SEARCH" in printer
+    assert "never" in printer and "it holds" in printer
