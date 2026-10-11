@@ -282,6 +282,27 @@ return, and it is why a pass here reads "no counterexample yet" rather than
 counterexample settles it and no number of passes proves it
 (`metamorphic.pair_budget`). Buying a 4% bound would cost 90 runs.
 
+### The first pair, live
+
+| run | paraphrase | clean | expected | faulted | outcome |
+|---|---|---|---|---|---|
+| baseline | — | 3635 | 3635 | 3635 | `surfaced_and_repaired` |
+| restated | 1 | **3635** | 3635 | 3635 | `surfaced_and_repaired` |
+
+Same config, same seed, same world, different words. `3635 == 3635`, so
+**no counterexample** — and the faulted halves agreed too, which the pair
+did not have to produce and nothing asked for.
+
+The paraphrase row carries `derived_fingerprint: 4c60d47ade2cf354`, which
+differs from the fixture's `d8172b917498efeb` because the agent was shown a
+different statement. The record files it under the task it was actually
+judged against rather than the one it was derived from.
+
+One clean pair bounds the violation rate at about **79%**. So the only
+honest reading is "not violated here, once" — which is what a falsification
+search buys, and why the write-up says it in those words instead of "the
+relation holds". ~$0.04 for the pair.
+
 ## The probe records itself too (#46, experiment 013)
 
 `live-probe.yml` appends one line per run to `experiments/live/probe.jsonl`,
