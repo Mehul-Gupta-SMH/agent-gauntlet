@@ -211,6 +211,39 @@ The 0.0-by-tool-reach case is also the one #45 already rules out: a config
 that cannot in principle answer is a ceiling at zero, which is as tie-shaped
 as a ceiling at one.
 
+## Six runs later, and the record shows its own fix
+
+`discontinued.yaml`'s `wide` scenario has now been probed six times, at
+both model levels, and every single run reports **765** against a truth of
+668 with a corrupted read 97 above the true one. Six for six, identical to
+the unit. It is the most reproducible thing in the live record.
+
+It is also the clearest possible demonstration of what was being censored,
+because the record straddles the fix:
+
+| run | label recorded |
+|---|---|
+| 38039699257 | `undetected_degraded` |
+| 38040111747 | `undetected_degraded` |
+| 38043132742 | `undetected_indeterminable` |
+| 38043369177 | `undetected_indeterminable` |
+| 38124361893 | `undetected_indeterminable` |
+| 38124973030 | `undetected_indeterminable` |
+
+Same numbers, same `determinable: false`, two labels. A row records what the
+scorer said at the time it ran, which is correct — the alternative is
+rewriting history on every scorer change, and the whole point of a
+pre-registered record is that it does not do that. `ledger.rescore` exists
+for re-reading a ledger under current rules; the probe record is a log, not
+a ledger, and reads as one.
+
+What the six rows establish, which no one of them could: the propagation is
+**deterministic**, and the censoring is **structural**. This is not a model
+behaving variably — it is the same fixture handing every config a corruption
+too small for the bands to separate, forever. `separability()` said so
+before any of these ran: 5 of 12 draws on `wide` clear the threshold, and
+this draw is not one of them.
+
 ## What I would have missed
 
 The rows were green-ish and self-consistent. `propagated: false` was
