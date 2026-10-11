@@ -228,13 +228,21 @@ def test_the_committed_record_parses_and_agrees_with_the_writeup():
     # per cell now that the probe rotates, which is why this assertion
     # failed the day the rotation landed: the record legitimately holds two
     # targets, and comparing across them would be comparing two agent SDKs.
+    # The VARIANT is part of the cell now, not a thing held constant within
+    # one. `--variant` landed so the probe could vary the config on
+    # purpose -- #45 asks whether different configs answer the clean run
+    # differently, and a rotation that could not vary the config could not
+    # ask. So this assertion failed again, for the same reason it failed
+    # when targets started rotating: the key got finer, the invariant did
+    # not change.
     cells: dict[tuple, list[dict]] = {}
     for row in rows:
         cells.setdefault(
-            (row["fixture"], row["target"], row["model_level"]), []).append(row)
+            (row["fixture"], row["target"], row["model_level"],
+             row["variant"]), []).append(row)
 
     for cell, group in cells.items():
-        for field in ("variant", "scenario", "fault_target", "corrupt_value"):
+        for field in ("scenario", "fault_target", "corrupt_value"):
             assert len({r[field] for r in group}) == 1, (cell, field)
 
     # And the finding holds inside the cell the writeup is about, which is
