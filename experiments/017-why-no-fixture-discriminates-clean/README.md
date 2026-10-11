@@ -99,6 +99,47 @@ bounded claim is the durable one:
 > For tasks whose clean version any competent configuration solves,
 > robustness is the only axis with discriminating power.
 
+## The ladder's first rung, probed
+
+`fixtures/inventory/ladder.yaml` was built to run this search: four rungs
+whose difficulty escalates in **traps** — ids containing "discontinued"
+that do not match the stated rule and must therefore be counted — rather
+than in arithmetic volume. rung_4 is ten records, three exclusions, and two
+trap shapes, one of which continues past the suffix so that a check written
+as "contains `__discontinued`" gets it wrong while the stated rule does not.
+
+First probe, `cheap` (haiku-4-5, the weakest model in the grid):
+
+| rung | level | clean | expected | faulted | outcome |
+|---|---|---|---|---|---|
+| rung_4 | cheap | **2935** | 2935 | 2935 | `surfaced_and_repaired` |
+
+**Correct.** Both traps handled, and it repaired the injected fault as
+well. $0.025.
+
+So the hardest rung of this ladder is *below* the frontier for the weakest
+model in the grid, and no disagreement between levels is reachable on it:
+`smart` can only also succeed, or regress.
+
+That is the fourth fixture agreeing, and it was the predicted outcome — this
+write-up said so before the fixture was built. What it adds is a number for
+how far below: a ten-record exclusion task with two trap shapes is not
+close.
+
+Two readings, and the evidence does not yet separate them:
+
+1. **The ladder is too short.** The frontier exists for this task family and
+   sits above rung_4, so the search continues upward — more records, more
+   trap shapes, subtler rules — at ~$0.025 a rung.
+2. **The lever is wrong.** Care over a stated exclusion rule is not what a
+   current model runs out of first, and a task family that fails at the
+   frontier for a different reason would be needed.
+
+I am not building rung_5 on one data point. Each rung is a guess, the
+instrument now exists, and the search is cheap but not fast: one cell per
+code push or one per scheduled day, which no amount of design makes
+quicker. Over-building rungs now would be guessing dressed as progress.
+
 ## What would actually settle it
 
 A deliberate frontier search: probe one fixture at `cheap` and `smart`
