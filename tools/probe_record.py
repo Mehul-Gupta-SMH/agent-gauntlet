@@ -77,6 +77,17 @@ PATTERNS: dict[str, re.Pattern] = {
     # the point: three different results were arriving as the same row of
     # nulls, and none of them could be told from the recorder breaking.
     "never_consulted": re.compile(r"^THE AGENT NEVER CONSULTED '([^']+)'"),
+    # Which declared restatement was substituted for the statement, if any
+    # (#41). Null for a baseline run, and the pair is read across rows:
+    # same fixture, target, model and config, one row with a paraphrase and
+    # one without, and the relation holds or it does not by `==` on
+    # `clean_total`.
+    "paraphrase": re.compile(r"^paraphrase\s*:\s*(\d+) of \d+"),
+    # The task hash the paraphrase run was actually judged against. It
+    # DIFFERS from the fixture's, because the agent was shown different
+    # words, and the record should say so rather than file the run under
+    # the task it was derived from.
+    "derived_fingerprint": re.compile(r"^derived fingerprint:\s*([0-9a-f]+)"),
 }
 
 _BOOL = {"True": True, "False": False}
@@ -229,7 +240,7 @@ def parse(text: str) -> dict[str, Any]:
             elif name in ("expected", "clean_total", "faulted_total",
                           "true_value", "corrupt_value", "prompt_tokens",
                           "completion_tokens", "total_tokens", "canary",
-                          "faulted_reaching"):
+                          "faulted_reaching", "paraphrase"):
                 out[name] = int(m.group(1))
             elif name == "compliance":
                 verdict = m.group(1)
@@ -259,7 +270,7 @@ def parse(text: str) -> dict[str, Any]:
                   "faulted_reaching", "never_consulted", "llm_calls",
                   "reported_count", "usage_complete", "cost_complete",
                   "tool_calls", "cache_read_tokens", "cache_write_tokens",
-                  "variant_selector"):
+                  "variant_selector", "paraphrase", "derived_fingerprint"):
         out.setdefault(field, None)
     # The two halves that were never priced. Present as null when the
     # probe did not reach them, so "the sentinel never ran" is readable

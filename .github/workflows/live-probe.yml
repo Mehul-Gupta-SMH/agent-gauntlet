@@ -50,6 +50,10 @@ on:
           # on any target. The rotation now walks four of its prompt
           # levels at a pinned tool set.
           - fixtures/lending/applicant.yaml
+          # #41's rephrase-invariance fixture. Its own file because
+          # paraphrases join `fingerprint()` -- adding them to audited.yaml
+          # would detach every live record held for that fixture.
+          - fixtures/inventory/rephrased.yaml
       target:
         description: "CommonADK SDK target"
         type: choice
@@ -66,6 +70,15 @@ on:
           substring (e.g. prompt-verifying__toolset-records+bureau).
           Without it every probe of a fixture and level measures the SAME
           config, which cannot answer whether configs differ (#45).
+        type: string
+        required: false
+        default: ""
+      paraphrase:
+        description: >-
+          Substitute the task's Nth declared paraphrase (1-based) for its
+          statement, for fixtures/inventory/rephrased.yaml. The pair --
+          one run with, one without, same config and seed -- is #41's
+          rephrase-invariance check.
         type: string
         required: false
         default: ""
@@ -169,6 +182,9 @@ jobs:
           # interpolated into the command line: `--variant ''` matches
           # every variant, so an empty value must produce NO flag.
           VARIANT: ${{ inputs.variant || steps.cell.outputs.variant || '' }}
+          # Empty for a baseline cell, which becomes no flag at all. An
+          # empty `--paraphrase ''` would not parse as an int.
+          PARAPHRASE: ${{ inputs.paraphrase || steps.cell.outputs.paraphrase || '' }}
           SHAPE: ${{ inputs.shape || 'authority' }}
         run: |
           # +e deliberately: Actions runs this under bash -e, and the whole
@@ -196,8 +212,12 @@ jobs:
           if [ -n "${VARIANT:-}" ]; then
             VARIANT_ARG="--variant $VARIANT"
           fi
+          PARAPHRASE_ARG=""
+          if [ -n "${PARAPHRASE:-}" ]; then
+            PARAPHRASE_ARG="--paraphrase $PARAPHRASE"
+          fi
           gauntlet probe "$FIXTURE" --target "$TARGET" --model "$MODEL" \
-            $SHAPE_ARG $VARIANT_ARG | tee probe.txt
+            $SHAPE_ARG $VARIANT_ARG $PARAPHRASE_ARG | tee probe.txt
           status=${PIPESTATUS[0]}
           # Published so the recorded row can say WHY it is blank. The
           # console is uploaded as an artifact and the artifact host is not
@@ -324,6 +344,9 @@ jobs:
           # interpolated into the command line: `--variant ''` matches
           # every variant, so an empty value must produce NO flag.
           VARIANT: ${{ inputs.variant || steps.cell.outputs.variant || '' }}
+          # Empty for a baseline cell, which becomes no flag at all. An
+          # empty `--paraphrase ''` would not parse as an int.
+          PARAPHRASE: ${{ inputs.paraphrase || steps.cell.outputs.paraphrase || '' }}
           SHAPE: ${{ inputs.shape || 'authority' }}
           # What the probe actually returned. 0 is a complete run; 1 is a
           # raised faulted run or a fault that reached no tool call; 2 is a

@@ -132,16 +132,29 @@ def test_the_fixture_fingerprints_in_claude_md_are_real():
     from agent_gauntlet import TaskSpec
 
     text = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    checked = 0
-    for fixture in sorted(ROOT.glob("fixtures/*/*.yaml")):
+    fixtures = sorted(ROOT.glob("fixtures/*/*.yaml"))
+    for fixture in fixtures:
         rel = str(fixture.relative_to(ROOT))
         if rel not in text:
             pytest.fail(f"CLAUDE.md does not list {rel}")
         real = TaskSpec.from_yaml(fixture).fingerprint()
         row = next(ln for ln in text.splitlines() if rel in ln)
         assert real in row, f"{rel}: CLAUDE.md says {row.strip()}, real is {real}"
-        checked += 1
-    assert checked == 6
+
+    # Both directions. The loop above catches a fixture with no row; this
+    # catches a row with no fixture, which the loop cannot see and which is
+    # the worse of the two -- a hash in the table for a task that no longer
+    # exists reads as a bar still being held.
+    #
+    # It replaces a hardcoded `== 6`, which was redundant with the loop and
+    # failed on the seventh fixture rather than on anything being wrong.
+    rows = [ln for ln in text.splitlines()
+            if ln.startswith("| `fixtures/") and ln.rstrip().endswith("` |")]
+    listed = {ln.split("`")[1] for ln in rows}
+    assert listed == {str(f.relative_to(ROOT)) for f in fixtures}, (
+        "CLAUDE.md's fingerprint table and fixtures/ disagree: "
+        f"only in the table {listed - {str(f.relative_to(ROOT)) for f in fixtures}}"
+    )
 
 
 def test_the_readme_documents_every_cli_command():

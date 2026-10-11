@@ -86,6 +86,7 @@ does not use it and detaches historical run records. These must not change:
 | `fixtures/lending/applicant.yaml` | `2f32ad9fcecc025b` |
 | `fixtures/poisoning/instruction.yaml` | `10347b6eeeba5b0d` |
 | `fixtures/poisoning/memory.yaml` | `8f7d94a1568e6696` |
+| `fixtures/inventory/rephrased.yaml` | `d8172b917498efeb` |
 
 A failing gate is a **finding**. Record it; do not tune the threshold.
 

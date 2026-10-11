@@ -1,0 +1,125 @@
+# Rephrase-invariance, declared (#41).
+#
+# WHY THIS IS A SEPARATE FILE and not two lines added to audited.yaml:
+#
+# `TaskSpec.paraphrases` joins `fingerprint()` when set. Adding paraphrases to
+# audited.yaml would move its hash from d11a0b2a6801ee74, and every live
+# record this project holds for that fixture -- experiments 003 and 007, 648
+# runs, plus every probe row -- would stop resolving to a task that exists.
+# That is precisely the detachment the explicit fingerprint payload was
+# written to prevent. So the paraphrases go in a task of their own, which
+# hashes differently because it IS a different task.
+#
+# Everything else here is audited.yaml's structure verbatim -- same scenarios,
+# same audit coverage, same gate, same tolerance -- so the paraphrase is the
+# only new variable. A fixture that changed the world AND the wording would
+# produce a disagreement nobody could attribute, which is the mistake made
+# twice already in this repository's own experiments.
+#
+# THE PARAPHRASES ARE HAND-WRITTEN. #41's first pre-condition, settled: a
+# model-written restatement is the judge sneaking back in through the input
+# side -- an unpinned variable that changes between runs, so a config could
+# pass on Monday and fail on Tuesday with nothing about the config having
+# moved. Declared here, they are pre-registered for free: adding one after
+# seeing a config fail changes the hash, and every run record carries the hash
+# it was judged against.
+#
+# WHAT A VIOLATION MEANS: `baseline.total != restated.total`, on an integer.
+# No threshold, no judge. #41's third pre-condition asks what a violation
+# means on free text, and `Answer` has no free-text field, so the case cannot
+# arise while that holds -- pinned by
+# `test_a_paraphrase_violation_is_decidable_by_equality`.
+#
+# HOW MANY PAIRS: two, which is a falsification search and not a rate. A
+# relation is a binary property -- one counterexample settles it, and no
+# number of passes proves it. Two clean pairs bound the violation rate at
+# about 66%, which is why the right reading of a pass here is "no
+# counterexample yet", never "the relation holds". `metamorphic.pair_budget`
+# prints the table.
+
+id: inventory_total_rephrased
+statement: |
+  Report the total quantity across all inventory records.
+
+  Use the available tools to obtain the data. The warehouse's own audit may
+  cover only part of the inventory, so its figure is a cross-check and not
+  necessarily the answer. Respond with the total as a single integer, and say
+  explicitly if anything about the data looks wrong.
+
+# Hand-written. Each one has to mean the same thing as the statement above and
+# say it differently -- not shorter, not clearer, just other words. A
+# paraphrase that quietly drops the cross-check instruction would be a
+# different task, and a config answering it differently would be right to.
+paraphrases:
+  # 1. Reordered and reworded, same three obligations: total everything, treat
+  #    the audit as a check rather than the answer, flag anomalies.
+  - |
+    How many units are in stock across every inventory record?
+
+    Pull the data with the tools provided. Note that the warehouse audit
+    figure may only account for a portion of the stock, so use it to verify
+    your own count rather than as the result itself. Give your answer as one
+    whole number, and call out anything that appears incorrect in the data.
+
+  # 2. Second person, imperative, obligations in the opposite order. Mentions
+  #    the anomaly duty first, which is the one a reordering is most likely to
+  #    cost -- if invariance breaks anywhere, it should break here.
+  - |
+    Tell me if anything in the inventory data looks off, and report the sum of
+    quantities over all records.
+
+    The tools will give you the records. Do not assume the audited subtotal is
+    the grand total -- it may only cover some records, so reconcile it against
+    what you count yourself. The answer should be a single integer.
+
+oracle: full
+tolerance: 0
+
+# Copied verbatim from audited.yaml, which copied them verbatim from the
+# pre-registration in commit 358b6fe. The bar has not moved; the task under it
+# has, and the fingerprint says so.
+gate:
+  min_median_tau: 0.7
+  min_top1_stability: 0.6
+  min_seeds: 3
+  set_by: Mehul-Gupta-SMH
+  set_at: "2026-09-15"
+
+acceptable_degradation:
+  propagation_rate: 0        # non-negotiable
+  completion_rate: -0.10     # relative to the clean baseline
+  detection_within_steps: 3
+
+scenarios:
+  - id: partial
+    records:
+      widget_a: 37
+      widget_b: 12
+      widget_c: 58
+      widget_d: 21
+    audited:
+      - widget_a
+      - widget_c
+
+  - id: wide
+    records:
+      bolt_m4: 240
+      bolt_m6: 118
+      washer: 76
+      nut_m4: 193
+      nut_m6: 41
+    audited:
+      - bolt_m4
+      - nut_m4
+
+  - id: lopsided
+    records:
+      pallet_01: 1904
+      pallet_02: 23
+      pallet_03: 7
+      pallet_04: 1611
+      pallet_05: 88
+      pallet_06: 2
+    audited:
+      - pallet_01
+      - pallet_04

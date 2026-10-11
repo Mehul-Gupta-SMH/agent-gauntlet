@@ -247,6 +247,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="which scenario to probe (default: the first)",
     )
     probe.add_argument(
+        "--paraphrase", type=int, default=None, metavar="N",
+        help="probe the task's Nth declared paraphrase (1-based) instead of "
+             "its statement. The pair -- one run each, same config and seed "
+             "-- is #41's rephrase-invariance check: the answers match or "
+             "the relation is violated, decided by equality on an integer",
+    )
+    probe.add_argument(
         "--variant", default=None, metavar="SUBSTR",
         help="probe the variant whose id contains SUBSTR, instead of the "
              "first eligible one. Without it every probe of a given "
@@ -446,6 +453,40 @@ def _probe(args) -> int:
     # check refused before a single token was spent, and the live half of
     # the compliance claim was unrunnable for reasons that had nothing to
     # do with money (#37).
+    asked_paraphrase = getattr(args, "paraphrase", None)
+    if asked_paraphrase is not None:
+        declared = list(task.paraphrases)
+        if not declared:
+            print(f"\nTHIS TASK DECLARES NO PARAPHRASES\n{args.task} has no "
+                  f"`paraphrases:` block, so there is nothing to substitute.")
+            print("Rephrase-invariance needs hand-written restatements in the "
+                  "spec (#41):")
+            print("  gauntlet probe fixtures/inventory/rephrased.yaml "
+                  "--paraphrase 1")
+            return 2
+        if not 1 <= asked_paraphrase <= len(declared):
+            print(f"\nNO SUCH PARAPHRASE\n{args.task} declares "
+                  f"{len(declared)}; asked for {asked_paraphrase}.")
+            return 2
+        # The paraphrase BECOMES the statement, and the copy declares none of
+        # its own. Two reasons it is done this way rather than by passing the
+        # text alongside: the statement is what gets written into the
+        # variant's `skill.md`, so substituting it here is the only way the
+        # agent actually sees different words; and a task whose `statement`
+        # equals one of its own `paraphrases` is what `_check_paraphrases`
+        # refuses, correctly.
+        #
+        # The task fingerprint moves, which is right: the agent was shown a
+        # different statement, and the record should say so rather than file
+        # the run under the task it was derived from.
+        task = task.model_copy(update={
+            "statement": declared[asked_paraphrase - 1],
+            "paraphrases": [],
+        })
+        print(f"paraphrase     : {asked_paraphrase} of {len(declared)} "
+              f"(the statement is replaced, not appended)")
+        print(f"derived fingerprint: {task.fingerprint()}")
+
     wanted = getattr(args, "variant", None)
     prompts, toolsets = _probe_grid(task, wanted=wanted)
     try:

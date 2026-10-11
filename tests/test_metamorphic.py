@@ -856,3 +856,78 @@ def test_a_paraphrase_violation_is_decidable_by_equality():
     why = paraphrase_violation_is_exact()
     assert "no threshold, no judge" in why
     assert "free-text" in why
+
+
+# --- #41's live checker: the pair the rotation now runs -------------------
+
+
+def test_the_paraphrase_fixture_declares_pairs_without_moving_any_hash():
+    """`paraphrases` joins `fingerprint()`, so they could not be added to a
+    fixture that has live records without detaching every one of them.
+
+    `rephrased.yaml` exists for that reason, and this test is the reason it
+    has to keep existing: if someone moves the paraphrases into
+    audited.yaml to save a file, the hash below changes and experiments 003
+    and 007 stop resolving to a task that exists.
+    """
+    from pathlib import Path as _Path
+
+    from agent_gauntlet import TaskSpec
+    from agent_gauntlet.metamorphic import pair_budget, paraphrase_pairs
+
+    root = _Path(__file__).resolve().parents[1]
+    rephrased = TaskSpec.from_yaml(root / "fixtures/inventory/rephrased.yaml")
+    audited = TaskSpec.from_yaml(root / "fixtures/inventory/audited.yaml")
+
+    assert len(paraphrase_pairs(rephrased)) == 2
+    assert not audited.paraphrases, (
+        "audited.yaml must declare none -- its hash is what 648 live runs "
+        "were judged against")
+    assert audited.fingerprint() == "d11a0b2a6801ee74"
+    assert rephrased.fingerprint() != audited.fingerprint()
+
+    # Same world, so the paraphrase is the only new variable.
+    assert ([s.records for s in rephrased.scenarios]
+            == [s.records for s in audited.scenarios])
+    assert ([s.audited_ids for s in rephrased.scenarios]
+            == [s.audited_ids for s in audited.scenarios])
+
+    # And two pairs buy a falsification search, not a rate.
+    bound = pair_budget(2, 9).violation_rate_bound
+    assert bound is not None and bound > 0.15, (
+        "two pairs on a 9-variant grid bound the rate loosely -- a pass "
+        "reads 'no counterexample yet', never 'the relation holds'")
+
+
+def test_every_paraphrase_restates_rather_than_simplifies():
+    """A paraphrase that quietly drops an obligation is a different task,
+    and a config answering it differently would be right to.
+
+    Checked mechanically on the three duties the statement carries: total
+    everything, treat the audit as a cross-check rather than the answer,
+    and say if the data looks wrong. A restatement is free to reorder and
+    reword them; it is not free to lose one.
+    """
+    from pathlib import Path as _Path
+
+    from agent_gauntlet import TaskSpec
+
+    root = _Path(__file__).resolve().parents[1]
+    task = TaskSpec.from_yaml(root / "fixtures/inventory/rephrased.yaml")
+
+    duties = (
+        # (what it is, words any faithful restatement must use one of)
+        ("total every record", ("all inventory records", "every inventory record",
+                                "all records", "every record")),
+        ("the audit is a cross-check", ("cross-check", "verify", "reconcile")),
+        ("flag anomalies", ("looks wrong", "appears incorrect", "looks off")),
+    )
+    for text in [task.statement, *task.paraphrases]:
+        low = text.lower()
+        for duty, phrasings in duties:
+            assert any(p in low for p in phrasings), (
+                f"a restatement dropped the duty {duty!r}:\n{text}")
+
+    # And they must be genuinely different wordings, not whitespace edits.
+    bodies = [" ".join(t.split()) for t in [task.statement, *task.paraphrases]]
+    assert len(set(bodies)) == len(bodies)

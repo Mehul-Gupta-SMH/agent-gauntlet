@@ -422,6 +422,10 @@ def test_parking_every_cell_still_returns_one(tmp_path):
     # leave those cells un-parked here.
     rows = [{"fixture": c.fixture, "target": c.target, "model_level": c.model,
              "variant": c.variant or "model-cheap__prompt-naive__toolset-records",
+             # `paraphrase` too, for the same reason `variant` is here: a
+             # cell is claimed only by rows matching every dimension of it,
+             # so a row missing one is evidence for no cell at all.
+             "paraphrase": c.paraphrase,
              "outcome": None}
             for c in probe_next.WANTED for _ in range(probe_next.MAX_EMPTY)]
     record.write_text("\n".join(json.dumps(r) for r in rows) + "\n",
@@ -840,9 +844,15 @@ def test_no_two_cells_can_claim_the_same_row():
 
     from tools.probe_next import WANTED
 
+    # The slot is every dimension EXCEPT the selector, because those are
+    # what make two cells distinguishable without one. `paraphrase` joined
+    # it with #41's pair: three rephrase cells share a fixture, target,
+    # model and a `None` selector, and are told apart by the paraphrase
+    # alone -- which is exactly what the pair is.
     by_slot = defaultdict(list)
     for cell in WANTED:
-        by_slot[(cell.fixture, cell.target, cell.model)].append(cell.variant)
+        by_slot[(cell.fixture, cell.target, cell.model,
+                 cell.paraphrase)].append(cell.variant)
 
     for slot, selectors in by_slot.items():
         if len(selectors) == 1:
@@ -1003,3 +1013,61 @@ def test_the_cache_columns_round_trip_the_REAL_rollup(tmp_path):
     # The rollup must also SAY it, since no flag can catch it.
     assert "UNCACHED input only" in (rollup["note"] or "")
     assert "20610" in rollup["note"], "the note names the missing volume"
+
+
+def test_a_paraphrase_run_records_which_one_and_its_derived_hash(tmp_path):
+    """The pair is read across rows, so each row has to say which side of
+    it it is. A baseline records null; a paraphrase run records its index
+    AND the task hash it was actually judged against -- which differs from
+    the fixture's, because the agent was shown different words."""
+    row = _record(
+        "paraphrase     : 2 of 2 (the statement is replaced, not appended)\n"
+        "derived fingerprint: a1b2c3d4e5f60718\n"
+        "expected total : 3635\n"
+        "parsed total   : 3635\n",
+        tmp_path,
+    )
+    assert row["paraphrase"] == 2
+    assert row["derived_fingerprint"] == "a1b2c3d4e5f60718"
+    assert row["clean_total"] == 3635
+
+    baseline = _record("expected total : 3635\nparsed total   : 3635\n", tmp_path)
+    assert baseline["paraphrase"] is None, "null, so the pair has two sides"
+    assert baseline["derived_fingerprint"] is None
+
+
+def test_a_baseline_cell_does_not_claim_a_paraphrase_row():
+    """If it did, the pair would collapse into one count, the rotation
+    would think the cell covered, and the comparison would never happen."""
+    from tools.probe_next import _cell_for
+
+    base = {
+        "fixture": "fixtures/inventory/rephrased.yaml",
+        "target": "claude",
+        "model_level": "cheap",
+        "variant": "model-cheap__prompt-naive__toolset-records+summary",
+    }
+    baseline_cell = _cell_for(dict(base, paraphrase=None))
+    first = _cell_for(dict(base, paraphrase=1))
+    second = _cell_for(dict(base, paraphrase=2))
+
+    assert baseline_cell is not None and baseline_cell.paraphrase is None
+    assert first is not None and first.paraphrase == 1
+    assert second is not None and second.paraphrase == 2
+    assert len({baseline_cell, first, second}) == 3, "three distinct cells"
+
+    # A paraphrase nobody declared a cell for is evidence for nothing.
+    assert _cell_for(dict(base, paraphrase=9)) is None
+
+
+def test_an_empty_paraphrase_becomes_no_flag():
+    """`--paraphrase ''` would not parse as an int, so an empty value must
+    produce no flag at all -- same rule as the variant selector."""
+    text = (ROOT / ".github" / "workflows" / "live-probe.yml").read_text(
+        encoding="utf-8")
+    body = text.split("Probe the live path", 1)[1]
+    assert 'if [ -n "${PARAPHRASE:-}" ]' in body
+    assert "--paraphrase $PARAPHRASE" in body
+    code = "\n".join(l for l in body.splitlines()
+                     if not l.strip().startswith("#"))
+    assert "--paraphrase ''" not in code

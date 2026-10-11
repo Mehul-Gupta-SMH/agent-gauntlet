@@ -53,6 +53,14 @@ class Cell(NamedTuple):
     coverage would double-count itself. Enforced by a test.
     """
 
+    paraphrase: Optional[int] = None
+    """Which declared restatement to substitute, or None for the statement.
+
+    The rephrase-invariance pair is two cells that differ ONLY here (#41):
+    one baseline, one paraphrase, same fixture, target, model and config.
+    The relation holds between them or it does not, by `==` on an integer.
+    """
+
 
 # Each entry earns its place by being blocked on live evidence, and the
 # comment says which issue. A cell nobody is waiting on does not belong
@@ -106,6 +114,23 @@ WANTED: tuple[Cell, ...] = (
          "prompt-bureau_repull__toolset-records+bureau"),
     Cell("fixtures/lending/applicant.yaml", "claude", "cheap",
          "prompt-bureau_deliberate__toolset-records+bureau"),
+    # #41: rephrase-invariance, as a FALSIFICATION SEARCH rather than a
+    # rate. Three cells make two pairs -- baseline against each declared
+    # paraphrase -- on one config, same seed, same world. The relation
+    # holds between a pair or it does not, by `==` on an integer: no
+    # threshold, no judge.
+    #
+    # Two clean pairs bound the violation rate at about 66%, so a pass
+    # here reads "no counterexample yet" and never "the relation holds"
+    # (`metamorphic.pair_budget`). That is the honest return on ~$0.15,
+    # and buying a tight bound would cost 90 runs.
+    #
+    # `rephrased.yaml` exists as its own fixture because paraphrases join
+    # `fingerprint()`: adding them to audited.yaml would detach every live
+    # record this project holds for it.
+    Cell("fixtures/inventory/rephrased.yaml", "claude", "cheap"),
+    Cell("fixtures/inventory/rephrased.yaml", "claude", "cheap", None, 1),
+    Cell("fixtures/inventory/rephrased.yaml", "claude", "cheap", None, 2),
 )
 
 
@@ -123,6 +148,10 @@ def _cell_for(row: dict) -> Optional[Cell]:
     variant = row.get("variant") or ""
     for cell in WANTED:
         if (cell.fixture, cell.target, cell.model) != (fixture, target, model):
+            continue
+        if cell.paraphrase != row.get("paraphrase"):
+            # A baseline cell must not claim a paraphrase row or the pair
+            # collapses into one count and the comparison never happens.
             continue
         if cell.variant is None or cell.variant in variant:
             return cell
@@ -247,6 +276,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     # `--variant ''`: that matches every variant and would probe the first
     # one while the row claimed a selector.
     print(f"variant={cell.variant or ''}")
+    # Empty for a baseline cell, which the workflow turns into no flag.
+    print(f"paraphrase={cell.paraphrase or ''}")
     return 0
 
 

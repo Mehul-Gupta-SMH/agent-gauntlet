@@ -261,6 +261,27 @@ readable record even when its output does not survive, which is worth more than
 it sounds: the probe now records `probe_exit` directly, so the next blank row
 explains itself without the crawl.
 
+## Rephrase-invariance runs through the rotation now (#41)
+
+`gauntlet probe --paraphrase N` substitutes the task's Nth declared
+restatement for its statement, so the pair — one run with, one without, same
+config, same seed, same world — is two rotation cells that differ in nothing
+else. The relation holds between them or it does not, by `==` on an integer:
+no threshold, and therefore no judge.
+
+`fixtures/inventory/rephrased.yaml` carries two hand-written paraphrases and
+exists as its own file for a reason worth stating: `paraphrases` joins
+`fingerprint()`, so adding them to `audited.yaml` would move
+`d11a0b2a6801ee74` and detach all 648 live runs recorded against it.
+Everything else in it is `audited.yaml` verbatim, so the wording is the only
+new variable.
+
+**Two pairs bound the violation rate at about 66%.** That is the honest
+return, and it is why a pass here reads "no counterexample yet" rather than
+"the relation holds" — a metamorphic relation is a binary property, so one
+counterexample settles it and no number of passes proves it
+(`metamorphic.pair_budget`). Buying a 4% bound would cost 90 runs.
+
 ## The probe records itself too (#46, experiment 013)
 
 `live-probe.yml` appends one line per run to `experiments/live/probe.jsonl`,
