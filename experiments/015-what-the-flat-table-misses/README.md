@@ -33,6 +33,63 @@ $3/$15 for sonnet-5).
 **The flat table underprices by roughly a factor of two, consistently,
 across both model levels.**
 
+## What the ratio actually measures — a correction
+
+The paragraphs above were written before the per-half rollups landed, and
+the first thing those rollups showed is that **the ratio does not measure a
+pricing bias.** Its denominator is broken.
+
+`prompt_tokens`, across ten live `claude` rows spanning four fixtures and
+four tool sets, takes four distinct values:
+
+| fixture | tool set | in | out |
+|---|---|---|---|
+| discontinued.yaml | records | 1206 | 1225 |
+| instruction.yaml | records+annotations | 1206 | 1657 |
+| audited.yaml | records+summary | 1206 | 1520 |
+| memory.yaml | records+notes | 1222 | 1972 |
+| discontinued.yaml (smart) | records | 1186 | 902 |
+
+Three different task statements and three different tool sets reporting
+**1206 input tokens each**. That is not an input count. It tracks the model
+level — both `smart` rows read 1186 — and almost nothing else.
+
+Within a single probe it is worse. The clean, faulted and sentinel halves
+are three separate runs, and the sentinel is a *different variant with a
+different tool set*; two probes report the identical 1206 for all three.
+
+`llm_calls` says why. The rollup's `count` is the number of `LLMCall` events
+in the trace, and for this target it is **1** — while the same run's
+`tool_calls` is four or more. An agent cannot reach four tools in one model
+turn. So the claude adapter surfaces one call's usage while
+`ResultMessage.total_cost_usd` bills the whole multi-turn conversation, and
+the "flat estimate" is one turn's tokens priced against a whole
+conversation's cost.
+
+**The ~2.2× is approximately the number of turns the token counts omit.** It
+is not a caching discount, and it is not a bias in the rate table.
+
+### And `usage_complete` cannot catch it
+
+It reads `True` on every one of these rows. Its definition, from
+`commonadk/runners/trace.py`:
+
+```python
+usage_complete = count == 0 or len(reported) == count
+```
+
+"Every LLM call I **saw** reported usage" — not "I saw every LLM call." The
+flag is honest about what it checks and was being read as a guarantee it
+never made. A completeness flag computed over the events an adapter chose to
+emit cannot see the events it did not.
+
+Which is the same shape as the rest of this day's findings: a field whose
+name claims more than its definition supports, read as the claim.
+
+The row now carries `tool_calls` beside `llm_calls`, plus `reported_count`,
+`usage_complete` and `cost_complete` per half, so the contradiction is
+readable off the record rather than reconstructed from the adapter's source.
+
 ## Which is the opposite direction from the premise
 
 #47 reasoned that prompt caching makes the *real* cost **lower** than a flat
@@ -59,6 +116,16 @@ This is a ratio, not an explanation, and the data cannot yet separate:
 
 Naming a cause here would be the thing #47 warned against: a figure derived
 from assumptions about someone else's deployment.
+
+**Read that section with the correction above in hand.** The *net* ratio
+does point away from a caching discount. But it is dominated by the missing
+turns, so it is not evidence about caching either way — and there is a hint
+in the other direction underneath it: within a probe, the faulted half
+(which runs second, on the same prefix) shows a consistently *lower* ratio
+than the clean half at the same rates — 1.23×, 1.32×, 1.32× against 2.20×,
+2.10×, 2.69×. That is the shape a cache read would make. One `smart` probe
+shows no such gap (2.18× vs 2.19×), so it is three observations and a
+counter-example, not a finding.
 
 ## What it does settle
 
@@ -91,15 +158,28 @@ are the **clean half's**, while the same row's `outcome`, `faulted_total` and
 
 A probe makes three agent runs — clean, faulted, sentinel — and printed a
 rollup for the first only; the other two had their rollups assigned to `_`
-and dropped. So:
+and dropped. So a reader computing cost-per-detection from a row divides one
+half's dollars by another half's result.
 
-- a reader computing cost-per-detection from a row divides one half's
-  dollars by another half's result, and
-- the record understates what a probe actually costs by roughly **3×**.
+The understatement is now **measured**, on the first four rows that carry
+all three halves:
+
+| run | clean | faulted | sentinel | probe total | recorded as | understated |
+|---|---|---|---|---|---|---|
+| 38043132742 | 0.015514 | 0.008353 | 0.013956 | 0.037823 | 0.015514 | **2.44×** |
+| 38043369177 | 0.037364 | 0.036084 | 0.006169 | 0.079617 | 0.037364 | **2.13×** |
+| 38043622964 | 0.021439 | 0.012867 | 0.015076 | 0.049382 | 0.021439 | **2.30×** |
+| 38052168162 | 0.019185 | 0.012923 | 0.016569 | 0.048677 | 0.019185 | **2.54×** |
+
+**2.13×–2.54×, not "roughly 3×"** as this write-up first said. Three runs is
+not three times the cost: the clean half is the most expensive of the three
+in every case, because it is the one that does the whole task from a cold
+start.
 
 Experiment 014's "$0.054 in live calls" is two clean halves, not two probes.
-The real figure is unrecorded for those runs and cannot be recovered — the
-consoles are in artifacts on a host this environment cannot reach (#46).
+The real figure for those two runs is unrecorded and cannot be recovered —
+their consoles are in artifacts on a host this environment cannot reach
+(#46). On the ratios above it was closer to $0.12.
 
 Fixed: each half prints a labelled rollup and the recorder stores
 `faulted_*` and `sentinel_*` alongside. The bare names still mean the clean

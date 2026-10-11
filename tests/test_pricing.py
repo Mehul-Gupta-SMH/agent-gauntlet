@@ -300,10 +300,10 @@ def test_mixed_authority_is_its_own_answer_not_unrecorded():
     """Two situations, one return value, and the message named the wrong
     one (#47, experiment 015).
 
-    `UNKNOWN` means no row recorded an authority. `MIXED` means several did
-    and they disagree -- measured at 1.83x-2.29x over five live probes, so
-    a cost column spanning both is off by about a factor of two on some
-    rows, not approximate.
+    `UNKNOWN` means no row recorded an authority. `MIXED` means several did,
+    and the two are different kinds of number: one is what the provider
+    says it billed, the other is this project's rates applied to an
+    adapter's token counts. The column ranks a measurement against a model.
     """
     from agent_gauntlet import pricing
     from agent_gauntlet.cli import _price_authority
@@ -328,7 +328,10 @@ def test_the_board_says_a_mixed_cost_column_is_not_comparable():
     source = (Path(__file__).resolve().parents[1] / "src" / "agent_gauntlet"
               / "cli.py").read_text(encoding="utf-8")
     branch = source.split("pricing.MIXED:", 1)[1].split("else:", 1)[0]
-    assert "not comparable" in branch
-    assert "factor of two" in branch
+    assert "different KINDS of number" in branch
+    assert "measurement" in branch and "model" in branch
     assert "Split the ledger by target" in branch, (
         "a caveat without an action is a caveat nobody applies")
+    # And it must NOT quote the 2x as a pricing disagreement: that number
+    # measures the adapter's missing turns, not the rates (experiment 015).
+    assert "factor of two" not in branch

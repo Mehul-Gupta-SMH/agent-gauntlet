@@ -98,12 +98,26 @@ A different thing from `UNKNOWN`, and it used to collapse into it -- so a
 ledger whose rows came from two authorities printed "this target is not in
 `pricing.AUTHORITY`", naming a cause that was not the cause.
 
-It matters because the two authorities do not agree. Measured over five
-live `claude` probes (experiment 015), `ResultMessage.total_cost_usd` comes
-in at **1.83x to 2.29x** the figure this table computes from the same runs'
-recorded token counts. So a cost column mixing them is not approximate
-across rows, it is off by about a factor of two on some of them -- and
-`--max-cost-per-run` and `board.best_under` pick winners on it.
+It matters because the two are different KINDS of number, and only one of
+them has been checked.
+
+An SDK-priced row is what the provider says it billed: a measurement. A
+table-priced row is this project's rates applied to the adapter's reported
+token counts: a model. Ranking them against each other on dollars compares
+a measurement with a model.
+
+And the model cannot currently be validated, which is the part that makes
+this a warning rather than a footnote. The only target with both numbers is
+`claude`, and its adapter surfaces ONE `LLMCall` event per run while the
+SDK bills the whole multi-turn conversation -- so a table estimate built
+from its token counts comes in at roughly half the SDK's figure, and the
+gap measures the missing turns rather than anything about the rates
+(experiment 015). Every other target is table-priced with no ground truth
+to compare against at all.
+
+`--max-cost-per-run` and `board.best_under` pick winners on this column, so
+the honest instruction is to split the ledger by target before reading any
+dollar figure from it.
 """
 
 

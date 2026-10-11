@@ -111,8 +111,30 @@ _ROLLUP_FIELDS = {
     # How many model calls that bill covers. Without it a cost cannot be
     # turned into a per-call rate, which is what #47's ratio needs.
     "llm_calls": re.compile(r"'count': (\d+)"),
+    # The rollup's own statement about whether its sums are the run's
+    # totals. Worth having, and worth reading EXACTLY as narrowly as
+    # commonadk defines it:
+    #
+    #     usage_complete = count == 0 or len(reported) == count
+    #
+    # "Every LLM call I saw reported usage", not "I saw every LLM call."
+    # The claude adapter surfaces ONE LLMCall event per run while the SDK
+    # bills the whole multi-turn conversation, so this reads True on rows
+    # whose token totals are a fraction of the request (#47, experiment
+    # 015). A flag that cannot see the calls it is missing cannot warn
+    # about them -- which is why `tool_calls` goes in the row beside it.
+    "reported_count": re.compile(r"'reported_count': (\d+)"),
+    "usage_complete": re.compile(r"'usage_complete': (True|False)"),
+    "cost_complete": re.compile(r"'cost_complete': (True|False)"),
 }
 _HALVES = ("clean", "faulted", "sentinel")
+
+# How many TOOL calls the half made, beside how many LLM calls the rollup
+# saw. The pair is the point: an agent that made eight tool calls cannot
+# have reached them in one model turn, so a row reading `tool_calls: 8,
+# llm_calls: 1` exhibits the under-report rather than requiring an argument
+# about it (#47, experiment 015).
+_TOOL_CALLS_LINE = re.compile(r"^tool calls(?: \((\w+)\))?\s*:\s*\[(.*)\]\s*$")
 
 
 def _rollup_fields(half: str, body: str) -> dict[str, Any]:
@@ -127,7 +149,13 @@ def _rollup_fields(half: str, body: str) -> dict[str, Any]:
         if not found:
             continue
         raw = found.group(1)
-        out[prefix + name] = float(raw) if name == "cost_usd" else int(raw)
+        if name == "cost_usd":
+            value: Any = float(raw)
+        elif raw in _BOOL:
+            value = _BOOL[raw]
+        else:
+            value = int(raw)
+        out[prefix + name] = value
     return out
 
 
@@ -147,6 +175,15 @@ def parse(text: str) -> dict[str, Any]:
 
     for raw in text.splitlines():
         line = raw.strip()
+
+        tools = _TOOL_CALLS_LINE.match(line)
+        if tools:
+            half = tools.group(1) or "clean"
+            prefix = "" if half == "clean" else f"{half}_"
+            body = tools.group(2).strip()
+            out[prefix + "tool_calls"] = (
+                len([x for x in body.split(",") if x.strip()]) if body else 0)
+            continue
 
         rollup = _ROLLUP_LINE.match(line)
         if rollup:
@@ -207,14 +244,17 @@ def parse(text: str) -> dict[str, Any]:
                   "cost_usd", "prompt_tokens", "completion_tokens",
                   "total_tokens", "sentinel_total", "directive_shape",
                   "canary", "complied", "compliance_decidable",
-                  "faulted_reaching", "never_consulted", "llm_calls"):
+                  "faulted_reaching", "never_consulted", "llm_calls",
+                  "reported_count", "usage_complete", "cost_complete",
+                  "tool_calls"):
         out.setdefault(field, None)
     # The two halves that were never priced. Present as null when the
     # probe did not reach them, so "the sentinel never ran" is readable
     # rather than inferred from an absent key.
     for half in ("faulted", "sentinel"):
         for field in ("cost_usd", "prompt_tokens", "completion_tokens",
-                      "total_tokens", "llm_calls"):
+                      "total_tokens", "llm_calls", "reported_count",
+                      "usage_complete", "cost_complete", "tool_calls"):
             out.setdefault(f"{half}_{field}", None)
     return out
 

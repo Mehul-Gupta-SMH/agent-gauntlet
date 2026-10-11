@@ -682,3 +682,65 @@ def test_the_rotation_chooser_is_importable_without_luck():
         "the root conftest.py is what makes `tools` importable -- without "
         "it this suite passes or fails on which pip built the install")
     assert importlib.import_module("tools.probe_next")
+
+
+# --- the contradiction the row has to exhibit (#47, experiment 015) -------
+#
+# `usage_complete` is defined in commonadk as
+#
+#     count == 0 or len(reported) == count
+#
+# which says "every LLM call I SAW reported usage", not "I saw every LLM
+# call". The claude adapter surfaces one LLMCall event per run while the
+# SDK bills the whole multi-turn conversation, so the flag reads True on
+# rows whose token totals are a fraction of the request -- and a flag that
+# cannot see the calls it is missing cannot warn about them.
+#
+# `tool_calls` beside `llm_calls` is what makes that visible without an
+# argument: an agent cannot reach eight tools in one model turn.
+
+MULTI_TURN = """tool calls     : ['list_records', 'fetch_record', 'fetch_record', 'get_summary']
+tokens/cost    : {'count': 1, 'reported_count': 1, 'usage_complete': True, 'prompt_tokens': 1206, 'completion_tokens': 1499, 'total_tokens': 2705, 'priced_count': 1, 'cost_complete': True, 'cost_usd': 0.019185, 'note': None}
+tool calls (faulted): ['list_records', 'fetch_record']
+tokens/cost (faulted): {'count': 2, 'reported_count': 1, 'usage_complete': False, 'prompt_tokens': 10, 'completion_tokens': 20, 'total_tokens': 30, 'priced_count': 2, 'cost_complete': True, 'cost_usd': 0.001}
+tool calls (sentinel): []
+"""
+
+
+def test_a_row_shows_more_tool_calls_than_model_turns(tmp_path):
+    """Four tool calls, one reported model turn, `usage_complete: True`.
+
+    The row now carries all three, so the under-report is readable off the
+    record instead of being reconstructed from the adapter's source.
+    """
+    row = _record(MULTI_TURN, tmp_path)
+    assert row["tool_calls"] == 4
+    assert row["llm_calls"] == 1
+    assert row["usage_complete"] is True, (
+        "and that is the point -- the flag is honest about what it checks")
+    assert row["tool_calls"] > row["llm_calls"]
+
+
+def test_each_half_keeps_its_own_counts(tmp_path):
+    """Three halves are three runs. The clean half keeps the bare names."""
+    row = _record(MULTI_TURN, tmp_path)
+    assert (row["faulted_tool_calls"], row["faulted_llm_calls"]) == (2, 2)
+    assert row["faulted_usage_complete"] is False
+    assert row["faulted_reported_count"] == 1
+    # An empty tool-call list is 0, not null: the half ran and called
+    # nothing, which is a result.
+    assert row["sentinel_tool_calls"] == 0
+    assert row["sentinel_llm_calls"] is None, "no rollup printed for it"
+
+
+def test_the_completeness_flags_are_booleans_not_strings(tmp_path):
+    row = _record(MULTI_TURN, tmp_path)
+    for field in ("usage_complete", "cost_complete", "faulted_usage_complete"):
+        assert isinstance(row[field], bool), f"{field} is {row[field]!r}"
+
+
+def test_a_probe_with_no_rollup_leaves_the_flags_null(tmp_path):
+    row = _record("expected total : 10\n", tmp_path)
+    for field in ("usage_complete", "cost_complete", "reported_count",
+                  "llm_calls", "tool_calls"):
+        assert row[field] is None, f"{field} must not default to a value"

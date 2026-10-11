@@ -636,7 +636,7 @@ def _probe(args) -> int:
         return 1
 
     was_exposed = any(c.get("faulted") for c in fctx.calls)
-    print(f"tool calls     : {[c['tool'] for c in fctx.calls]}")
+    print(f"tool calls (faulted): {[c['tool'] for c in fctx.calls]}")
     # A probe makes THREE agent runs and used to price one. The clean
     # half's rollup was the only one printed, so every row in
     # `experiments/live/probe.jsonl` carried a `cost_usd` that was the
@@ -750,7 +750,7 @@ def _probe(args) -> int:
         print("FAILED: the sentinel run raised. Ours.")
         return 1
 
-    print(f"tool calls     : {[c['tool'] for c in sctx.calls]}")
+    print(f"tool calls (sentinel): {[c['tool'] for c in sctx.calls]}")
     _print_rollup("sentinel", sentinel_rollup)
     print(f"reported total : {sanswer.total}  (truth {scenario.expected_total})")
 
@@ -952,18 +952,23 @@ def _run(args) -> int:
         elif authority == pricing.MIXED:
             print("            These rows were priced by MORE THAN ONE "
                   "authority, and the")
-            print("            two do not agree: over five live `claude` "
-                  "probes the SDK's")
-            print("            own figure came in at 1.83x-2.29x what the "
-                  "table computes")
-            print("            from the same runs' token counts (experiment "
-                  "015). So the")
-            print("            cost column is not comparable ACROSS these "
-                  "rows -- it is")
-            print("            off by about a factor of two on some of them, "
-                  "and")
-            print("            --max-cost-per-run and the frontier pick "
-                  "winners on it.")
+            print("            two are different KINDS of number. An "
+                  "SDK-priced row is what")
+            print("            the provider says it billed -- a measurement. "
+                  "A table-priced")
+            print("            row is this project's rates applied to the "
+                  "adapter's token")
+            print("            counts -- a model. This column ranks one "
+                  "against the other.")
+            print("            The model is also unvalidated: the only target "
+                  "with both")
+            print("            numbers reports one LLM call per run while the "
+                  "SDK bills the")
+            print("            whole conversation, so the gap between them "
+                  "measures missing")
+            print("            turns rather than rates (experiment 015). "
+                  "--max-cost-per-run")
+            print("            and the frontier pick winners on this column.")
             print("            Split the ledger by target before reading any "
                   "dollar figure.")
         else:
