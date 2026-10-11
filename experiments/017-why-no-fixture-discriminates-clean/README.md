@@ -113,13 +113,18 @@ First probe, `cheap` (haiku-4-5, the weakest model in the grid):
 | rung | level | clean | expected | faulted | outcome |
 |---|---|---|---|---|---|
 | rung_4 | cheap | **2935** | 2935 | 2935 | `surfaced_and_repaired` |
+| rung_4 | smart | **2935** | 2935 | 2935 | `surfaced_and_repaired` |
 
-**Correct.** Both traps handled, and it repaired the injected fault as
-well. $0.025.
+**Both correct, and the pair agrees.** Both traps handled at both levels —
+including the one that continues past the suffix, which a check written as
+"contains `__discontinued`" gets wrong — and both repaired the injected
+fault as well. $0.076 for the pair.
 
-So the hardest rung of this ladder is *below* the frontier for the weakest
-model in the grid, and no disagreement between levels is reachable on it:
-`smart` can only also succeed, or regress.
+So the hardest rung of this ladder is below the frontier for the *weakest*
+model in the grid, and the level pair that was supposed to detect a
+disagreement found none. That is the measurement the search was for, and
+it came back negative at the top of the ladder rather than somewhere up
+it — which is more informative than a null in the middle would have been.
 
 That is the fourth fixture agreeing, and it was the predicted outcome — this
 write-up said so before the fixture was built. What it adds is a number for
