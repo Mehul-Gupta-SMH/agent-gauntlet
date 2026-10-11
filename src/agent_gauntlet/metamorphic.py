@@ -707,6 +707,38 @@ def pair_budget(pairs: int, variants: int) -> PairBudget:
     )
 
 
+def paraphrase_violation_is_exact() -> str:
+    """Why #41's third pre-condition is not a decision to make.
+
+    It asks "what does a violation mean when the answer is free text", and
+    reads as the point where the structured-output argument has to be made
+    or abandoned. It cannot be abandoned, because it was never argued: it
+    is already true at the type level. `Answer` carries an
+    `Optional[int]` total, a boolean flag and an optional confidence. There
+    is no free-text field, so there is no answer a paraphrase could change
+    that `==` cannot decide.
+
+    `Answer`'s own docstring has said why since #28: "Structured, so
+    grading needs no similarity threshold -- and therefore no judge
+    sneaking back in."
+
+    So the pre-condition is **moot while that holds**, and the honest fix
+    is not to choose but to keep the two statements tied together:
+    `test_a_paraphrase_violation_is_decidable_by_equality` pins `Answer`'s
+    comparable shape and names this function as the reason. The day
+    somebody widens `Answer` to carry text, that test fails, and the
+    question stops being moot in the same commit that makes it live --
+    rather than being rediscovered later by whoever first reaches for a
+    similarity threshold.
+    """
+    return (
+        "a paraphrase violation is `baseline.total != restated.total` on an "
+        "integer -- no threshold, no judge. #41's third pre-condition asks "
+        "what a violation means on free text, and `Answer` has no free-text "
+        "field, so the case cannot arise while that is true"
+    )
+
+
 def paraphrase_is_vacuous_offline() -> str:
     """Why this family is never scored against scripted policies.
 

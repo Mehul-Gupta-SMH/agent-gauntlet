@@ -1698,6 +1698,9 @@ def _print_paraphrases(task, variants, *, live: bool) -> None:
         shown = text.strip().splitlines()[0]
         print(f"    {i}. {shown[:66]}" + ("..." if len(shown) > 66 else ""))
 
+    print(f"\n  How a violation would be decided: "
+          f"{metamorphic.paraphrase_violation_is_exact()}.")
+
     if not live:
         # n/a, never ok. This is the obvious place the censoring rule would
         # be broken, and #41's own table predicts it.

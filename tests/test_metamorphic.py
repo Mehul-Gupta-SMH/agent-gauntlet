@@ -810,3 +810,49 @@ def test_the_budget_is_printed_before_anyone_writes_a_paraphrase():
     printer = source.split("def _print_pair_budget", 1)[1].split("\ndef ", 1)[0]
     assert "FALSIFICATION SEARCH" in printer
     assert "never" in printer and "it holds" in printer
+
+
+def test_a_paraphrase_violation_is_decidable_by_equality():
+    """#41's third pre-condition, and why it is not a decision.
+
+    It asks what a violation means when the answer is free text, and reads
+    as the point where the structured-output argument has to be made or
+    abandoned. It cannot be abandoned, because it was never argued: it is
+    already true at the type level. `Answer` carries an integer total, a
+    boolean and an optional confidence, and nothing a similarity threshold
+    could be reached for.
+
+    **This test is the tie between the two statements.** The day somebody
+    widens `Answer` to carry text, it fails -- and #41's third
+    pre-condition becomes live in the same commit that makes it live,
+    rather than being rediscovered by whoever first reaches for a
+    threshold.
+
+    If you are here because this test failed: the question is now real.
+    Either keep answers comparable, or decide what a paraphrase violation
+    means on text and write that decision down before changing this.
+    """
+    from agent_gauntlet.metamorphic import paraphrase_violation_is_exact
+    from agent_gauntlet.score import Answer
+
+    comparable = {
+        "total": (int, type(None)),
+        "flagged_anomaly": (bool,),
+        "confidence": (float, type(None)),
+    }
+    assert set(Answer.model_fields) == set(comparable), (
+        "Answer's shape changed. Every field has to be exactly comparable "
+        "or #41's third pre-condition stops being moot -- see "
+        "paraphrase_violation_is_exact()"
+    )
+
+    # And the values really are decided by `==`, not by proximity.
+    a = Answer(total=668, flagged_anomaly=False)
+    b = Answer(total=668, flagged_anomaly=False)
+    c = Answer(total=669, flagged_anomaly=False)
+    assert a == b
+    assert a != c, "one off is a violation, not a near-match"
+
+    why = paraphrase_violation_is_exact()
+    assert "no threshold, no judge" in why
+    assert "free-text" in why
