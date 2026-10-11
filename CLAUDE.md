@@ -88,6 +88,16 @@ does not use it and detaches historical run records. These must not change:
 | `fixtures/poisoning/memory.yaml` | `8f7d94a1568e6696` |
 | `fixtures/inventory/rephrased.yaml` | `d8172b917498efeb` |
 
+**The oracle names its own authority, and it is a log, not a gate (#48).**
+`RunRecord.oracle_source` says whether a run was graded against the task
+spec -- versioned, readable, fingerprinted -- or against a table calibrated
+from the operator's own tool, which that tool controls and nothing
+cross-checks. The board prints it. Decided 2026-10-11: no approval gate, the
+disclosure is the documentation. A tool that lies *consistently* passes
+calibration's double-call check, there is no second source to catch it by
+design, and that is revisited only if this is ever hosted for other people
+(#12). `UNRECORDED` is never read as "the spec".
+
 A failing gate is a **finding**. Record it; do not tune the threshold.
 
 A task that writes its own answer into its statement is refused at

@@ -147,10 +147,22 @@ class RunRecord(BaseModel):
     published or a certificate issued from a project whose tools somebody
     else supplied, and until this field existed **the two were
     indistinguishable on the board**. Naming the authority is the same move
-    `prices` makes for the cost column: it does not decide whether the
-    operator must approve the table before it judges anyone (#48 point 1,
-    still open, and #12's hosting threshold), it removes the case where a
-    reader cannot tell which kind of board they are holding.
+    `prices` makes for the cost column: it removes the case where a reader
+    cannot tell which kind of board they are holding.
+
+    **Whether the operator must APPROVE the table before it judges anyone
+    was decided on 2026-10-11: no.** It stays a log, and this field plus
+    the board's own line is the documentation -- #48 point 4's "document it
+    and stop", chosen deliberately rather than arrived at by default, and
+    recorded here because the next person reading this will otherwise
+    wonder whether a gate was simply never built.
+
+    The limit that came with that choice is real and was accepted with it:
+    calibration calls each input twice and refuses a tool that disagrees
+    with itself, so a tool that lies *consistently* passes. There is no
+    second source to catch it, by design, because the tool is the source.
+    If this is ever hosted for other people, that is when the decision gets
+    revisited (#12's blast-radius threshold), and not before.
 
     None on every record written before this field existed.
     """
