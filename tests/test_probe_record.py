@@ -957,3 +957,49 @@ def test_a_row_says_which_cell_it_was_even_when_the_probe_printed_nothing(tmp_pa
     # would read as "a selector that matched everything".
     plain = _record("expected total : 10\n", tmp_path, VARIANT="")
     assert plain["variant_selector"] is None
+
+
+def test_the_cache_columns_round_trip_the_REAL_rollup(tmp_path):
+    """Against commonadk's own `Trace.rollup()`, not a string I wrote.
+
+    The cache patterns were added before the upstream fix shipped and
+    tested against synthetic console text -- which is how the `--variant`
+    defect got through a test written to prevent it: a test that models a
+    different code path than the code reports a property of the test as a
+    property of the program.
+
+    So this builds a real `LLMCall`, calls the real rollup, formats it
+    exactly as `cli.py` does, and parses that. Skipped against a commonadk
+    without the fields, which is the honest state until the release.
+    """
+    pytest.importorskip("commonadk")
+    from commonadk.runners.events import LLMCall
+
+    if "cache_read_tokens" not in LLMCall.__dataclass_fields__:
+        pytest.skip("commonadk predates the cache-token fix")
+
+    from commonadk.runners.trace import Trace
+
+    trace = Trace()
+    trace.append(LLMCall(
+        run_id="r", agent_name="a", model="claude-haiku-4-5",
+        prompt_tokens=1206, completion_tokens=1499, total_tokens=2705,
+        cost_usd=0.019185, cache_read_tokens=18400, cache_write_tokens=2210,
+    ))
+    rollup = trace.rollup()["llm_calls"]
+
+    # Byte for byte how the probe prints it.
+    row = _record(f"tokens/cost    : {rollup}\n", tmp_path)
+
+    assert row["cache_read_tokens"] == 18400
+    assert row["cache_write_tokens"] == 2210
+    assert row["prompt_tokens"] == 1206
+    assert row["cost_usd"] == 0.019185
+    assert row["llm_calls"] == 1
+    assert row["usage_complete"] is True, (
+        "and that is the trap: every call reported usage, so this reads "
+        "True while prompt_tokens is a fraction of the billed input")
+
+    # The rollup must also SAY it, since no flag can catch it.
+    assert "UNCACHED input only" in (rollup["note"] or "")
+    assert "20610" in rollup["note"], "the note names the missing volume"
