@@ -42,6 +42,39 @@ The corruption clears the separability threshold comfortably — 92000
 against a 2×26770 band — so the propagation verdict is decidable rather
 than withheld, unlike the `discontinued.yaml` rows in experiment 014.
 
+## The third cell: a config that cannot play
+
+`prompt-bureau_repull` came back with **no answer at all**, and the row says
+so without anybody opening a log:
+
+```
+probe_exit         1
+tool_calls         0
+completion_tokens  1496
+clean_total        (absent -- no `parsed total` line)
+cost_usd           0.016388
+```
+
+Zero tool calls and 1496 completion tokens: the model ran, produced prose,
+and called nothing. So the clean half had no parseable total and the faulted
+half had nothing to inject into.
+
+**That is a censored row, not a third score.** A config that cannot play the
+task on this model is the `records-partial` sentinel shape, and #45 rules it
+out as evidence by name:
+
+> And it must not collapse the other way: a clean task so hard that
+> *nothing* gets it right is a ceiling at zero, which is just as tie-shaped.
+
+It is worth knowing about this config at `cheap` — and it is not a break in
+the clean tie. Two configs answering 267700 and one answering nothing is
+still one distinct *answer*.
+
+Every field in that diagnosis — `probe_exit`, `tool_calls`, the per-half
+counts — was added in the two days before this run, each time because a
+blank row had cost an hour of API crawling to explain. This one explained
+itself.
+
 ## Why this is the shape #4 predicted
 
 > If robustness and quality correlate near-perfectly — if the best agent on
@@ -62,8 +95,9 @@ in the sharpest form it could take:
   project's own rule says so in `MIN_RUNS_TO_GATE`, in `champion`, and in
   experiment 013, where the same cell both propagated and repaired across
   repeats of one configuration.
-- **Two configs of four.** `bureau_repull` and `bureau_deliberate` are
-  still to come, and either could land anywhere.
+- **Two scoring configs of four.** `bureau_repull` produced no answer at
+  all (above), so it is censored rather than ranked; `bureau_deliberate` is
+  still to come and could land anywhere.
 - **Still not #4's statistic.** A rank correlation needs a clean ranking
   with more than one distinct value. Two configs agreeing at 267700 is a
   *tie of two*, which is the tie again, not a break in it. If all four
