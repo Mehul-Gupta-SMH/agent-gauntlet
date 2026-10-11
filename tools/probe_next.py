@@ -39,6 +39,19 @@ class Cell(NamedTuple):
     fixture: str
     target: str
     model: str
+    variant: Optional[str] = None
+    """Substring selecting WHICH config, or None for the first eligible.
+
+    Added because every cell above it was answering "does this fixture /
+    target / model behave" and #45 asks a different question: do DIFFERENT
+    CONFIGS answer the clean run differently? The probe took the first
+    eligible variant, so a fixture probed a hundred times measured one
+    config a hundred times and could not speak to that.
+
+    A `None` selector and an explicit one must not share a
+    fixture/target/model, or a row would count toward both cells and the
+    coverage would double-count itself. Enforced by a test.
+    """
 
 
 # Each entry earns its place by being blocked on live evidence, and the
@@ -63,7 +76,57 @@ WANTED: tuple[Cell, ...] = (
     # fixtures probed so far.
     Cell("fixtures/poisoning/instruction.yaml", "claude", "cheap"),
     Cell("fixtures/poisoning/memory.yaml", "claude", "cheap"),
+    # #45 / #4, the question the other cells cannot reach. Both live
+    # matrices found the CLEAN leaderboard an eight-way tie, so the
+    # statistic #4 asks for has only one ranking to correlate. #45 names
+    # `lending/applicant.yaml` as the likeliest fixture to break the tie
+    # and says outright that nobody has run it live, so it is a guess.
+    #
+    # It still is -- but a $5 matrix is not the only way to narrow it. Four
+    # prompt levels at one model level, one clean answer each, accumulating
+    # one per push at the budget the probe already spends. If they differ,
+    # the clean side can discriminate and #4 becomes measurable. If they
+    # agree, that is a third fixture confirming the tie, which is also what
+    # #45 wants to know.
+    #
+    # The toolset is PINNED to records+bureau across all four so the only
+    # thing varying is the prompt. Varying both would produce a spread
+    # nobody could attribute -- which is the mistake I made reading the
+    # offline clean spread, where the "discrimination" turned out to be one
+    # shared slip rate (experiment 015).
+    #
+    # n=1 per cell after one pass, which decides nothing on its own: this
+    # project's own rule is that one measurement is not a property (#37).
+    # Two passes is ~$0.40 of a budget already committed.
+    Cell("fixtures/lending/applicant.yaml", "claude", "cheap",
+         "prompt-naive__toolset-records+bureau"),
+    Cell("fixtures/lending/applicant.yaml", "claude", "cheap",
+         "prompt-verifying__toolset-records+bureau"),
+    Cell("fixtures/lending/applicant.yaml", "claude", "cheap",
+         "prompt-bureau_repull__toolset-records+bureau"),
+    Cell("fixtures/lending/applicant.yaml", "claude", "cheap",
+         "prompt-bureau_deliberate__toolset-records+bureau"),
 )
+
+
+def _cell_for(row: dict) -> Optional[Cell]:
+    """Which wanted cell this recorded row is evidence for, if any.
+
+    A cell with a variant selector claims only the rows whose variant id
+    contains it. A cell without one claims any row on its
+    fixture/target/model -- which is why the two kinds must not share a
+    fixture/target/model, or a row would be counted twice.
+    """
+    fixture = row.get("fixture") or ""
+    target = row.get("target") or ""
+    model = row.get("model_level") or ""
+    variant = row.get("variant") or ""
+    for cell in WANTED:
+        if (cell.fixture, cell.target, cell.model) != (fixture, target, model):
+            continue
+        if cell.variant is None or cell.variant in variant:
+            return cell
+    return None
 
 
 def _rows(path: Path) -> Iterator[dict]:
@@ -115,9 +178,8 @@ def coverage(path: Path) -> dict[Cell, Count]:
     evidence = {cell: 0 for cell in WANTED}
     empty = {cell: 0 for cell in WANTED}
     for row in _rows(path):
-        cell = Cell(row.get("fixture") or "", row.get("target") or "",
-                    row.get("model_level") or "")
-        if cell not in evidence:
+        cell = _cell_for(row)
+        if cell is None:
             continue
         if row.get("outcome"):
             evidence[cell] += 1
@@ -180,6 +242,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"fixture={cell.fixture}")
     print(f"target={cell.target}")
     print(f"model={cell.model}")
+    # Empty when the cell names no variant, which the workflow turns into
+    # no `--variant` flag at all. An empty string must not become
+    # `--variant ''`: that matches every variant and would probe the first
+    # one while the row claimed a selector.
+    print(f"variant={cell.variant or ''}")
     return 0
 
 

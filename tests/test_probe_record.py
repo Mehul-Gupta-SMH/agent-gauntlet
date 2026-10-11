@@ -408,7 +408,12 @@ def test_parking_every_cell_still_returns_one(tmp_path):
     from tools import probe_next
 
     record = tmp_path / "probe.jsonl"
+    # `variant` included because a cell carrying a selector only claims
+    # rows whose variant id contains it -- a row without one is evidence
+    # for no selector-bearing cell, which is correct and would quietly
+    # leave those cells un-parked here.
     rows = [{"fixture": c.fixture, "target": c.target, "model_level": c.model,
+             "variant": c.variant or "model-cheap__prompt-naive__toolset-records",
              "outcome": None}
             for c in probe_next.WANTED for _ in range(probe_next.MAX_EMPTY)]
     record.write_text("\n".join(json.dumps(r) for r in rows) + "\n",
@@ -780,3 +785,108 @@ def test_the_cache_counts_are_captured_the_day_they_appear(tmp_path):
     )
     assert old["cache_read_tokens"] is None
     assert old["cache_write_tokens"] is None
+
+
+# --- varying the config, not just the fixture (#45) -----------------------
+
+
+def test_a_selector_cell_claims_only_its_own_variant():
+    """The matcher that makes per-config coverage countable.
+
+    Every cell before these answered "does this fixture/target/model
+    behave". #45 asks whether DIFFERENT CONFIGS answer the clean run
+    differently, and the probe took the first eligible variant -- so a
+    fixture probed a hundred times measured one config a hundred times.
+    """
+    from tools.probe_next import _cell_for
+
+    row = {
+        "fixture": "fixtures/lending/applicant.yaml",
+        "target": "claude",
+        "model_level": "cheap",
+        "variant": "model-cheap__prompt-verifying__toolset-records+bureau",
+    }
+    cell = _cell_for(row)
+    assert cell is not None
+    assert cell.variant == "prompt-verifying__toolset-records+bureau"
+
+    # A sibling config on the same fixture is a DIFFERENT cell, which is
+    # the whole point: otherwise four prompt levels would pile into one
+    # count and the comparison would never happen.
+    sibling = dict(row, variant="model-cheap__prompt-naive__toolset-records+bureau")
+    other = _cell_for(sibling)
+    assert other is not None and other != cell
+
+    # And a config nobody asked for is evidence for nothing, rather than
+    # being filed under whichever cell happens to match on fixture.
+    unasked = dict(row, variant="model-cheap__prompt-naive__toolset-records+summary")
+    assert _cell_for(unasked) is None
+
+
+def test_no_two_cells_can_claim_the_same_row():
+    """A `None` selector claims every row on its fixture/target/model, so
+    it must not share one with a selector-bearing cell -- a row counted
+    twice makes the coverage double-count itself and the rotation stall on
+    a cell that looks covered."""
+    from collections import defaultdict
+
+    from tools.probe_next import WANTED
+
+    by_slot = defaultdict(list)
+    for cell in WANTED:
+        by_slot[(cell.fixture, cell.target, cell.model)].append(cell.variant)
+
+    for slot, selectors in by_slot.items():
+        if len(selectors) == 1:
+            continue
+        assert None not in selectors, (
+            f"{slot} mixes a catch-all cell with selector-bearing ones")
+        for a in selectors:
+            for b in selectors:
+                if a is not b:
+                    assert a not in b, (
+                        f"{a!r} is a substring of {b!r}, so a row matching "
+                        f"the second also matches the first")
+
+
+def test_every_selector_names_a_real_variant_of_its_fixture():
+    """A selector that matches nothing would park its cell after two empty
+    rows and quietly leave the question unasked."""
+    import tempfile
+    from pathlib import Path as _Path
+
+    from agent_gauntlet import TaskSpec, architect
+    from tools.probe_next import WANTED
+
+    wanted = [c for c in WANTED if c.variant]
+    assert wanted, "nothing to check"
+    for cell in wanted:
+        task = TaskSpec.from_yaml(ROOT / cell.fixture)
+        with tempfile.TemporaryDirectory() as d:
+            variants = architect.generate(
+                out_dir=_Path(d) / "v", task=task,
+                models={cell.model: "anthropic/claude-haiku-4-5"})
+        matches = [v for v in variants
+                   if not v.is_sentinel and cell.variant in v.id]
+        assert len(matches) == 1, (
+            f"{cell.variant!r} matches {len(matches)} non-sentinel variants "
+            f"of {cell.fixture}")
+
+
+def test_an_empty_selector_becomes_no_flag_at_all():
+    """`--variant ''` matches every variant, so it would probe the first
+    one while the row claimed a selector. The workflow must test for
+    emptiness rather than interpolate."""
+    text = (ROOT / ".github" / "workflows" / "live-probe.yml").read_text(
+        encoding="utf-8")
+    body = text.split("Probe the live path", 1)[1]
+    assert 'if [ -n "${VARIANT:-}" ]' in body
+    assert "--variant $VARIANT" in body
+    # Comments stripped: the comment above the guard quotes the very form
+    # it warns against, and the first version of this test matched its own
+    # explanation.
+    code = "\n".join(
+        line for line in body.splitlines()
+        if not line.strip().startswith("#")
+    )
+    assert "--variant ''" not in code

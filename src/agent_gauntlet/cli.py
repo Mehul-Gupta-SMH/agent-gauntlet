@@ -246,6 +246,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--scenario", default=None,
         help="which scenario to probe (default: the first)",
     )
+    probe.add_argument(
+        "--variant", default=None, metavar="SUBSTR",
+        help="probe the variant whose id contains SUBSTR, instead of the "
+             "first eligible one. Without it every probe of a given "
+             "fixture and level measures the SAME config, which cannot "
+             "answer whether different configs differ (#45)",
+    )
     certify = sub.add_parser(
         "certify",
         help="record what a run scored, as the baseline a later run is "
@@ -471,10 +478,34 @@ def _probe(args) -> int:
     # `not v.is_sentinel` matters: the sentinel also sits on the cheap level,
     # and probing it by accident would test the instrument and call it the
     # path.
-    variant = next(
+    eligible = [
         v for v in variants
         if not v.is_sentinel and v.factors.get("model") == level
-    )
+    ]
+    # Which config, not just which fixture. Without this the probe always
+    # takes the FIRST eligible variant, so every probe of a given
+    # fixture/level measures the same one -- and #45's question is whether
+    # DIFFERENT configs answer the clean run differently. One variant
+    # probed a hundred times cannot answer that.
+    wanted = getattr(args, "variant", None)
+    if wanted:
+        matches = [v for v in eligible if wanted in v.id]
+        if not matches:
+            print(f"\nNO SUCH VARIANT: nothing at model={level} matches "
+                  f"{wanted!r}.")
+            print("Eligible:")
+            for v in eligible:
+                print(f"  {v.id}")
+            # A selector that matches nothing must not silently fall back to
+            # the default: the row would be filed under the cell that was
+            # asked for while measuring a different config.
+            return 2
+        variant = matches[0]
+        if len(matches) > 1:
+            print(f"note: {wanted!r} matches {len(matches)} variants; "
+                  f"probing the first")
+    else:
+        variant = eligible[0]
     print(f"probing {variant.id} on target={args.target} "
           f"({level}={DEFAULT_MODELS[level]})")
 

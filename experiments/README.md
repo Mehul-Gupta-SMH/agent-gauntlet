@@ -234,6 +234,16 @@ session cannot fetch them — `gh` refuses Actions artifact downloads by design,
 not for want of a flag. `tools/rescue_ledger.sh` makes it one command to run
 locally. **The artifacts expire around mid-December 2026.**
 
+**The rescue is blocked by egress policy, confirmed three ways.** The
+artifacts are alive — 18.6 KB and 26.0 KB, `expired: false` — and their
+metadata reads fine from the API. The download does not: the built-in `gh`
+refuses to follow the redirect off `api.github.com`, and fetching the signed
+URL directly (it needs no auth; the error message carries the whole thing)
+is refused at the TCP layer with `connect_rejected (organization policy)`.
+Note the host **varies per artifact** — `productionresultssa10`, `sa11` and
+`sa17` have all appeared — so an allowlist entry has to cover
+`*.blob.core.windows.net`, not one name.
+
 **One thing here *is* reachable, and it took two blank rows to notice.** A
 workflow's own `::warning::` and `::error::` lines become **check-run
 annotations**, and those are served by `api.github.com` — no artifact host, no

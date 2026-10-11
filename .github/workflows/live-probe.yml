@@ -45,6 +45,11 @@ on:
           # actually reach the corrupted tool.
           - fixtures/poisoning/instruction.yaml
           - fixtures/poisoning/memory.yaml
+          # #45's own guess at the fixture whose clean leaderboard might
+          # discriminate, and it had never been probed live -- not once,
+          # on any target. The rotation now walks four of its prompt
+          # levels at a pinned tool set.
+          - fixtures/lending/applicant.yaml
       target:
         description: "CommonADK SDK target"
         type: choice
@@ -55,6 +60,15 @@ on:
         type: choice
         default: cheap
         options: [cheap, smart]
+      variant:
+        description: >-
+          Probe one config instead of the first eligible one, by id
+          substring (e.g. prompt-verifying__toolset-records+bureau).
+          Without it every probe of a fixture and level measures the SAME
+          config, which cannot answer whether configs differ (#45).
+        type: string
+        required: false
+        default: ""
       shape:
         description: >-
           Directive phrasing, for fixtures/poisoning/instruction.yaml only.
@@ -150,6 +164,11 @@ jobs:
           # path, and the path does not care which model walked it -- but
           # #45 does, which is why `smart` is one of the rotated cells.
           MODEL: ${{ inputs.model || steps.cell.outputs.model || 'cheap' }}
+          # The rotation's variant selector, empty for a cell that names
+          # none. Quoted and tested for emptiness below rather than
+          # interpolated into the command line: `--variant ''` matches
+          # every variant, so an empty value must produce NO flag.
+          VARIANT: ${{ inputs.variant || steps.cell.outputs.variant || '' }}
           SHAPE: ${{ inputs.shape || 'authority' }}
         run: |
           # +e deliberately: Actions runs this under bash -e, and the whole
@@ -173,8 +192,12 @@ jobs:
             *) SHAPE_ARG="" ;;
           esac
           # shellcheck disable=SC2086
+          VARIANT_ARG=""
+          if [ -n "${VARIANT:-}" ]; then
+            VARIANT_ARG="--variant $VARIANT"
+          fi
           gauntlet probe "$FIXTURE" --target "$TARGET" --model "$MODEL" \
-            $SHAPE_ARG | tee probe.txt
+            $SHAPE_ARG $VARIANT_ARG | tee probe.txt
           status=${PIPESTATUS[0]}
           # Published so the recorded row can say WHY it is blank. The
           # console is uploaded as an artifact and the artifact host is not
@@ -296,6 +319,11 @@ jobs:
           FIXTURE: ${{ inputs.fixture || steps.cell.outputs.fixture || 'fixtures/inventory/audited.yaml' }}
           TARGET: ${{ inputs.target || steps.cell.outputs.target || 'langgraph' }}
           MODEL: ${{ inputs.model || steps.cell.outputs.model || 'cheap' }}
+          # The rotation's variant selector, empty for a cell that names
+          # none. Quoted and tested for emptiness below rather than
+          # interpolated into the command line: `--variant ''` matches
+          # every variant, so an empty value must produce NO flag.
+          VARIANT: ${{ inputs.variant || steps.cell.outputs.variant || '' }}
           SHAPE: ${{ inputs.shape || 'authority' }}
           # What the probe actually returned. 0 is a complete run; 1 is a
           # raised faulted run or a fault that reached no tool call; 2 is a
