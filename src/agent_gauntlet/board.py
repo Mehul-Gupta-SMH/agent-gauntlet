@@ -836,6 +836,91 @@ def best_under(
     )
 
 
+class ScenarioCost(BaseModel):
+    """One (variant, scenario) cell's spend.
+
+    The grain `summarize` does not have. It aggregates by variant alone, so
+    a variant's `$/run` is blended across every scenario it ran -- and a
+    task with one cheap scenario and one expensive one reports a number
+    that is true of neither, with nothing saying where the money went.
+
+    Which matters for the budget gate rather than for curiosity:
+    `--max-cost-per-run` and `best_under` pick on the blended figure, so a
+    config that is affordable on two scenarios and ruinous on a third
+    passes on its average.
+    """
+
+    variant_id: str
+    scenario_id: str
+    n_runs: int
+    cost_usd: float
+    cost_complete: bool
+    price_fingerprints: list[str] = Field(default_factory=list)
+
+    @property
+    def prices_mixed(self) -> bool:
+        return len(self.price_fingerprints) > 1
+
+    @property
+    def cost_per_run(self) -> Optional[float]:
+        """Censored on exactly the conditions `VariantResult.cost_per_run`
+        is censored on, and for the same reasons -- an unpriced run makes
+        the total a floor, and two rate tables make the mean a figure
+        computed from numbers that were never simultaneously true."""
+        if not self.cost_complete or not self.n_runs or self.prices_mixed:
+            return None
+        return self.cost_usd / self.n_runs
+
+
+def cost_by_scenario(
+    records: Iterable[RunRecord],
+) -> list[ScenarioCost]:
+    """Spend per (variant, scenario), which the board row cannot show.
+
+    A separate function rather than a column, because the board already
+    carries a lot and this is per-cell rather than per-row: a nine-variant
+    three-scenario grid is 27 numbers and belongs under the board, not in
+    it.
+
+    Same censoring as everywhere else: an unpriced run makes the total a
+    floor and `cost_per_run` reads `None`, never 0.
+    """
+    cells: dict[tuple[str, str], list[RunRecord]] = defaultdict(list)
+    for record in records:
+        cells[(record.variant_id, record.scenario_id)].append(record)
+
+    out: list[ScenarioCost] = []
+    for (variant_id, scenario_id), runs in cells.items():
+        out.append(ScenarioCost(
+            variant_id=variant_id,
+            scenario_id=scenario_id,
+            n_runs=len(runs),
+            cost_usd=sum(_llm(r).get("cost_usd", 0.0) or 0.0 for r in runs),
+            cost_complete=bool(runs) and all(
+                _llm(r).get("cost_complete") for r in runs
+            ),
+            price_fingerprints=sorted(
+                {f for f in (_pinned_price(r) for r in runs) if f}
+            ),
+        ))
+    return sorted(out, key=lambda c: (c.variant_id, c.scenario_id))
+
+
+def cost_spread(cells: Sequence[ScenarioCost]) -> Optional[float]:
+    """How much the most expensive scenario costs relative to the cheapest,
+    over the cells that can be compared.
+
+    The one number that says whether a blended `$/run` is hiding anything.
+    `None` when fewer than two cells are priced comparably -- not 1.0,
+    which would read as "the scenarios cost the same" off a board that
+    could not tell.
+    """
+    priced = [c.cost_per_run for c in cells if c.cost_per_run]
+    if len(priced) < 2:
+        return None
+    return max(priced) / min(priced)
+
+
 def search_cost(results: Sequence[VariantResult]) -> dict[str, object]:
     """What finding the winner cost, as opposed to what running it costs.
 

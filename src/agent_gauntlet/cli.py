@@ -1090,6 +1090,7 @@ def _run(args) -> int:
 
     _print_board(results, records)
     _print_search_cost(results, len(seeds), args)
+    _print_cost_by_scenario(records)
     if args.max_cost_per_run is not None:
         _print_under_budget(results, args.max_cost_per_run)
     mismatch = _coverage_audit(task, results, toolsets=grid_toolsets or None,
@@ -1484,6 +1485,50 @@ def _print_search_cost(results, seeds: int, args) -> None:
         print("  Offline is the first rung of the ladder: it exercises the")
         print("  whole pipeline and proves nothing about agents. `probe` is")
         print("  next (~$0.03), then a live matrix.")
+
+
+def _print_cost_by_scenario(records) -> None:
+    """Where the money went, which the board row cannot say.
+
+    `summarize` aggregates by variant, so a variant's `$/run` is blended
+    across every scenario it ran. A task with one cheap scenario and one
+    expensive one reports a figure true of neither -- and
+    `--max-cost-per-run` and `best_under` pick on that blend, so a config
+    that is affordable on two scenarios and ruinous on a third passes on
+    its average.
+
+    Printed only when the spread is worth a reader's attention. A table of
+    27 cells that all agree is noise, and the one number that decides
+    whether there is anything to look at is the spread itself.
+    """
+    cells = board.cost_by_scenario(records)
+    spread = board.cost_spread(cells)
+    if spread is None:
+        # Fewer than two comparably-priced cells. Not "the scenarios cost
+        # the same" -- there was nothing to compare.
+        return
+    print(f"\n  cost spread across scenarios: {spread:.1f}x "
+          f"(cheapest to dearest cell)")
+    if spread < 1.5:
+        print("  Close enough that the blended $/run on the board is not "
+              "hiding much.")
+        return
+    print("  The board's $/run is a BLEND over these, and the budget gate "
+          "picks on it:")
+    priced = [c for c in cells if c.cost_per_run is not None]
+    by_scenario: dict[str, list[float]] = {}
+    for cell in priced:
+        by_scenario.setdefault(cell.scenario_id, []).append(cell.cost_per_run)
+    for scenario_id in sorted(by_scenario, key=lambda k: -max(by_scenario[k])):
+        runs = by_scenario[scenario_id]
+        print(f"    {scenario_id:<16} ${min(runs):.4f} - ${max(runs):.4f} "
+              f"/run across {len(runs)} contender(s)")
+    censored = [c for c in cells if c.cost_per_run is None]
+    if censored:
+        # Named rather than dropped: a cell missing from a cost table reads
+        # as a cell that cost nothing.
+        print(f"    ({len(censored)} cell(s) n/a -- unpriced runs, or runs "
+              f"priced against two rate tables)")
 
 
 def _print_under_budget(results, ceiling: float) -> None:

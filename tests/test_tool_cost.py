@@ -267,3 +267,110 @@ def test_the_grid_must_be_able_to_call_the_faulted_tool(task, tmp_path):
     # And the fixture itself declares a grid that can.
     assert task.grid is not None
     assert any(task.fault_tool in architect.TOOLSETS[t] for t in task.grid.toolsets)
+
+
+# --- where the money went, per scenario -----------------------------------
+#
+# `summarize` aggregates by variant, so a variant's `$/run` is blended
+# across every scenario it ran. A task with one cheap scenario and one
+# expensive one reports a figure true of neither -- and `--max-cost-per-run`
+# and `best_under` pick on that blend, so a config affordable on two
+# scenarios and ruinous on a third passes on its average.
+
+
+def _priced(variant, scenario, cost, *, complete=True, fingerprint="aaaa"):
+    from agent_gauntlet.faults import FaultSchedule
+    from agent_gauntlet.ledger import RunRecord
+    from agent_gauntlet.score import Score
+
+    return RunRecord(
+        run_id=f"{variant}:{scenario}:{cost}",
+        task_id="t", task_fingerprint="f",
+        variant_id=variant, scenario_id=scenario,
+        repeat=0, seed="s", condition="faulted",
+        schedule=FaultSchedule.clean("s"),
+        score=Score(correct=True, outcome="clean", propagated=False,
+                    detected=False, surfaced=False, false_alarm=False, steps=1),
+        rollup={"llm_calls": {"cost_usd": cost, "cost_complete": complete}},
+        prices={"fingerprint": fingerprint},
+    )
+
+
+def test_cost_is_reported_per_scenario_not_only_per_variant():
+    from agent_gauntlet import board
+
+    records = [
+        _priced("v1", "cheap_one", 0.001),
+        _priced("v1", "dear_one", 0.100),
+    ]
+    cells = board.cost_by_scenario(records)
+    assert len(cells) == 2
+    by_id = {c.scenario_id: c for c in cells}
+    assert by_id["cheap_one"].cost_per_run == 0.001
+    assert by_id["dear_one"].cost_per_run == 0.100
+
+    # And the one number that says whether the blend hides anything.
+    assert board.cost_spread(cells) == 100.0
+
+    # The board row blends them, which is the whole point of having both.
+    row = next(r for r in board.summarize(records))
+    assert row.cost_per_run == pytest.approx(0.0505)
+
+
+def test_an_unpriced_cell_reads_n_a_and_never_zero():
+    """A cell missing from a cost table reads as a cell that cost nothing."""
+    from agent_gauntlet import board
+
+    cells = board.cost_by_scenario([
+        _priced("v1", "a", 0.01),
+        _priced("v1", "b", 0.0, complete=False),
+    ])
+    by_id = {c.scenario_id: c for c in cells}
+    assert by_id["a"].cost_per_run == 0.01
+    assert by_id["b"].cost_per_run is None, "a floor is not a cost"
+
+
+def test_two_rate_tables_censor_a_cell_as_they_censor_a_row():
+    """Averaging dollars across two rate tables produces a figure computed
+    from numbers that were never simultaneously true (#14)."""
+    from agent_gauntlet import board
+
+    cells = board.cost_by_scenario([
+        _priced("v1", "a", 0.01, fingerprint="aaaa"),
+        _priced("v1", "a", 0.02, fingerprint="bbbb"),
+    ])
+    assert len(cells) == 1
+    assert cells[0].prices_mixed
+    assert cells[0].cost_per_run is None
+
+
+def test_a_spread_needs_two_comparable_cells_and_is_not_one():
+    """`None`, not 1.0. One priced cell does not mean the scenarios cost
+    the same -- there was nothing to compare."""
+    from agent_gauntlet import board
+
+    assert board.cost_spread([]) is None
+    one = board.cost_by_scenario([_priced("v1", "a", 0.01)])
+    assert board.cost_spread(one) is None
+
+    unpriced = board.cost_by_scenario([
+        _priced("v1", "a", 0.0, complete=False),
+        _priced("v1", "b", 0.0, complete=False),
+    ])
+    assert board.cost_spread(unpriced) is None
+
+
+def test_the_breakdown_prints_only_when_the_spread_earns_it():
+    """A table of 27 cells that all agree is noise, and an offline run
+    prices nothing -- which must not print as 'the scenarios cost the
+    same'."""
+    from pathlib import Path as _Path
+
+    source = (_Path(__file__).resolve().parents[1] / "src" / "agent_gauntlet"
+              / "cli.py").read_text(encoding="utf-8")
+    printer = source.split("def _print_cost_by_scenario", 1)[1].split(
+        "\ndef ", 1)[0]
+    assert "if spread is None:" in printer
+    assert "return" in printer.split("if spread is None:", 1)[1][:200]
+    assert "spread < 1.5" in printer
+    assert "n/a" in printer, "censored cells must be named, not dropped"
