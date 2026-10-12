@@ -23,6 +23,17 @@ on:
     # Daily, to catch drift that no commit of ours causes: a model update, a
     # CommonADK release, an SDK changing where the final text lives. The two
     # defects experiment 002 found were both of that shape and both silent.
+    #
+    # IT DOES NOT FIRE AT 06:17. Measured over the last 15 scheduled runs,
+    # delivery lands between 11:39 and 14:35 UTC -- consistently 5 to 8
+    # hours late, which is GitHub's documented behaviour for scheduled
+    # workflows under load and not something a cron expression can fix.
+    #
+    # Recorded because the cadence is load-bearing now: the rotation
+    # advances one cell per code push plus one per scheduled run, so
+    # somebody waiting on a cell at 07:00 would reasonably conclude the
+    # schedule had broken. It had not. The daily guarantee holds; the hour
+    # does not.
     - cron: "17 6 * * *"
   workflow_dispatch:
     inputs:

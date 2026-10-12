@@ -334,6 +334,13 @@ one cell per day. So the record's cadence is "one per code push, plus one a
 day", not "one per commit", and a cell sitting at zero may simply be waiting
 for tomorrow rather than for a decision.
 
+**And it does not fire at 06:17.** Measured over 15 consecutive scheduled
+runs, delivery lands between **11:39 and 14:35 UTC** — 5 to 8 hours after
+the cron, consistently, which is GitHub's behaviour for scheduled workflows
+under load rather than anything a cron expression can correct. The daily
+guarantee holds; the hour does not. Worth knowing before reading a quiet
+morning as a broken schedule.
+
 I got this wrong once already: reported paraphrase 2 as "the cell the next
 push takes" immediately before two documentation-only pushes that took
 nothing.
