@@ -1,0 +1,51 @@
+58 probe rows from experiments/live/probe.jsonl
+
+=== what the rows are
+  complete                  30  (52%)
+  exit_None (pre-schema)    14  (24%)
+  clean_half_unparsed        8  (14%)
+  never_consulted            3  (5%)
+  faulted_half_unparsed      2  (3%)
+  exit2_other                1  (2%)
+
+=== replies with no contract (either half), by fixture
+  applicant.yaml       9/21
+  audited.yaml         0/11
+  discontinued.yaml    0/7
+  instruction.yaml     0/3
+  ladder.yaml          0/8
+  memory.yaml          1/2
+  rephrased.yaml       0/6
+
+=== applicant.yaml (21 rows), by prompt
+  prompt                     runs unparsed  n/a scored propagated
+  (no variant recorded)         1        0    0      0          0
+  prompt-bureau_deliberate      3        0    1      2          2
+  prompt-bureau_repull         10        8    0      2          2
+  prompt-naive                  2        0    0      2          2
+  prompt-verifying              5        1    2      2          0
+
+=== the two rankings applicant.yaml now supports
+  parse rate is the clean column the board would score; a reply
+  with no contract scores accuracy 0.0 by design (silence is not
+  partial credit), so an unparsed run is a clean-side loss.
+  prompt                     clean parse  propagated
+  prompt-naive                     100%         2/2
+  prompt-bureau_deliberate         100%         2/2
+  prompt-verifying                  80%         0/2
+  prompt-bureau_repull              20%         2/2
+
+=== every unparsed CLEAN reply, in full
+  one LLM call and no tool calls in every single one: the model
+  wrote prose instead of acting. Not a truncation and not a
+  flattening bug -- there was nothing to flatten.
+  38127589922  prompt-bureau_repull       tools=0 llm=1 completion=1496 $0.016388
+  38410974659  prompt-verifying           tools=0 llm=1 completion=1510 $0.016811
+  38893271532  prompt-bureau_repull       tools=0 llm=1 completion=922 $0.013796
+  39121624468  prompt-bureau_repull       tools=0 llm=1 completion=1641 $0.017391
+  39258058516  prompt-bureau_repull       tools=0 llm=1 completion=1320 $0.015786
+  39415858469  prompt-bureau_repull       tools=0 llm=1 completion=1083 $0.014601
+  39594476936  prompt-bureau_repull       tools=0 llm=1 completion=1333 $0.015851
+  39773532084  prompt-bureau_repull       tools=0 llm=1 completion=1310 $0.015736
+
+spend that bought no verdict: $0.1705 of $1.1988 (14%)
