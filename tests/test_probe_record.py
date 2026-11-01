@@ -235,14 +235,51 @@ def test_the_committed_record_parses_and_agrees_with_the_writeup():
     # ask. So this assertion failed again, for the same reason it failed
     # when targets started rotating: the key got finer, the invariant did
     # not change.
+    # Which is why the key is no longer written out here at all. This
+    # assertion has now broken three times -- when targets started
+    # rotating, when `--variant` landed, and again when `--scenario` did
+    # (`ladder.yaml` runs `rung_3` and `rung_4` on one fixture/target/
+    # model/variant, so a key without the scenario sees one cell holding
+    # two). Three times is a pattern, and the pattern is that the cell's
+    # identity lives in `probe_next.Cell` and this test kept a second,
+    # staler copy of it.
+    #
+    # So the key is DERIVED from `Cell`'s own fields, and the check below
+    # asserts that the derivation covers all of them. Add a field to `Cell`
+    # and this fails immediately with the field's name, instead of passing
+    # while silently comparing across it -- which is the dangerous
+    # direction: a key that is too coarse makes the invariant assert
+    # something weaker than it claims, and that reads as a pass.
+    from tools import probe_next
+
+    identity = probe_next.Cell._fields
+    assert set(identity) == {"fixture", "target", "model", "variant",
+                             "scenario", "paraphrase"}, (
+        f"probe_next.Cell grew or lost a field ({identity}). The row key "
+        f"below and the constancy check must both be re-read before this "
+        f"test is made to pass again: a field that identifies a cell must "
+        f"be IN the key, and one the harness holds constant must be in the "
+        f"loop under it."
+    )
+
+    # `Cell.model` is spelled `model_level` in a row; every other field
+    # shares its name. Stated as a mapping rather than a hand-written tuple
+    # so the two cannot disagree.
+    row_field = {name: "model_level" if name == "model" else name
+                 for name in identity}
+
     cells: dict[tuple, list[dict]] = {}
     for row in rows:
         cells.setdefault(
-            (row["fixture"], row["target"], row["model_level"],
-             row["variant"]), []).append(row)
+            tuple(row.get(row_field[name]) for name in identity), []
+        ).append(row)
 
+    # What is left: the fields the harness holds constant WITHIN a cell.
+    # `scenario` is no longer here because it is part of the identity now,
+    # and asserting constancy of a key component is a tautology dressed as
+    # a guard.
     for cell, group in cells.items():
-        for field in ("scenario", "fault_target", "corrupt_value"):
+        for field in ("fault_target", "corrupt_value"):
             assert len({r[field] for r in group}) == 1, (cell, field)
 
     # And the finding holds inside the cell the writeup is about, which is
@@ -1129,3 +1166,124 @@ def test_a_scenario_cell_claims_only_its_own_rung():
     # And the level is part of it: the whole question is cheap vs smart.
     smart = _cell_for(dict(base, model_level="smart", scenario="rung_4"))
     assert smart is not None and smart.model == "smart" and smart != four
+
+
+def test_a_cell_that_answers_too_rarely_is_parked(tmp_path):
+    """One success must not buy a cell immortality (#49).
+
+    The original rule was `counts[cell].evidence or counts[cell].empty <
+    MAX_EMPTY`: any evidence at all made a cell eligible forever. Paired
+    with `choose()` minimising on evidence, that is a feedback loop rather
+    than a rotation -- a low-yield cell accumulates evidence more slowly
+    than its peers BECAUSE it keeps failing, so it stays the least-covered
+    cell and keeps winning.
+
+    The live numbers, from experiment 018: `applicant.yaml` /
+    `bureau_repull` returned a verdict 2 times in 10, the rotation returned
+    to it seven times running, and six other fixtures sat at zero new rows
+    for three weeks. 14% of all probe spend bought no verdict.
+
+    This test is written against the real shape of that failure -- two
+    successes among ten attempts -- rather than against the constant, so a
+    later change to `MAX_EMPTY` has to keep the property rather than keep
+    the arithmetic.
+    """
+    from tools import probe_next
+
+    low_yield, healthy = probe_next.WANTED[1], probe_next.WANTED[2]
+    record = tmp_path / "probe.jsonl"
+
+    def row(cell, outcome):
+        return {"fixture": cell.fixture, "target": cell.target,
+                "model_level": cell.model, "variant": cell.variant,
+                "scenario": cell.scenario, "paraphrase": cell.paraphrase,
+                "outcome": outcome}
+
+    # 2 of 10, the measured rate.
+    rows = ([row(low_yield, "surfaced_and_repaired")] * 2
+            + [row(low_yield, None)] * 8)
+    record.write_text("\n".join(json.dumps(r) for r in rows) + "\n",
+                      encoding="utf-8")
+
+    counts = probe_next.coverage(record)
+    assert counts[low_yield] == (2, 8)
+    assert low_yield not in probe_next.eligible(counts), (
+        "a cell answering 2 times in 10 is still being paid for")
+    assert probe_next.choose(record) != low_yield, (
+        "and the chooser still prefers it, because it has the least evidence")
+
+    # The healthy cell has no rows at all and must be untouched: `0 > 0 + 2`
+    # is false, so the floor cannot park a cell nobody has tried.
+    # Only that the floor did not touch it. NOT that the chooser picks it:
+    # every other cell also sits at zero evidence here, so the tie goes to
+    # declaration order and lands on WANTED[0]. Asserting `== healthy`
+    # would be asserting the tie-break, which this test is not about.
+    assert healthy in probe_next.eligible(counts)
+
+
+def test_the_outage_allowance_survives_the_yield_floor(tmp_path):
+    """A working cell going dark is still not parked for it.
+
+    `MAX_EMPTY` exists to tell a transient outage from a broken cell, and
+    the yield floor must not quietly take that back -- otherwise a model
+    outage lasting three runs would retire a perfectly good cell. The floor
+    is `empty > evidence + MAX_EMPTY`, so the allowance is intact at every
+    yield rather than only at zero evidence.
+    """
+    from tools import probe_next
+
+    cell = probe_next.WANTED[1]
+    record = tmp_path / "probe.jsonl"
+
+    def write(evidence, empty):
+        rows = ([{"fixture": cell.fixture, "target": cell.target,
+                  "model_level": cell.model, "variant": cell.variant,
+                  "scenario": cell.scenario, "paraphrase": cell.paraphrase,
+                  "outcome": "surfaced_and_repaired"}] * evidence
+                + [{"fixture": cell.fixture, "target": cell.target,
+                    "model_level": cell.model, "variant": cell.variant,
+                    "scenario": cell.scenario, "paraphrase": cell.paraphrase,
+                    "outcome": None}] * empty)
+        record.write_text("\n".join(json.dumps(r) for r in rows) + "\n",
+                          encoding="utf-8")
+
+    # One success, then a full outage allowance of silence: still eligible.
+    write(1, probe_next.MAX_EMPTY)
+    assert cell in probe_next.eligible(probe_next.coverage(record))
+
+    # A cell answering half the time can run indefinitely.
+    write(20, 20)
+    assert cell in probe_next.eligible(probe_next.coverage(record))
+
+    # One more empty than the allowance above its evidence: parked.
+    write(1, probe_next.MAX_EMPTY + 2)
+    assert cell not in probe_next.eligible(probe_next.coverage(record))
+
+
+def test_the_parked_report_cannot_disagree_with_the_chooser(tmp_path):
+    """The report and the rotation must decide from the same function.
+
+    A cell the log calls PARKED while the chooser still picks it is worse
+    than either behaviour alone: the log becomes evidence for a thing that
+    is not happening. `_parked` exists so there is one decision, and this
+    asserts both callers route through it.
+    """
+    from tools import probe_next
+
+    record = tmp_path / "probe.jsonl"
+    cell = probe_next.WANTED[1]
+    rows = ([{"fixture": cell.fixture, "target": cell.target,
+              "model_level": cell.model, "variant": cell.variant,
+              "scenario": cell.scenario, "paraphrase": cell.paraphrase,
+              "outcome": "surfaced_and_repaired"}]
+            + [{"fixture": cell.fixture, "target": cell.target,
+                "model_level": cell.model, "variant": cell.variant,
+                "scenario": cell.scenario, "paraphrase": cell.paraphrase,
+                "outcome": None}] * (probe_next.MAX_EMPTY + 2))
+    record.write_text("\n".join(json.dumps(r) for r in rows) + "\n",
+                      encoding="utf-8")
+
+    counts = probe_next.coverage(record)
+    for wanted in probe_next.WANTED:
+        assert probe_next._parked(counts[wanted]) == (
+            wanted not in probe_next.eligible(counts)), wanted

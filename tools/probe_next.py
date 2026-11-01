@@ -261,12 +261,56 @@ def coverage(path: Path) -> dict[Cell, Count]:
 def eligible(counts: dict[Cell, Count]) -> list[Cell]:
     """Cells still worth spending on.
 
-    A cell with no evidence after `MAX_EMPTY` attempts is parked. It stays
-    in `WANTED` and stays dispatchable by hand -- parking is not deletion,
-    and the chooser says out loud that it did it.
+    Two ways to leave the rotation, and the second one was missing for
+    long enough to cost real money (#49).
+
+    **Never produced evidence.** A cell with no evidence after `MAX_EMPTY`
+    attempts is parked. This is the original rule and it is right.
+
+    **Produces evidence too rarely to be worth returning to.** The original
+    rule read `counts[cell].evidence or ...`, which made *any* evidence
+    rescue a cell permanently -- one success bought immortality no matter
+    how many empty rows followed. Combined with `choose()` minimising on
+    evidence, that is a feedback loop rather than a rotation: a low-yield
+    cell accumulates evidence more slowly than its peers *because* it keeps
+    failing, so it stays the least-covered cell and keeps being chosen.
+
+    It was not hypothetical. `applicant.yaml` / `bureau_repull` returned a
+    verdict 2 times in 10 -- the model answered in prose and called no
+    tools -- and the rotation went back to it seven times running while
+    six other fixtures sat at zero new rows for three weeks. 14% of all
+    probe spend bought nothing.
+
+    So a cell is also parked once its empty rows exceed its evidence by
+    more than the outage allowance: `empty > evidence + MAX_EMPTY`. The
+    shape matters more than the constant.
+
+    - It keeps the outage allowance intact at every yield. A working cell
+      that goes dark for `MAX_EMPTY` runs is never parked for it, which is
+      what `MAX_EMPTY` was introduced to protect.
+    - It scales with success rather than capping attempts. A cell that
+      answers half the time can run indefinitely; one that answers a fifth
+      of the time stops. `bureau_repull` would have parked at its 5th
+      empty row instead of its 10th.
+    - It cannot park a cell that has never been tried, because 0 > 0 + 2
+      is false.
+
+    Parking is not deletion either way: the cell stays in `WANTED`, stays
+    dispatchable by hand, and the chooser says out loud that it did it.
     """
-    return [cell for cell in WANTED
-            if counts[cell].evidence or counts[cell].empty < MAX_EMPTY]
+    return [cell for cell in WANTED if not _parked(counts[cell])]
+
+
+def _parked(count: Count) -> bool:
+    """Whether a cell has left the rotation, and the only place that decides.
+
+    Separate from `eligible` so `main`'s report and the chooser cannot
+    drift apart: a cell the report calls PARKED and the chooser still picks
+    would be worse than either behaviour on its own.
+    """
+    if not count.evidence:
+        return count.empty >= MAX_EMPTY
+    return count.empty > count.evidence + MAX_EMPTY
 
 
 def choose(path: Path) -> Cell:
@@ -303,11 +347,29 @@ def main(argv: Optional[list[str]] = None) -> int:
         if wanted == cell:
             mark = "  <-- probing this"
         elif wanted not in live:
-            mark = f"  <-- PARKED: {count.empty} attempts, no evidence"
+            # Say WHICH rule parked it. The two reasons call for opposite
+            # responses -- "never worked" is usually a bug in the cell or
+            # the workflow, "yields too rarely" is a finding about the
+            # configuration -- and one message for both sent a reader
+            # looking for a broken runner when the runner was fine.
+            if not count.evidence:
+                mark = f"  <-- PARKED: {count.empty} attempts, no evidence"
+            else:
+                mark = (f"  <-- PARKED: {count.empty} empty vs "
+                        f"{count.evidence} evidence, below the yield floor")
         else:
             mark = ""
+        # The variant and scenario are part of the cell's identity, so a
+        # report that leaves them out prints two different cells as the
+        # same line -- and the yield floor above is now per variant-cell,
+        # which is exactly where that matters.
+        extra = "".join(part for part in (
+            f" {wanted.variant}" if wanted.variant else "",
+            f" [{wanted.scenario}]" if wanted.scenario else "",
+            f" ~{wanted.paraphrase}" if wanted.paraphrase else "",
+        ))
         print(f"  {count.evidence:3d} / {count.empty:<3d} {wanted.fixture} "
-              f"{wanted.target}/{wanted.model}{mark}", file=sys.stderr)
+              f"{wanted.target}/{wanted.model}{extra}{mark}", file=sys.stderr)
 
     print(f"fixture={cell.fixture}")
     print(f"target={cell.target}")
