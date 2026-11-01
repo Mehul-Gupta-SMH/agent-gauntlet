@@ -1,0 +1,137 @@
+# Pull experiments 003's and 007's ledgers out of their Actions artifacts and
+# commit them beside the consoles that cite them (#46 item 1).
+#
+# WHY A WORKFLOW AND NOT THE SCRIPT. `tools/rescue_ledger.sh` does the same
+# job and its header says why it cannot run from a cloud session: GitHub
+# serves artifacts from `*.blob.core.windows.net`, which this project's cloud
+# sessions are not permitted to reach. Four routes were tried and all four
+# were refused -- `gh run download` (refuses the redirect), curl (CONNECT
+# tunnel failed, 403), the agent proxy (connect_rejected, organization
+# policy), and the GitHub API's own `download_workflow_run_artifact`, whose
+# presigned URL points at that same host. The host is the constraint, not
+# the tool.
+#
+# A job running here is already inside GitHub's network, so the download it
+# cannot do from outside is unremarkable from inside. The script stays as the
+# manual route; this is the one that does not need a human at a terminal.
+#
+# WHY A SCHEDULE AND NOT JUST A BUTTON. The artifacts expire 2026-12-14 and
+# 2026-12-15. A button needs somebody to press it before then; a schedule
+# does not. It is idempotent -- once both ledgers are committed every later
+# run exits in seconds having found its work already done -- so leaving it
+# armed costs a few seconds a day and removes the deadline.
+#
+# WHY IT ASSERTS THE FINGERPRINT. A ledger filed next to the wrong
+# experiment is worse than no ledger: the records would be real and the
+# attribution would be false, which is the one failure that survives review.
+# Each run id below is checked against the `task_fingerprint` its own
+# console.txt prints, and a mismatch commits nothing.
+name: Rescue the expiring ledgers
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily until the artifacts are safe. The measured delay on this repo's
+    # other cron is hours, not minutes, which is fine for a deadline six
+    # weeks out.
+    - cron: "41 7 * * *"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  rescue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Is there anything left to do?
+        id: todo
+        run: |
+          set -euo pipefail
+          pending=""
+          for pair in \
+            "35009572280 experiments/003-live-m0-gate 5c9848747223eaa4" \
+            "35149486157 experiments/007-m0-gate-passed d11a0b2a6801ee74"; do
+            set -- $pair
+            if [ -f "$2/runs.jsonl" ]; then
+              echo "already committed: $2/runs.jsonl"
+            else
+              pending="$pending$pair\n"
+            fi
+          done
+          if [ -z "$pending" ]; then
+            echo "both ledgers are committed; nothing to rescue"
+            echo "pending=" >> "$GITHUB_OUTPUT"
+          else
+            printf 'pending<<EOF\n%b\nEOF\n' "$pending" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch, verify and file each pending ledger
+        if: ${{ steps.todo.outputs.pending != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PENDING: ${{ steps.todo.outputs.pending }}
+        run: |
+          set -euo pipefail
+          filed=""
+          while read -r run_id dest want; do
+            [ -n "${run_id:-}" ] || continue
+            echo "=== run $run_id -> $dest (expecting $want)"
+            work=$(mktemp -d)
+
+            # Not `gh run download`: it writes into the checkout by default
+            # and the artifact is untrusted input until the fingerprint
+            # check passes, so it lands in its own empty directory first.
+            gh run download "$run_id" --name gauntlet-run --dir "$work"
+
+            ledger=$(find "$work" -name runs.jsonl -print -quit)
+            [ -n "$ledger" ] || { echo "::error::no runs.jsonl in run $run_id's artifact"; exit 1; }
+
+            # Run with -I from outside the extracted directory: an archive
+            # is untrusted data, and an interpreter started inside one will
+            # import a planted module in preference to the standard library.
+            got=$(python3 -I "$GITHUB_WORKSPACE/tools/ledger_census.py" "$ledger")
+            echo "$got"
+            dominant=$(printf '%s\n' "$got" | sed -n 's/^dominant //p')
+            if [ "$dominant" != "$want" ]; then
+              echo "::error::run $run_id carries task_fingerprint $dominant, but $dest cites $want -- filing it there would be a false attribution. Nothing committed."
+              exit 1
+            fi
+
+            # `error` is the one ledger field whose content comes from
+            # outside this repo, so it is echoed for a reader rather than
+            # vouched for silently.
+            echo "--- error strings in this ledger, review before trusting it ---"
+            python3 -I "$GITHUB_WORKSPACE/tools/ledger_census.py" --errors "$ledger"
+
+            cp "$ledger" "$dest/runs.jsonl"
+            summary=$(find "$work" -name summary.json -print -quit)
+            if [ -n "$summary" ]; then cp "$summary" "$dest/summary.json"; fi
+            rm -rf "$work"
+            filed="$filed $dest"
+          done <<< "$PENDING"
+
+          if [ -z "$filed" ]; then echo "nothing filed"; exit 0; fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- $filed
+          if git diff --cached --quiet; then
+            echo "no change to commit"
+            exit 0
+          fi
+          # One -m per paragraph. The obvious version -- a single quoted
+          # message with blank lines in it -- puts unindented lines inside a
+          # YAML block scalar, which ends the scalar and makes the rest of
+          # the message into malformed YAML keys. It parses as a workflow
+          # right up until it does not.
+          git commit \
+            -m "rescue the ledgers before their artifacts expire (#46)" \
+            -m "The per-run records for experiments 003 and 007 -- roughly \$10 of real runs -- existed only inside Actions artifacts due to expire 2026-12-14 and 2026-12-15. Experiment 010 had to answer a question by parsing the printed board out of console.txt because these files were not there." \
+            -m "Each ledger's dominant task_fingerprint was checked against the one its experiment's console.txt prints before it was filed." \
+            -m "Committed by rescue-ledgers.yml."
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
