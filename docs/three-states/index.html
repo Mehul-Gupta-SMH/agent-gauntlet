@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="An animated scoring grid: why an unanswered question should leave the denominator instead of counting as wrong.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Three States: a blank is not a zero">
+<meta property="og:description" content="An animated scoring grid: why an unanswered question should leave the denominator instead of counting as wrong.">
+<meta property="og:url" content="https://mehul-gupta-smh.github.io/agent-gauntlet/three-states/">
+<meta property="og:image" content="https://mehul-gupta-smh.github.io/agent-gauntlet/three-states/card.png">
+<meta name="twitter:card" content="summary_large_image">
+<style>html{color-scheme:light}body{margin:0;font-size:14px}</style>
+<title>Three States</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: one evaluation grid, cases down, questions across, scored cell by cell. */
+:root {
+  --bg: #f3f5f7; --fg: #14202b; --muted: #5b6b7a; --line: #d3dae1; --panel: #ffffff;
+  --pass: #15803d; --pass-bg: #dcf2e3; --fail: #b4232c; --fail-bg: #fbe0e2; --none: #5b6b7a;
+  --hatch: #e4e9ee; --accent: #1d4ed8;
+  --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e151c; --fg: #e6edf3; --muted: #93a4b4; --line: #26323e; --panel: #151f29;
+  --pass: #4ade80; --pass-bg: #123221; --fail: #ff7b84; --fail-bg: #3a1519; --none: #93a4b4;
+  --hatch: #1d2935; --accent: #7aa2ff; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0e151c; --fg: #e6edf3; --muted: #93a4b4; --line: #26323e; --panel: #151f29;
+  --pass: #4ade80; --pass-bg: #123221; --fail: #ff7b84; --fail-bg: #3a1519; --none: #93a4b4;
+  --hatch: #1d2935; --accent: #7aa2ff; color-scheme: dark; }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans);
+  padding-block: 28px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+main { max-width: 720px; margin: 0 auto; display: grid; gap: 28px; }
+h1 { font-size: clamp(30px, 7vw, 46px); line-height: 1.05; margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
+.lede { color: var(--muted); font-size: 17px; line-height: 1.5; margin: 10px 0 0; max-width: 56ch; }
+.tag { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.grid { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 460px; font-family: var(--mono); font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+th { font-weight: 500; color: var(--muted); font-size: 12px; }
+tbody tr:last-child td { border-bottom: 0; }
+td.case { color: var(--muted); width: 22%; }
+.cell { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 4px; min-width: 76px;
+  transition: opacity .25s, transform .25s; font-weight: 500; }
+.cell.hide { opacity: 0; transform: translateY(4px); }
+.t { background: var(--pass-bg); color: var(--pass); }
+.f { background: var(--fail-bg); color: var(--fail); }
+.n { background: repeating-linear-gradient(135deg, var(--hatch) 0 5px, transparent 5px 10px); color: var(--none); border: 1px dashed var(--none); }
+tfoot td { background: color-mix(in srgb, var(--panel) 80%, var(--bg)); font-weight: 500; border-bottom: 0; }
+tfoot .small { display: block; color: var(--muted); font-weight: 400; font-size: 11px; margin-top: 2px; }
+.verdict { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 520px) { .verdict { grid-template-columns: 1fr; } }
+.card { border: 1px solid var(--line); border-radius: 6px; padding: 16px; background: var(--panel); }
+.card h2 { font-size: 13px; font-family: var(--mono); font-weight: 500; margin: 0 0 6px; color: var(--muted); }
+.big { font-size: 40px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.bad .big { color: var(--fail); }
+.card p { margin: 8px 0 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
+.runs { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 8px; }
+.run { width: 26px; height: 26px; border-radius: 3px; }
+.run.ok { background: var(--pass-bg); border: 1px solid var(--pass); }
+.run.lost { background: repeating-linear-gradient(135deg, var(--hatch) 0 4px, transparent 4px 8px); border: 1px dashed var(--fail); }
+button { font: 500 13px var(--mono); background: var(--fg); color: var(--bg); border: 0; border-radius: 4px; padding: 9px 14px; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+footer { font-family: var(--mono); font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+a { color: var(--accent); }
+</style>
+
+</head>
+<body>
+<main>
+  <header>
+    <div class="tag">CommonADK 0.0.4 · evaluation.yaml</div>
+    <h1>A blank is not a zero.</h1>
+    <p class="lede">Declare the answer shape, score by <code>==</code>, and let an unanswered question leave the denominator instead of counting as a miss.</p>
+  </header>
+
+  <section class="grid" aria-label="Scored evaluation grid">
+    <table>
+      <thead><tr><th>case</th><th>is_urgent</th><th>category</th><th>escalate</th></tr></thead>
+      <tbody id="body"></tbody>
+      <tfoot id="foot"></tfoot>
+    </table>
+  </section>
+
+  <section class="verdict">
+    <div class="card bad">
+      <h2>blend it, count blanks as wrong</h2>
+      <div class="big">47%</div>
+      <p>One number. It cannot say that <code>escalate</code> was never answered at all.</p>
+    </div>
+    <div class="card">
+      <h2>keep the questions apart</h2>
+      <div class="big">100 · 67 · n/a</div>
+      <p>The failure now has an address: a question nobody answered reads <code>n/a</code>, not <code>0%</code>.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>the real case: one config, ten runs</h2>
+    <div class="runs" id="runs" aria-label="8 of 10 runs produced no parseable answer"></div>
+    <p><strong>8 of 10</strong> runs made one model call and zero tool calls, then wrote prose. They scored 0.0, the same as bad arithmetic. It took three weeks to tell them apart.</p>
+  </section>
+
+  <footer>
+    <button id="replay" type="button">Replay</button>
+    <span>pip install commonadk · github.com/Mehul-Gupta-SMH/CommonADK</span>
+  </footer>
+</main>
+
+<script>
+// T = correct, F = wrong, N = unanswered (None). Columns: is_urgent, category, escalate.
+var DATA = [
+  ["angry_billing", ["T","T","N"]], ["outage_report", ["T","F","N"]], ["how_to_export", ["T","T","N"]],
+  ["refund_ask", ["T","N","N"]], ["feature_idea", ["T","N","N"]]
+];
+var LABEL = { T: "True", F: "False", N: "None" };
+var body = document.getElementById("body"), foot = document.getElementById("foot");
+var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+DATA.forEach(function (row) {
+  var tr = document.createElement("tr");
+  tr.innerHTML = '<td class="case">' + row[0] + "</td>";
+  row[1].forEach(function (v) {
+    tr.innerHTML += '<td><span class="cell ' + v.toLowerCase() + '">' + LABEL[v] + "</span></td>";
+  });
+  body.appendChild(tr);
+});
+
+var cols = [0, 1, 2].map(function (c) {
+  var vals = DATA.map(function (r) { return r[1][c]; });
+  var decided = vals.filter(function (v) { return v !== "N"; });
+  var right = decided.filter(function (v) { return v === "T"; });
+  return { dec: decided.length, right: right.length, total: vals.length };
+});
+foot.innerHTML = "<tr><td>per question</td>" + cols.map(function (c) {
+  var pct = c.dec ? Math.round(100 * c.right / c.dec) + "%" : "n/a";
+  return "<td>" + pct + '<span class="small">' + c.dec + " of " + c.total + " decidable</span></td>";
+}).join("") + "</tr>";
+
+var runs = document.getElementById("runs");
+for (var i = 0; i < 10; i++) {
+  var d = document.createElement("div");
+  d.className = "run " + (i < 2 ? "ok" : "lost");
+  runs.appendChild(d);
+}
+
+function play() {
+  var cells = Array.prototype.slice.call(document.querySelectorAll(".cell"));
+  if (reduce) { cells.forEach(function (c) { c.classList.remove("hide"); }); return; }
+  cells.forEach(function (c) { c.classList.add("hide"); });
+  cells.forEach(function (c, i) { setTimeout(function () { c.classList.remove("hide"); }, 120 + i * 130); });
+}
+document.getElementById("replay").addEventListener("click", play);
+play();
+</script>
+
+</body>
+</html>
