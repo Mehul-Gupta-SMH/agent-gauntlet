@@ -19,13 +19,13 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 2855<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 3301<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 1351<br/>summarize · rank · pareto · depth · curve"]
-    ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
+    ARCH["<b>architect</b> · 865<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 601<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 583<br/>RunContext · tool surface · notes"]
     OFFLINE["<b>offline</b> · 555<br/>scripted policies"]
-    MATRIX["<b>matrix</b> · 427<br/>run_matrix · _attempt · budget"]
+    MATRIX["<b>matrix</b> · 490<br/>run_matrix · _attempt · budget"]
     FAULTS["<b>faults</b> · 451<br/>FaultKind · FaultSchedule"]
     SPEC["<b>spec</b> · 593<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 337<br/>executor · parsing · classification"]
@@ -695,6 +695,7 @@ test_reward_hacking  the answer written into the statement it is graded
                  against, refused before a matrix exists
 test_explore     the whole fault space of one config, why that is coverage
                  and not discovery, and the cell that decides nothing
+test_import_agent  an operator's own agent as a baseline, and what is replaced
 test_coverage    what a task can measure before it is run, and the audit
                  that catches the prediction being wrong
 test_separability  whether the gating metric is decidable BEFORE the money

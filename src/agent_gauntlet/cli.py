@@ -122,6 +122,15 @@ def build_parser() -> argparse.ArgumentParser:
              "running the matrix",
     )
     run.add_argument(
+        "--baseline", type=Path, default=None, metavar="PATH",
+        help="also run YOUR agent beside the generated grid: a common/ "
+             "folder (what this tool exports as a winner) or an agent folder "
+             "holding skill.md and agent-config.yaml. Its instructions, "
+             "tools and model are kept; tools.py and the task section are "
+             "regenerated so the fault can reach it. Live only -- no "
+             "scripted policy reads your prompt (#50)",
+    )
+    run.add_argument(
         "--with-relations", action="store_true",
         help="also check the task's metamorphic relations and put them on "
              "the board. OFF by default because a relation is a second full "
@@ -173,6 +182,11 @@ def build_parser() -> argparse.ArgumentParser:
     expl.add_argument("--models", nargs="*", metavar="ALIAS=MODEL",
                       default=None)
     expl.add_argument("--target", default="claude")
+    expl.add_argument("--baseline", type=Path, default=None, metavar="PATH",
+                      help="red-team YOUR agent instead of the generated "
+                           "grid: a common/ folder or an agent folder. Needs "
+                           "--live, because offline would sweep a scripted "
+                           "stand-in that never reads your prompt (#50)")
 
     canary = sub.add_parser(
         "canary",
@@ -889,6 +903,30 @@ def _run(args) -> int:
     )
     print(f"variants    {len(variants)} generated "
           f"({sum(v.is_sentinel for v in variants)} sentinel)")
+    if getattr(args, "baseline", None) is not None:
+        if not args.live:
+            # Refused rather than run: offline, every agent is a scripted
+            # policy chosen by its prompt NAME, and an imported prompt has
+            # no name to choose by. Anything printed for it would be a
+            # measurement of the test double (#50).
+            print("\nREFUSED: --baseline needs --live. A scripted policy never "
+                  "reads the")
+            print("prompt, so offline would score a stand-in, not your agent.")
+            return 2
+        try:
+            own = architect.import_agent(
+                args.baseline, task=task, out_dir=out / "variants",
+                models=models, targets=[args.target],
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            print(f"\nREFUSED: {exc}")
+            return 2
+        # Before the sentinel, which `generate` promises is last.
+        variants = ([v for v in variants if not v.is_sentinel] + [own]
+                    + [v for v in variants if v.is_sentinel])
+        print(f"baseline    {own.id}  imported from {own.origin}")
+        print(f"            tools {', '.join(own.tools or [])}; "
+              f"model {own.model}")
     # Printed so a run is reproducible from its console output alone: the
     # task hash pins what was asked, these pin what was asked OF.
     for v in sorted(variants, key=lambda v: v.id):
@@ -913,7 +951,10 @@ def _run(args) -> int:
     # this is a statement about the grid that is about to run.
     grid_toolsets = sorted(
         {v.factors["toolset"] for v in variants
-         if not v.is_sentinel and "toolset" in v.factors}
+         # An imported agent's grant is not a named set, and coverage
+         # looks sets up by name: "baseline" would read as a set with no
+         # cross-check whatever the agent actually holds.
+         if not v.is_sentinel and v.tools is None and "toolset" in v.factors}
     )
     _print_coverage(task, toolsets=grid_toolsets or None, live=bool(args.live))
 
@@ -1112,7 +1153,13 @@ def _run(args) -> int:
                    enabled=args.with_relations, live=args.live)
     _print_paraphrases(task, variants, live=args.live)
     _print_effects(results)
-    _print_attribution(records, [v.id for v in variants if v.is_sentinel])
+    # The baseline joins the sentinel here and nowhere else: it sits at no
+    # level of any factor, so a coalition containing it has no measured
+    # cell and Shapley would refuse the whole design over one off-grid
+    # point. It still ranks, and still competes for the held-out winner --
+    # whether the grid beats it is the question it was brought in to ask.
+    _print_attribution(records, [v.id for v in variants
+                                 if v.is_sentinel or v.tools is not None])
     rc = _print_gate(records, seeds, task)
     held = _export(results, variants, out, records)
 
@@ -2728,7 +2775,24 @@ def _explore(args) -> int:
             out_dir=Path(tmp) / "variants", task=task, models=models,
             targets=[args.target], include_sentinel=False,
         )
-        if args.variant:
+        if args.baseline is not None:
+            if not args.live:
+                print("\nREFUSED: --baseline needs --live. Offline sweeps a "
+                      "scripted policy,")
+                print("which never reads your prompt -- every cell would "
+                      "describe the stand-in.")
+                return 2
+            try:
+                variants = [architect.import_agent(
+                    args.baseline, task=task, out_dir=Path(tmp) / "variants",
+                    models=models, targets=[args.target],
+                )]
+            except (ValueError, FileNotFoundError) as exc:
+                print(f"\nREFUSED: {exc}")
+                return 2
+            print(f"baseline    imported from {variants[0].origin}")
+            print(f"            {variants[0].fingerprint}")
+        elif args.variant:
             variants = [v for v in variants if args.variant in v.id]
             if not variants:
                 print(f"\nno config matches {args.variant!r}")
@@ -2736,9 +2800,18 @@ def _explore(args) -> int:
 
         executor = offline_executor
         if args.live:
-            from .live import live_executor
+            from .live import MissingCredentials, live_executor, preflight
 
-            executor = live_executor(task, scenario)
+            # This used to be `live_executor(task, scenario)`, against a
+            # signature that takes the SDK target -- so every live explore
+            # died before its first cell. It went unnoticed because nothing
+            # ran it, and red-teaming an imported agent is live-only (#50).
+            try:
+                preflight(variants, target=args.target)
+            except MissingCredentials as exc:
+                print(f"\nPREFLIGHT FAILED\n{exc}")
+                return 2
+            executor = live_executor(args.target)
 
         cells = sum(len(explore.space(task, v, scenario,
                                       granted=sorted(_allowed_tools(v))))

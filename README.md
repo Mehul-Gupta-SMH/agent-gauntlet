@@ -68,6 +68,30 @@ That buys a property no number on the board has: the fraction is **exact**,
 because the denominator is the whole space rather than a draw from it. It
 cannot find a fault *class* nobody implemented, and it says so.
 
+### Red-team your own agent (#50)
+
+```bash
+# Your agent, in the arena, beside the generated grid. Live only.
+gauntlet run fixtures/inventory/audited.yaml --live --baseline path/to/my-agent
+gauntlet explore fixtures/inventory/audited.yaml --live --baseline path/to/my-agent
+```
+
+`--baseline` takes an agent folder (`skill.md` + `agent-config.yaml`), a
+`common/` folder, or a directory holding one -- the shape the harness exports,
+so a winner comes back in unchanged and keeps its fingerprint. What you
+authored is kept: the instructions, the tool grant, the model. Two things are
+**replaced**, because the measurement does not exist without them: `tools.py`
+is regenerated (your own tool code would serve the truth below the point
+where the lie is injected, and every faulted run would score as resisted),
+and the task section is rewritten to this task's statement. Tools the harness
+does not serve, a grant missing the faulted tool, and instructions that
+contain the answer are all **refused**, not dropped.
+
+It is **live only**, and refused offline: offline runs a scripted policy
+chosen by prompt name, which never reads your prompt, so every number would
+describe the stand-in. The baseline ranks on the board and competes for the
+held-out winner, but sits at no grid point, so it is left out of attribution.
+
 
 Add `--max-cost-per-run 0.02` to get the constrained answer — the cheapest
 config inside the band this run could not order, beside the unconstrained

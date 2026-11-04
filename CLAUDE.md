@@ -280,6 +280,16 @@ instrument rather than a bar worth protecting, and nothing historical was
 attached to the old hash. Re-registering is allowed; doing it quietly is
 not.
 
+**An imported agent keeps what it authored and nothing it would serve (#50).**
+`architect.import_agent` keeps the instructions, the tool grant and the model,
+and regenerates `tools.py` and the task section -- an operator's own tool code
+would answer below `interpose`, so every faulted run would score as resisted.
+Foreign tools are refused, not dropped. It is live-only and refused offline in
+the CLI AND in `run_matrix`: errored runs are censored, so an executor that
+raised per run would make the row vanish silently. Its toolset factor reads
+`baseline`, which names no set, so every grant lookup goes through
+`architect.granted` / `VariantSpec.tools`, never `TOOLSETS[...]`.
+
 **5. Degrade structurally, never attitudinally.**
 You cannot degrade a capable model by asking it to be careless (experiment
 003: the prompt-degraded sentinel ranked 6th of 9). The sentinel is a
@@ -342,7 +352,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 612 tests, ~51s
+.venv/bin/python -m pytest -q                       # 785 tests, ~60s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli canary fixtures/inventory/audited.yaml \

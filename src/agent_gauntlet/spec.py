@@ -621,3 +621,19 @@ class VariantSpec(BaseModel, frozen=True):
     """A deliberately degraded variant. If the board does not rank it last,
     the instrument is broken -- see issue #29. Excluded from the ranking
     under test; used to validate it."""
+
+    tools: Optional[list[str]] = None
+    """The tool grant, for a variant whose grant is not a named tool set.
+
+    Set only for an imported agent (#50, `architect.import_agent`): the
+    operator chose its tools, so there is no `TOOLSETS` entry to look them
+    up by, and its `toolset` factor reads `baseline`. A lookup of that name
+    returns the empty set, which would run the operator's agent with no
+    tools at all and score it as having found nothing -- so every grant
+    lookup reads this field first (`architect.granted`). None for every
+    generated variant, which keeps their behaviour exactly as it was.
+    """
+
+    origin: Optional[str] = None
+    """Where an imported agent was read from. A label, not a pin: the
+    fingerprint pins what ran, this says which folder to go and look at."""
