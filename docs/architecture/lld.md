@@ -19,7 +19,7 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 3488<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 3511<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 1351<br/>summarize · rank · pareto · depth · curve"]
     ARCH["<b>architect</b> · 873<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 601<br/>Outcome · score_run"]
@@ -40,7 +40,7 @@ flowchart TD
     PRICE["<b>pricing</b> · 242<br/>pricing authority · drift"]
     COV["<b>coverage</b> · 390<br/>what a task can measure · audit · separability"]
     EXPL["<b>explore</b> · 269<br/>fault-space sweep · findings"]
-    HARD["<b>harden</b> · 470<br/>catalogue · one round · held-out contrast"]
+    HARD["<b>harden</b> · 549<br/>catalogue · one round · held-out contrast"]
     CALIB["<b>calibration</b> · 216<br/>Brier · skill · Murphy"]
 
     CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP & CAN & COV & CALIB
@@ -699,7 +699,8 @@ test_explore     the whole fault space of one config, why that is coverage
                  and not discovery, and the cell that decides nothing
 test_import_agent  an operator's own agent as a baseline, and what is replaced
 test_harden      one round: a fix that reaches the agent wins held out, one
-                 that does not is not hardened, offline is a plan
+                 that does not is not hardened, offline is a plan, an
+                 undersized round is refused before it runs
 test_coverage    what a task can measure before it is run, and the audit
                  that catches the prediction being wrong
 test_separability  whether the gating metric is decidable BEFORE the money

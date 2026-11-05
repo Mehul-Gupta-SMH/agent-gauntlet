@@ -209,7 +209,11 @@ def build_parser() -> argparse.ArgumentParser:
                       help="replications; the last is held out and is the "
                            "only one reported. Default 4 because a live "
                            "ranking needs k>=4 (experiment 009)")
-    hard.add_argument("--repeats", type=int, default=2)
+    hard.add_argument("--repeats", type=int, default=6,
+                      help="per scenario per seed. Default 6 because one "
+                           "held-out seed x 3 scenarios x 6 is 18 faulted "
+                           "runs, and 75%% -> 25%% needs 16 to separate; "
+                           "a smaller round is refused before it spends")
     hard.add_argument("--out", type=Path, default=Path("runs-harden"))
 
     canary = sub.add_parser(
@@ -2933,6 +2937,11 @@ def _harden(args) -> int:
     print(f"gate        {gate} -- the one gate this task's fault kind can "
           f"reach (rule 2d)")
 
+    sized = harden.size(task, seeds=args.seeds, repeats=args.repeats)
+    print(f"sizing      {sized.reason()}")
+    print(f"            (assumed effect fixed in advance; an upper bound on "
+          f"the decidable runs)")
+
     if not args.live:
         found = harden.reachable(task, base, scenario)
         header = "could fail (reachable, NOT observed -- offline sweeps nothing)"
@@ -2952,6 +2961,10 @@ def _harden(args) -> int:
               "change helping.")
         print(f"candidates written under {out / 'variants'}; rerun with "
               f"--live to measure them.")
+        if not sized.enough:
+            print(f"--live would be REFUSED at this size: --repeats "
+                  f"{harden.repeats_needed(task)} is the smallest round "
+                  f"that could show the assumed effect.")
         _print_harden_scope(live=False)
         return 0
 
@@ -2961,6 +2974,16 @@ def _harden(args) -> int:
         print("\nREFUSED: --seeds must be at least 2. One round chooses on "
               "some and reports")
         print("only the others (#20); with one there is nothing to report on.")
+        return 2
+    if not sized.enough:
+        need = harden.repeats_needed(task)
+        print("\nREFUSED: this round cannot return HARDENED whatever the "
+              "agent does, so it")
+        print("would return not_shown at full price. A certain not_shown is "
+              "not a finding.")
+        if need is not None:
+            print(f"  --repeats {need} with one held-out seed is the "
+                  f"smallest round that could.")
         return 2
     try:
         preflight([base], target=args.target)

@@ -115,15 +115,79 @@ def test_a_candidate_that_changes_nothing_in_behaviour_is_not_hardened(
     assert not (tmp_path / "out" / "hardened.diff").exists()
 
 
-def test_too_few_held_out_runs_is_not_shown_rather_than_hardened(
+def _shrinks_held_out(variant, seed):
+    """The winner's curse in miniature: the change works on every run of
+    the seeds that choose, and on one repeat in six of the seed that
+    reports. Chosen fairly, then measured smaller -- the realistic shape."""
+    # seed_for: base:variant:scenario:repeat, then :clean or :faulted.
+    parts = str(seed).split(":")
+    if parts[0] == SEEDS[-1] and parts[-2] != "0":
+        return _ignores_its_files(variant, seed)
+    return _reads_its_files(variant, seed)
+
+
+def test_a_partial_fix_on_a_sized_round_is_not_shown_rather_than_hardened(
         task, tmp_path):
-    """The same perfect fix, measured on too few held-out runs: 100% -> 0%
-    with overlapping Wilson intervals. That is NOT hardened -- the round
-    reports the resolution it lacked instead of the point estimate."""
-    rnd = _round(task, tmp_path, _reads_its_files, repeats=1)
-    assert rnd.contrast.verdict == harden.NOT_SHOWN
+    """A round big enough for the assumed effect, and a fix that shrinks
+    on the held-out seed: chosen on the selection seeds, then 100% -> ~83%
+    where it is reported, with the intervals touching. That is NOT
+    hardened -- the round reports the resolution it lacked instead."""
+    rnd = _round(task, tmp_path, _shrinks_held_out, repeats=6)
+    assert rnd.contrast.verdict == harden.NOT_SHOWN, rnd.contrast.reason
     assert "inside noise" in rnd.contrast.reason
     assert rnd.exported is None
+
+
+def test_a_round_too_small_to_show_anything_is_refused_before_it_runs(
+        task, tmp_path):
+    """Fail-green, one level up: an undersized round can only return
+    not_shown, and returns it at full price. Refused before the sweep, so
+    not one run is spent on a verdict that was certain in advance."""
+    calls = []
+
+    def counting(variant, seed):
+        calls.append(seed)
+        return _reads_its_files(variant, seed)
+
+    with pytest.raises(ValueError, match="round too small"):
+        _round(task, tmp_path, counting, repeats=1)
+    assert calls == []
+
+
+def test_the_guard_and_the_verdict_use_the_same_separation_test():
+    """The guard is a best case: exact rates on n runs. Below `needed` the
+    Wilson intervals of 75% and 25% touch, at `needed` they do not -- the
+    same `excludes` that `contrast` gates on, so the two cannot disagree."""
+    need = harden.runs_to_separate(0.75, 0.25)
+    assert need == 16
+    assert harden.separates(0.75, 0.25, need)
+    assert not harden.separates(0.75, 0.25, need - 1)
+    # An effect no run count shows is unsizeable, not "one run".
+    assert harden.runs_to_separate(0.5, 0.5) is None
+
+
+def test_held_out_runs_count_only_the_seeds_that_report(task):
+    """Selection seeds choose and report nothing, so they do not size the
+    round: 4 seeds x 3 scenarios x 6 repeats is 18 held-out runs, not 72."""
+    s = harden.size(task, seeds=4, repeats=6)
+    assert s.held_runs == 6 * len(task.scenarios)
+    assert s.enough
+    assert not harden.size(task, seeds=4, repeats=2).enough
+    assert harden.repeats_needed(task) == 6
+
+
+def test_live_harden_refuses_an_undersized_round_before_preflight(
+        tmp_path, capsys):
+    """Refused with exit 2 before credentials are even checked: sizing is
+    arithmetic, and it should not need a key to say a round is hopeless."""
+    rc = cli.main(["harden", str(AUDITED), "--baseline",
+                   str(_own_agent(tmp_path)), "--live", "--repeats", "2",
+                   "--out", str(tmp_path / "o")])
+    out = capsys.readouterr().out
+    assert rc == 2, out
+    assert "cannot return HARDENED" in out
+    assert "--repeats 6" in out
+    assert "PREFLIGHT" not in out
 
 
 def test_one_seed_cannot_hold_anything_out(task, tmp_path):
@@ -198,6 +262,7 @@ def test_offline_harden_is_a_plan_with_improvement_not_measured(
     assert "cross_check" in out
     assert "improvement n/a" in out
     assert "round       1 of 1" in out
+    assert "needs at least 16" in out
     assert list((tmp_path / "o" / "variants").iterdir())
 
 

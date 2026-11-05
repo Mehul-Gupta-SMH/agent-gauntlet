@@ -298,7 +298,11 @@ intervals apart AND nothing over budget; "inside noise" is `not_shown`, and
 then nothing is exported -- the fail-green test is the same round with an
 executor that ignores the candidate's files. Candidates are built only for
 the task's own fault kind: a fix for another kind's failure is measured under
-a fault it was not built for and could not win.
+a fault it was not built for and could not win. A round is sized before it
+spends: `harden.size` counts held-out faulted runs (an upper bound on the
+decidable ones) against what 75% -> 25% needs under the same Wilson
+`excludes` `contrast` gates on, and `--live` refuses below it. An undersized
+round can only return `not_shown`, and a certain `not_shown` is not a finding.
 
 **5. Degrade structurally, never attitudinally.**
 You cannot degrade a capable model by asking it to be careless (experiment
@@ -362,7 +366,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 796 tests, ~60s
+.venv/bin/python -m pytest -q                       # 800 tests, ~60s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli canary fixtures/inventory/audited.yaml \

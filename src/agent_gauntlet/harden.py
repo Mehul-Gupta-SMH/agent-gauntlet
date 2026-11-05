@@ -44,6 +44,7 @@ from .certify import (HIGHER_IS_BETTER, HIGHER_IS_WORSE, MetricChange,
 from .explore import _CORRUPTS_A_NUMBER, Finding, space
 from .faults import FaultKind
 from .spec import Scenario, TaskSpec, VariantSpec
+from .stats import wilson
 
 PROPAGATED = "propagated"
 COMPLIED = "complied"
@@ -370,6 +371,76 @@ def _pct(x: Optional[float]) -> str:
     return "n/a" if x is None else f"{x:.0%}"
 
 
+# The effect a round is sized to see, fixed before any hardening run. 75%
+# is the live rate experiment 013 measured on one cell under this fault (3
+# of 4 propagated); 25% is a fix that works most of the time and not
+# always. A round too small to separate even that is not an experiment, it
+# is a guaranteed `not_shown` with a bill attached.
+ASSUMED = (0.75, 0.25)
+_SIZING_LIMIT = 1000
+
+
+def separates(before: float, after: float, n: int) -> bool:
+    """Would `before` and `after`, each seen exactly on `n` runs, have
+    Wilson intervals apart? The same test `contrast` applies, so the guard
+    and the verdict cannot disagree about what counts as shown."""
+    if n <= 0:
+        return False
+    a, b = wilson(round(before * n), n), wilson(round(after * n), n)
+    return a is not None and b is not None and a.excludes(b)
+
+
+def runs_to_separate(before: float, after: float) -> Optional[int]:
+    """The fewest held-out faulted runs per side that could show the
+    change. This is a best case, because it assumes the observed rates land
+    exactly on the assumed ones. A real round needs at least this many and
+    usually more, so the guard refuses only what cannot possibly work."""
+    return next((n for n in range(1, _SIZING_LIMIT)
+                 if separates(before, after, n)), None)
+
+
+@dataclass(frozen=True)
+class Sizing:
+    held_runs: int
+    needed: Optional[int]
+    assumed: tuple[float, float]
+
+    @property
+    def enough(self) -> bool:
+        return self.needed is not None and self.held_runs >= self.needed
+
+    def reason(self) -> str:
+        b, a = self.assumed
+        if self.needed is None:
+            return (f"no number of runs separates {_pct(b)} -> {_pct(a)} "
+                    f"under Wilson; nothing to size")
+        return (f"{self.held_runs} held-out faulted run(s) per side; "
+                f"{_pct(b)} -> {_pct(a)} needs at least {self.needed} to "
+                f"have intervals apart")
+
+
+def size(task: TaskSpec, *, seeds: Sequence[str] | int, repeats: int,
+         holdout: int = 1,
+         assumed: tuple[float, float] = ASSUMED) -> Sizing:
+    """Held-out faulted runs per variant: held-out seeds x scenarios x
+    repeats, which is one faulted run per cell. That is an UPPER bound on
+    the decidable denominator the gate is computed over, because a run that
+    could not decide leaves it. So refusing below it never refuses a round
+    that could have worked."""
+    n_seeds = seeds if isinstance(seeds, int) else len(set(seeds))
+    held = max(0, min(holdout, n_seeds - 1)) * len(task.scenarios) * repeats
+    return Sizing(held_runs=held, needed=runs_to_separate(*assumed),
+                  assumed=assumed)
+
+
+def repeats_needed(task: TaskSpec, *, holdout: int = 1,
+                   assumed: tuple[float, float] = ASSUMED) -> Optional[int]:
+    """The smallest `--repeats` that sizes a round, for the refusal to name."""
+    need = runs_to_separate(*assumed)
+    per = holdout * len(task.scenarios)
+    return None if need is None or per == 0 else -(-need // per)
+
+
 def export(winner: VariantSpec, baseline: VariantSpec, dest: Path) -> Path:
     """The winner's `common/`, plus a diff against the baseline beside it.
 
@@ -413,7 +484,8 @@ class Round:
 
 def run_round(*, task: TaskSpec, baseline: VariantSpec, scenario: Scenario,
               execute, seeds: Sequence[str], repeats: int, out_dir: Path,
-              ledger, holdout: int = 1) -> Round:
+              ledger, holdout: int = 1,
+              assumed: tuple[float, float] = ASSUMED) -> Round:
     """explore -> catalogue -> held-out matrix -> contrast -> export.
 
     `execute` is one executor for the sweep AND the matrix: a candidate that
@@ -427,6 +499,13 @@ def run_round(*, task: TaskSpec, baseline: VariantSpec, scenario: Scenario,
             f"need more than {holdout} seed(s): one round chooses on some and "
             f"reports only the others, and with {len(set(seeds))} there is "
             f"nothing left to report on")
+    sized = size(task, seeds=seeds, repeats=repeats, holdout=holdout,
+                 assumed=assumed)
+    if not sized.enough:
+        # Before the sweep, because the sweep is paid too. A round that
+        # cannot return HARDENED returns not_shown at full price, and a
+        # not_shown that was certain in advance is not a finding.
+        raise ValueError(f"round too small to show anything: {sized.reason()}")
     findings = sweep_baseline(task, baseline, scenario, execute)
     found = failures(findings)
     here, _ = measurable(found, task)
@@ -461,9 +540,10 @@ def sweep_baseline(task: TaskSpec, baseline: VariantSpec, scenario: Scenario,
 
 
 __all__ = [
-    "BASELINE_HELD", "CATALOGUE", "COMPLIED", "Candidate", "Contrast",
+    "ASSUMED", "BASELINE_HELD", "CATALOGUE", "COMPLIED", "Candidate", "Contrast",
     "HARDENED", "Hardening", "NOT_MEASURED", "NOT_SHOWN",
     "PROPAGATED", "REPEATED_MATERIAL", "ROUNDS", "Round", "WORSE",
     "contrast", "derive", "export", "failures", "gate_metric", "measurable", "propose",
-    "reachable", "run_round", "sweep_baseline",
+    "reachable", "repeats_needed", "run_round", "runs_to_separate",
+    "separates", "size", "Sizing", "sweep_baseline",
 ]

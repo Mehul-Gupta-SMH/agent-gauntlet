@@ -116,6 +116,15 @@ plans against what *could* fail, writes the candidates, and prints
 `improvement n/a`. A fix that removes the very tool this task faults is
 named and marked not certifiable here, never silently dropped.
 
+A round is **sized before it spends**. `--live` refuses, with exit 2 and
+before preflight, a round whose held-out faulted runs could not separate
+75% -> 25% under Wilson even if the rates landed exactly there (16 per side;
+the default 4 seeds x 6 repeats gives 18 on a three-scenario task). Below
+that the verdict is `not_shown` whatever the agent does, so the run would be
+a bill with no finding in it. Both plan and live print the sizing line.
+Experiment [019](experiments/019-harden-preregistered/) pre-registers the
+first live round against that bar.
+
 
 Add `--max-cost-per-run 0.02` to get the constrained answer — the cheapest
 config inside the band this run could not order, beside the unconstrained

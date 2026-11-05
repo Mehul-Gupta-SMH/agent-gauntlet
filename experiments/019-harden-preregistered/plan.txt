@@ -1,0 +1,25 @@
+task        inventory_total_audited  (fault wrong_value @ fetch_record)
+fingerprint d11a0b2a6801ee74
+baseline    experiments/019-harden-preregistered/baseline
+            42e8bdd12b1874f1
+round       1 of 1 -- one on purpose: a second round would be
+            chosen by this round's held-out runs, which would then not be held out.
+gate        propagation_rate -- the one gate this task's fault kind can reach (rule 2d)
+sizing      18 held-out faulted run(s) per side; 75% -> 25% needs at least 16 to have intervals apart
+            (assumed effect fixed in advance; an upper bound on the decidable runs)
+
+could fail (reachable, NOT observed -- offline sweeps nothing)
+  wrong_value      propagated
+  omission         propagated  -- not this task's fault kind; no candidate built
+
+candidates  (structural first: a prompt is not shown to harden anything, rule 5)
+  cross_check          tools   42d3bd7f58957715
+                               a corrupted figure is only catchable against a second source; without one it is undetectable in principle (#16)
+
+improvement n/a -- offline cannot run an imported agent: a scripted policy
+never reads the prompt, so no offline run could show a change helping.
+candidates written under runs-harden/variants; rerun with --live to measure them.
+
+scope       The proposals answer what COULD fail, from a catalogue of
+            registered fault classes. A failure
+            nobody implemented is not found, and is not fixed (#18).
