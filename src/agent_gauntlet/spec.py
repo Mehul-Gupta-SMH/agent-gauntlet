@@ -637,3 +637,16 @@ class VariantSpec(BaseModel, frozen=True):
     origin: Optional[str] = None
     """Where an imported agent was read from. A label, not a pin: the
     fingerprint pins what ran, this says which folder to go and look at."""
+
+    parent: Optional[str] = None
+    """The fingerprint of the agent this one was derived from (#50, H2).
+
+    A fingerprint and not an id, because ids are built from factor labels
+    and two different baselines imported under the same model alias share
+    one. Lineage that named a label could point at an agent that is not the
+    one the hardening was applied to.
+    """
+
+    hardening: Optional[str] = None
+    """Which catalogue entry (`harden.CATALOGUE`) produced this agent from
+    its parent. None for anything not derived."""

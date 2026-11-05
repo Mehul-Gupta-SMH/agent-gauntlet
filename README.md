@@ -92,6 +92,30 @@ chosen by prompt name, which never reads your prompt, so every number would
 describe the stand-in. The baseline ranks on the board and competes for the
 held-out winner, but sits at no grid point, so it is left out of attribution.
 
+```bash
+# One round of hardening it. Without --live this is a plan, and says so.
+gauntlet harden fixtures/inventory/audited.yaml --baseline path/to/my-agent
+gauntlet harden fixtures/inventory/audited.yaml --baseline path/to/my-agent --live --seeds 4
+```
+
+`harden` sweeps your agent, maps what got through to a **declared catalogue**
+of fixes -- tool changes first (`cross_check` grants a second source;
+`revoke_annotations` and `revoke_notes` remove a channel), prompt clauses
+after and marked unproven -- and builds one candidate per entry as *your agent
+plus one change*. Baseline and candidates run as one matrix; the winner is
+chosen on some seeds and reported only on the held-out one. It is called
+`HARDENED` only if the gate metric this task can reach improved with
+non-overlapping intervals and nothing regressed beyond budget; otherwise the
+verdict says what the run could not see, and nothing is exported. A win is
+exported with `hardened.diff` -- the change in your own files -- and a lineage
+back to the parent fingerprint.
+
+What it will not do: loop (round two would be chosen by round one's held-out
+runs), ask a model for the fix, or print an improvement offline -- offline
+plans against what *could* fail, writes the candidates, and prints
+`improvement n/a`. A fix that removes the very tool this task faults is
+named and marked not certifiable here, never silently dropped.
+
 
 Add `--max-cost-per-run 0.02` to get the constrained answer — the cheapest
 config inside the band this run could not order, beside the unconstrained

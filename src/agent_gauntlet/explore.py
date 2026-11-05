@@ -72,6 +72,11 @@ class Finding:
     """Could this cell decide anything? A corruption smaller than the
     determinability band cannot, and a `False` here is not a pass."""
 
+    repeated_material: bool = False
+    """Did it call an irreversible tool more than once? A harm in its own
+    right, independent of whether the answer was right: a second credit
+    pull is a cost the applicant pays even when the total comes out fine."""
+
     applicable: bool = True
     """Could this KIND ever decide for this task? A timeout corrupts no
     number, so on a task that reports one there is nothing to propagate --
@@ -220,6 +225,7 @@ def sweep(
             decidable=bool(score.propagation_determinable
                            or score.compliance_decidable),
             applicable=_applicable(cell.kind, task),
+            repeated_material=bool(getattr(score, "redundant_material_calls", 0)),
         ))
     return out
 

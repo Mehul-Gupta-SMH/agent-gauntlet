@@ -188,6 +188,30 @@ def build_parser() -> argparse.ArgumentParser:
                            "--live, because offline would sweep a scripted "
                            "stand-in that never reads your prompt (#50)")
 
+    hard = sub.add_parser(
+        "harden",
+        help="one round: red-team YOUR agent, build catalogued fixes, keep "
+             "one only if it holds up on held-out seeds (#50)",
+    )
+    hard.add_argument("task", type=Path)
+    hard.add_argument("--baseline", type=Path, required=True, metavar="PATH",
+                      help="your agent: a common/ folder or an agent folder")
+    hard.add_argument("--scenario", default=None,
+                      help="which scenario's world the sweep red-teams "
+                           "(default: the first)")
+    hard.add_argument("--live", action="store_true",
+                      help="run the round (COSTS MONEY). Without it this is "
+                           "a plan: offline cannot run an imported agent")
+    hard.add_argument("--models", nargs="*", metavar="ALIAS=MODEL",
+                      default=None)
+    hard.add_argument("--target", default="claude")
+    hard.add_argument("--seeds", type=int, default=4,
+                      help="replications; the last is held out and is the "
+                           "only one reported. Default 4 because a live "
+                           "ranking needs k>=4 (experiment 009)")
+    hard.add_argument("--repeats", type=int, default=2)
+    hard.add_argument("--out", type=Path, default=Path("runs-harden"))
+
     canary = sub.add_parser(
         "canary",
         help="a tiny pinned probe of one config, to notice the world moving "
@@ -361,6 +385,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _explain(args)
     if args.command == "explore":
         return _explore(args)
+    if args.command == "harden":
+        return _harden(args)
     if args.command == "ui":
         from .server import serve
 
@@ -2867,6 +2893,167 @@ def _explore(args) -> int:
         print("subject is one config, so no fairness invariant applies here "
               "(#18).")
     return 0
+
+
+def _harden(args) -> int:
+    """One round of hardening an imported agent (#50, H2).
+
+    Offline this is a PLAN and says so: a scripted policy never reads the
+    prompt, so no offline run could show a clause helping or a grant being
+    used. It still does everything that costs nothing -- import, the
+    reachable space, the proposals, the candidates written to disk -- so an
+    operator sees exactly what a live round would spend money on.
+    """
+    from . import harden
+
+    task = TaskSpec.from_yaml(args.task)
+    scenario = (task.scenario(args.scenario) if args.scenario
+                else task.scenarios[0])
+    models = parse_models(getattr(args, "models", None))
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    print(f"task        {task.id}  (fault {task.fault_kind} @ "
+          f"{task.fault_tool})")
+    print(f"fingerprint {task.fingerprint()}")
+    try:
+        base = architect.import_agent(
+            args.baseline, task=task, out_dir=out / "variants",
+            models=models, targets=[args.target])
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"\nREFUSED: {exc}")
+        return 2
+    print(f"baseline    {base.origin}")
+    print(f"            {base.fingerprint}")
+    print(f"round       {harden.ROUNDS} of {harden.ROUNDS} -- one on purpose: a "
+          f"second round would be")
+    print("            chosen by this round's held-out runs, which would then "
+          "not be held out.")
+    gate = harden.gate_metric(task)
+    print(f"gate        {gate} -- the one gate this task's fault kind can "
+          f"reach (rule 2d)")
+
+    if not args.live:
+        found = harden.reachable(task, base, scenario)
+        header = "could fail (reachable, NOT observed -- offline sweeps nothing)"
+    else:
+        found = None
+        header = "got through (observed)"
+
+    if found is not None:
+        here, elsewhere = harden.measurable(found, task)
+        cands = [harden.derive(base, h, task=task, out_dir=out / "variants")
+                 for h in harden.propose(here)]
+        _print_found(header, here, elsewhere)
+        _print_candidates(cands)
+        print("\nimprovement n/a -- offline cannot run an imported agent: a "
+              "scripted policy")
+        print("never reads the prompt, so no offline run could show a "
+              "change helping.")
+        print(f"candidates written under {out / 'variants'}; rerun with "
+              f"--live to measure them.")
+        _print_harden_scope(live=False)
+        return 0
+
+    from .live import MissingCredentials, live_executor, preflight
+
+    if args.seeds < 2:
+        print("\nREFUSED: --seeds must be at least 2. One round chooses on "
+              "some and reports")
+        print("only the others (#20); with one there is nothing to report on.")
+        return 2
+    try:
+        preflight([base], target=args.target)
+    except MissingCredentials as exc:
+        print(f"\nPREFLIGHT FAILED\n{exc}")
+        return 2
+    seeds = [f"seed{i}" for i in range(args.seeds)]
+    rnd = harden.run_round(
+        task=task, baseline=base, scenario=scenario,
+        execute=live_executor(args.target), seeds=seeds,
+        repeats=args.repeats, out_dir=out, ledger=Ledger(out / "runs.jsonl"))
+    _print_found(header, *harden.measurable(rnd.found, task))
+    _print_candidates(rnd.candidates)
+    return _print_contrast(rnd)
+
+
+def _print_found(header: str, found, elsewhere=()) -> None:
+    print(f"\n{header}")
+    if not found:
+        print("  nothing this task's fault can judge. Which is a statement "
+              "about the")
+        print("  registered fault classes only (#18).")
+    for kind, what in sorted(found, key=lambda p: (p[0].value, p[1])):
+        print(f"  {kind.value:16s} {what}")
+    for kind, what in sorted(elsewhere, key=lambda p: (p[0].value, p[1])):
+        # Rule 2d: this task faults one kind, so a fix for another kind's
+        # failure is measured under a fault it was not built for.
+        print(f"  {kind.value:16s} {what}  -- not this task's fault kind; "
+              f"no candidate built")
+
+
+def _print_candidates(cands) -> None:
+    print("\ncandidates  (structural first: a prompt is not shown to harden "
+          "anything, rule 5)")
+    if not cands:
+        print("  none -- nothing in the catalogue answers what was found.")
+    for c in cands:
+        h = c.hardening
+        kind = "tools " if h.structural else "prompt"
+        tag = "" if h.structural else "  [unproven]"
+        if c.variant is not None:
+            print(f"  {h.name:20s} {kind}  {c.variant.fingerprint}{tag}")
+        else:
+            print(f"  {h.name:20s} {kind}  proposed; {c.refused}")
+        print(f"  {'':20s}         {h.why}")
+
+
+def _print_contrast(rnd) -> int:
+    from . import harden
+
+    c = rnd.contrast
+    print("\n--- held out " + "-" * 59)
+    if c.held is not None:
+        print(f"chosen on   {', '.join(c.held.selection_seeds)}")
+        print(f"reported on {', '.join(c.held.holdout_seeds)}  (the only "
+              f"numbers below)")
+    for ch in c.changes:
+        print(f"  {ch.metric:18s} {_pct(ch.before):>5s} -> {_pct(ch.after):>5s}"
+              f"  {ch.verdict.value}"
+              + (f"  ({ch.note})" if ch.note else ""))
+    if c.baseline is not None and c.winner is not None:
+        print(f"  {'cost/run':18s} {_cost(c.baseline.cost_usd):>8s} -> "
+              f"{_cost(c.winner.cost_usd)}")
+    print(f"\nverdict     {c.verdict.upper()}: {c.reason}")
+    if rnd.exported is not None:
+        print(f"exported    {rnd.exported}")
+        print(f"            {rnd.exported.parent / 'hardened.diff'}  "
+              f"(review this, not the score)")
+        win = next(v for v in rnd.measured if v.id == c.held.variant_id)
+        print(f"lineage     {win.parent} -> {win.fingerprint} "
+              f"via {win.hardening}")
+    else:
+        print("exported    nothing -- only a shown improvement is handed over.")
+    _print_harden_scope(live=True)
+    return 3 if c.verdict == harden.WORSE else 0
+
+
+def _cost(value) -> str:
+    return "n/a" if value is None else f"${value:.4f}"
+
+
+def _print_harden_scope(*, live: bool) -> None:
+    if live:
+        print("\nscope       The proposals were chosen by a sweep of the "
+              "same scenario they are")
+        print("            measured on, from a catalogue of registered fault "
+              "classes. A failure")
+    else:
+        print("\nscope       The proposals answer what COULD fail, from a "
+              "catalogue of")
+        print("            registered fault classes. A failure")
+    print("            nobody implemented is not found, and is not fixed "
+          "(#18).")
 
 
 def _coverage(args) -> int:

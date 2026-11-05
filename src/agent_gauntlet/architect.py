@@ -708,6 +708,7 @@ def import_agent(
     out_dir: Union[str, Path],
     models: Optional[Mapping[str, str]] = None,
     targets: Optional[Iterable[str]] = None,
+    hardening: Optional[str] = None,
 ) -> VariantSpec:
     """Read an operator's agent and rebuild it as a variant of this task.
 
@@ -739,6 +740,11 @@ def import_agent(
     its answer, a fault that cannot fire, and an agent not granted the tool
     the fault lands in. Plus one of its own: instructions that contain the
     answer, which is the same leak arriving through the other file.
+
+    `hardening` names the catalogue entry a derived candidate came from
+    (`harden.derive`). It joins the factors, so the candidate gets its own
+    id and folder -- otherwise it would land on its parent's `vid` and
+    overwrite the baseline it is about to be measured against.
     """
     root = Path(src)
     if (root / "common").is_dir():
@@ -814,6 +820,8 @@ def import_agent(
         raise ValueError(f"cannot import agent: {leak}")
 
     factors = {"model": alias, "prompt": BASELINE, "toolset": BASELINE}
+    if hardening:
+        factors["hardening"] = hardening
     vid = variant_id(factors)
     out = Path(out_dir) / vid / "common"
     agent = out / AGENT_NAME
