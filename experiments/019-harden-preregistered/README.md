@@ -36,6 +36,12 @@ gauntlet harden fixtures/inventory/audited.yaml \
   --live --seeds 4 --repeats 6 --out experiments/019-harden-preregistered/run
 ```
 
+It is dispatched through `live-gauntlet.yml` with `mode=harden`,
+`target=claude`, `seeds=4`, `repeats=6` and the fixture and baseline above.
+That workflow commits `runs.jsonl`, `console.txt` and (on a win)
+`hardened.diff` under `experiments/live/<run id>/`, because a paid run that
+is not recorded did not happen.
+
 ## The bar
 
 **The only result that counts as a win is `HARDENED`.** It requires all of
