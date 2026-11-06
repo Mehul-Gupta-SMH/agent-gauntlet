@@ -296,3 +296,138 @@ def test_the_flip_and_the_lunge_are_separate_groups():
     css = (Path(server.__file__).parent / "ui" / "arena.css").read_text(encoding="utf-8")
     assert ".wyrm-lunge { animation" in css
     assert ".wyrm-facing { animation" not in css
+
+
+# --- harden: the page submits text, the verdict is harden's own ------------
+
+AGENT = {"fixture": "inventory/audited.yaml",
+         "instructions": "You add up stock across inventory records. Fetch "
+                         "each record, sum the quantities, and report the "
+                         "total. Be quick.",
+         "tools": ["fetch_record", "list_records"], "model": "cheap",
+         "seeds": 4, "repeats": 6}
+
+
+def test_the_harden_form_can_only_name_a_fixture_never_a_path(tmp_path):
+    """The request is a key into the fixture directory. A route that read
+    whatever file it was pointed at would be an arbitrary read on a server
+    that may sit on a shared machine."""
+    for bad in ("../../etc/passwd", "/etc/passwd", "inventory/nope.yaml", ""):
+        with pytest.raises(ValueError):
+            server.harden_plan({**AGENT, "fixture": bad}, tmp_path)
+
+
+def test_the_plan_is_free_and_runs_nothing(tmp_path, monkeypatch):
+    """A plan imports the agent and names the candidates. It must not reach
+    for an executor: offline cannot run an imported agent, and a plan that
+    quietly did would be a paid run with a free label."""
+    from agent_gauntlet import live
+
+    def boom(*a, **k):
+        raise AssertionError("a plan built an executor")
+
+    monkeypatch.setattr(live, "live_executor", boom)
+    plan = server.harden_plan(AGENT, tmp_path)
+    assert plan["task"]["fingerprint"] == "d11a0b2a6801ee74"
+    assert plan["gate"] == "propagation_rate" and plan["rounds"] == 1
+    assert [c["name"] for c in plan["candidates"]] == ["cross_check"]
+    assert plan["sizing"]["enough"] and plan["sizing"]["held_runs"] == 18
+    assert plan["matrix_runs"] == 2 * 3 * 6 * 4 * 2
+
+
+def test_a_missing_key_blocks_the_live_button_and_says_why(tmp_path, monkeypatch):
+    """The page enables 'run' from `live_blockers` and from nothing it
+    computed itself, so the button cannot be lit by a second opinion."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    plan = server.harden_plan(AGENT, tmp_path)
+    assert any("ANTHROPIC_API_KEY" in b for b in plan["live_blockers"])
+
+
+def test_an_undersized_round_is_blocked_in_the_plan_and_refused_live(tmp_path):
+    small = {**AGENT, "repeats": 2}
+    plan = server.harden_plan(small, tmp_path)
+    assert not plan["sizing"]["enough"]
+    assert any("cannot return HARDENED" in b for b in plan["live_blockers"])
+    with pytest.raises(ValueError, match="too small"):
+        server.start_harden({**small, "confirm": "spend"})
+    assert not server.HARDEN.running()
+
+
+def test_a_live_round_needs_the_spend_sentence_not_a_default():
+    with pytest.raises(ValueError, match="spends real money"):
+        server.start_harden(AGENT)
+    with pytest.raises(ValueError, match="spends real money"):
+        server.start_harden({**AGENT, "confirm": True})
+    assert not server.HARDEN.running()
+
+
+def test_a_harden_round_and_a_matrix_cannot_overlap(monkeypatch):
+    """Two interleaving would make per-run timings measure contention."""
+    monkeypatch.setattr(server.HARDEN, "status", "running")
+    with pytest.raises(RuntimeError, match="already in progress"):
+        server.start_run(server.Session(), {})
+    with pytest.raises(RuntimeError, match="already in progress"):
+        server.start_harden({**AGENT, "confirm": "spend"})
+
+
+def test_an_unmeasured_metric_reaches_the_page_as_null(tmp_path):
+    """Rule 2: `before`/`after` of None must cross as null, which the page
+    prints n/a. A coerced 0 would read as 'never propagates'."""
+    from agent_gauntlet import harden
+    from agent_gauntlet.certify import MetricChange, MetricVerdict
+
+    c = harden.Contrast(
+        harden.NOT_SHOWN, metric="propagation_rate", reason="x",
+        changes=[MetricChange(metric="propagation_rate", before=None,
+                              after=None,
+                              verdict=MetricVerdict.NOT_COMPARABLE)])
+    rnd = harden.Round(baseline=None, findings=[], found=set(), candidates=[],
+                       contrast=c)
+    view = server.contrast_view(rnd)
+    assert view["changes"][0]["before"] is None
+    assert view["changes"][0]["after"] is None
+    assert view["cost"] is None and view["exported"] is None
+
+
+def test_a_live_round_is_refused_through_a_proxy_header(monkeypatch):
+    """The key is the server's own. A tunnel to loopback must not be able
+    to spend it; the bind alone does not say who is on the other end.
+
+    The worker is stubbed so that a broken guard fails this test rather than
+    starting a paid round on whoever's machine runs it."""
+    monkeypatch.setattr(server, "_harden_worker", lambda *a, **k: None)
+    import http.client
+    import threading
+    from http.server import ThreadingHTTPServer
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port)
+        conn.request("POST", "/api/harden/run",
+                     body=json.dumps({**AGENT, "confirm": "spend"}),
+                     headers={"Content-Type": "application/json",
+                              "X-Forwarded-For": "203.0.113.9"})
+        resp = conn.getresponse()
+        assert resp.status == 403
+        assert server.HARDEN.status == "idle"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_the_page_scripts_declare_no_top_level_name_twice():
+    """Classic scripts share one global scope, so a second top-level `const`
+    of the same name is a SyntaxError that kills the WHOLE script -- the
+    harden panel shipped once with an empty form because `pct` was already
+    arena.js's. `node --check` parses each file alone and cannot see it."""
+    import re
+
+    ui = Path(server.__file__).parent / "ui"
+    seen: dict[str, str] = {}
+    for js in sorted(ui.glob("*.js")):
+        for name in re.findall(
+                r"^(?:async\s+)?(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)",
+                js.read_text("utf-8"), flags=re.M):
+            assert name not in seen, f"{name} is declared in {seen[name]} and {js.name}"
+            seen[name] = js.name

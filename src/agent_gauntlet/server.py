@@ -25,12 +25,14 @@ import traceback
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
-from . import (architect, board, events, project as projects, replay, runner,
-               secrets, usertools)
+import yaml
+
+from . import (architect, board, events, harden, project as projects, replay,
+               runner, secrets, usertools)
 from .interpose import ToolCost
 from .ledger import Ledger
 from .ledger import errors as ledger_errors
@@ -348,7 +350,7 @@ def start_project(session: Session, p: projects.Project) -> None:
     if blockers:
         raise ValueError("; ".join(blockers))
     with session.lock:
-        if session.running():
+        if session.running() or HARDEN.running():
             raise RuntimeError("a run is already in progress")
         session.status, session.error = "running", None
         session.project_id = p.id
@@ -362,7 +364,7 @@ def start_project(session: Session, p: projects.Project) -> None:
 
 def start_run(session: Session, intake: dict[str, Any]) -> None:
     with session.lock:
-        if session.running():
+        if session.running() or HARDEN.running():
             raise RuntimeError("a run is already in progress")
         session.status = "running"
         session.error = None
@@ -503,6 +505,234 @@ def store_upload(p: projects.Project, filename: str, source: str) -> dict[str, A
     }
 
 
+# --- harden ---------------------------------------------------------------
+#
+# One round of hardening an operator's agent (#50). The page submits
+# instructions, a tool grant and a model; everything else -- the reachable
+# failures, the candidates, the sizing, the verdict -- is `harden`'s own
+# output, serialized. Nothing here scores anything, and nothing here runs
+# operator code: `import_agent` regenerates tools.py, so this surface takes
+# TEXT and a list of names, which is why it does not need the upload gate.
+
+FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures"
+
+
+def harden_fixtures() -> dict[str, TaskSpec]:
+    """Tasks the page may name. A key, never a path from the request: a
+    route that read whatever file it was pointed at would be an arbitrary
+    file read on a server that may be on a shared machine."""
+    found: dict[str, TaskSpec] = {}
+    if FIXTURES_DIR.is_dir():
+        for path in sorted(FIXTURES_DIR.glob("*/*.yaml")):
+            try:
+                found[f"{path.parent.name}/{path.name}"] = TaskSpec.from_yaml(path)
+            except Exception:  # a fixture that does not load is not offered
+                continue
+    return found
+
+
+def harden_catalog() -> dict[str, Any]:
+    return {
+        "fixtures": [
+            {"key": key, "id": t.id, "statement": t.statement,
+             "fault_kind": t.fault_kind, "fault_tool": t.fault_tool,
+             "scenarios": len(t.scenarios), "gate": harden.gate_metric(t),
+             "fingerprint": t.fingerprint()}
+            for key, t in harden_fixtures().items()],
+        "tools": sorted(architect.HARNESS_TOOLS),
+        "models": DEFAULT_MODELS,
+        "rounds": harden.ROUNDS,
+        "assumed": list(harden.ASSUMED),
+    }
+
+
+def _harden_inputs(body: dict[str, Any]) -> tuple[TaskSpec, str, list[str], str]:
+    fixtures = harden_fixtures()
+    key = body.get("fixture") or ""
+    if key not in fixtures:
+        raise ValueError(f"unknown fixture {key!r}")
+    instructions = (body.get("instructions") or "").strip()
+    if not instructions:
+        raise ValueError("the agent has no instructions")
+    tools = [t for t in (body.get("tools") or []) if isinstance(t, str)]
+    model = (body.get("model") or "").strip()
+    model = DEFAULT_MODELS.get(model, model)
+    return fixtures[key], instructions, tools, model
+
+
+def _write_agent(dest: Path, instructions: str, tools: list[str],
+                 model: str) -> Path:
+    """The operator's agent as the folder `import_agent` reads. Written with
+    yaml rather than formatted, so a model string cannot break out of its
+    field."""
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "skill.md").write_text(instructions + "\n", encoding="utf-8")
+    (dest / "agent-config.yaml").write_text(yaml.safe_dump(
+        {"name": "submitted", "model": model, "tools": sorted(tools)},
+        sort_keys=False), encoding="utf-8")
+    return dest
+
+
+def _pairs(found) -> list[dict[str, str]]:
+    return [{"kind": k.value, "what": w}
+            for k, w in sorted(found, key=lambda p: (p[0].value, p[1]))]
+
+
+def _candidate_view(c: harden.Candidate) -> dict[str, Any]:
+    h = c.hardening
+    return {"name": h.name, "why": h.why, "structural": h.structural,
+            "grant": list(h.grant), "revoke": list(h.revoke),
+            "clause": h.clause, "refused": c.refused,
+            "fingerprint": c.variant.fingerprint if c.variant else None}
+
+
+def _sizing_view(task: TaskSpec, sized: harden.Sizing) -> dict[str, Any]:
+    return {"held_runs": sized.held_runs, "needed": sized.needed,
+            "enough": sized.enough, "reason": sized.reason(),
+            "repeats_needed": harden.repeats_needed(task)}
+
+
+def harden_plan(body: dict[str, Any], work: Path) -> dict[str, Any]:
+    """Everything a live round would spend money on, and nothing spent.
+
+    Offline on purpose: a scripted policy never reads the prompt, so no
+    offline run could show a clause helping. The plan says what COULD fail,
+    and `reachable` says so in the field name the page prints.
+    """
+    task, instructions, tools, model = _harden_inputs(body)
+    target = body.get("target") or "claude"
+    seeds = max(2, min(int(body.get("seeds") or 4), 10))
+    repeats = max(1, min(int(body.get("repeats") or 6), 20))
+    agent = _write_agent(work / "agent", instructions, tools, model)
+    base = architect.import_agent(agent, task=task, out_dir=work / "variants",
+                                  models=DEFAULT_MODELS, targets=[target])
+    sized = harden.size(task, seeds=seeds, repeats=repeats)
+    here, elsewhere = harden.measurable(
+        harden.reachable(task, base, task.scenarios[0]), task)
+    cands = [harden.derive(base, h, task=task, out_dir=work / "variants")
+             for h in harden.propose(here)]
+    blockers: list[str] = []
+    if not sized.enough:
+        blockers.append(
+            f"this round cannot return HARDENED whatever the agent does: "
+            f"{sized.reason()}. {harden.repeats_needed(task)} repeats is the "
+            f"smallest round that could.")
+    from .live import MissingCredentials, preflight
+    try:
+        preflight([base], target=target)
+    except MissingCredentials as exc:
+        blockers.append(f"credentials: {exc}")
+    except Exception as exc:  # the target's extra is not installed
+        blockers.append(f"{type(exc).__name__}: {exc}")
+    return {
+        "task": {"id": task.id, "fingerprint": task.fingerprint(),
+                 "fault_kind": task.fault_kind, "fault_tool": task.fault_tool},
+        "baseline": {"fingerprint": base.fingerprint,
+                     "tools": list(architect.granted(base))},
+        "gate": harden.gate_metric(task), "rounds": harden.ROUNDS,
+        "seeds": seeds, "repeats": repeats, "target": target,
+        "sizing": _sizing_view(task, sized),
+        "reachable": _pairs(here), "elsewhere": _pairs(elsewhere),
+        "candidates": [_candidate_view(c) for c in cands],
+        # Counted here so the page never multiplies: the baseline plus each
+        # buildable candidate, per scenario, per repeat, per seed, with and
+        # without the fault.
+        "matrix_runs": ((1 + sum(1 for c in cands if c.variant))
+                        * len(task.scenarios) * repeats * seeds * 2),
+        "live_blockers": blockers,
+    }
+
+
+def contrast_view(rnd: harden.Round) -> dict[str, Any]:
+    """The verdict as `harden.contrast` made it. `before`/`after` stay None
+    when unmeasured, so the page prints n/a (rule 2)."""
+    c = rnd.contrast
+    out: dict[str, Any] = {
+        "verdict": c.verdict, "reason": c.reason, "metric": c.metric,
+        "chosen_on": list(c.held.selection_seeds) if c.held else [],
+        "reported_on": list(c.held.holdout_seeds) if c.held else [],
+        "changes": [{"metric": ch.metric, "before": ch.before,
+                     "after": ch.after, "verdict": ch.verdict.value,
+                     "is_gate": ch.is_gate, "note": ch.note}
+                    for ch in c.changes],
+        "cost": ({"before": c.baseline.cost_usd, "after": c.winner.cost_usd}
+                 if c.baseline is not None and c.winner is not None else None),
+        "candidates": [_candidate_view(x) for x in rnd.candidates],
+        "found": _pairs(rnd.found),
+        "exported": None, "diff": None,
+    }
+    if rnd.exported is not None:
+        diff = rnd.exported.parent / "hardened.diff"
+        out["exported"] = str(rnd.exported)
+        out["diff"] = diff.read_text("utf-8") if diff.is_file() else None
+    return out
+
+
+@dataclass
+class HardenJob:
+    """One live round. Its own state rather than the arena's event log: the
+    matrix's `tool.call` frames would be drawn by a page that has no
+    contenders set up, and a round has one answer, not a replay."""
+
+    status: str = "idle"
+    """idle | running | done | failed."""
+    result: Optional[dict[str, Any]] = None
+    error: Optional[str] = None
+    thread: Optional[threading.Thread] = None
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def running(self) -> bool:
+        return self.status == "running"
+
+
+HARDEN = HardenJob()
+
+
+def _harden_worker(body: dict[str, Any], work: Path) -> None:
+    try:
+        from .live import live_executor, preflight
+
+        task, instructions, tools, model = _harden_inputs(body)
+        target = body.get("target") or "claude"
+        seeds = [f"seed{i}" for i in range(max(2, min(int(body.get("seeds") or 4), 10)))]
+        repeats = max(1, min(int(body.get("repeats") or 6), 20))
+        agent = _write_agent(work / "agent", instructions, tools, model)
+        base = architect.import_agent(agent, task=task, out_dir=work / "out" / "variants",
+                                      models=DEFAULT_MODELS, targets=[target])
+        preflight([base], target=target)
+        rnd = harden.run_round(
+            task=task, baseline=base, scenario=task.scenarios[0],
+            execute=live_executor(target), seeds=seeds, repeats=repeats,
+            out_dir=work / "out", ledger=Ledger(work / "out" / "runs.jsonl"))
+        with HARDEN.lock:
+            HARDEN.result, HARDEN.status = contrast_view(rnd), "done"
+    except Exception as exc:  # surfaced to the page, not swallowed
+        with HARDEN.lock:
+            HARDEN.status = "failed"
+            HARDEN.error = f"{type(exc).__name__}: {exc}"
+
+
+def start_harden(body: dict[str, Any]) -> None:
+    """Live only, and only after the same refusals the CLI makes. Spend is
+    confirmed by typing the sentence, not by a flag the page can default."""
+    task, *_ = _harden_inputs(body)
+    seeds = max(2, min(int(body.get("seeds") or 4), 10))
+    repeats = max(1, min(int(body.get("repeats") or 6), 20))
+    sized = harden.size(task, seeds=seeds, repeats=repeats)
+    if not sized.enough:
+        raise ValueError(f"round too small to show anything: {sized.reason()}")
+    if body.get("confirm") != "spend":
+        raise ValueError('a live round spends real money; send confirm "spend"')
+    with HARDEN.lock, SESSION.lock:
+        if HARDEN.running() or SESSION.running():
+            raise RuntimeError("a run is already in progress")
+        HARDEN.status, HARDEN.result, HARDEN.error = "running", None, None
+    work = Path(mkdtemp(prefix="harden-"))
+    HARDEN.thread = threading.Thread(
+        target=_harden_worker, args=(body, work), daemon=True)
+    HARDEN.thread.start()
+
+
 # --- http -----------------------------------------------------------------
 
 
@@ -547,6 +777,13 @@ class Handler(BaseHTTPRequestHandler):
                 "uploads_allowed": uploads_allowed(),
                 "bind_host": BIND_HOST,
             })
+        if route == "/api/harden/catalog":
+            return self._json(200, harden_catalog())
+        if route == "/api/harden/status":
+            with HARDEN.lock:
+                return self._json(200, {"status": HARDEN.status,
+                                        "error": HARDEN.error,
+                                        "result": HARDEN.result})
         if route == "/api/secrets":
             # Names, presence and where each came from. There is no branch
             # here, or anywhere else, that returns a value.
@@ -603,7 +840,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(409, {"error": str(exc)})
             return self._json(202, {"status": "running"})
 
-        if route.startswith("/api/secrets") or route.endswith("/upload"):
+        if route == "/api/harden/plan":
+            try:
+                with TemporaryDirectory(prefix="harden-plan-") as tmp:
+                    return self._json(200, harden_plan(body, Path(tmp)))
+            except (ValueError, FileNotFoundError) as exc:
+                return self._json(400, {"error": str(exc)})
+
+        if (route.startswith("/api/secrets") or route.endswith("/upload")
+                or route == "/api/harden/run"):
             # Checked per request, not at startup: a tunnel can be attached
             # to an already-running server, and the bind address will not
             # change when it is.
@@ -614,6 +859,18 @@ class Handler(BaseHTTPRequestHandler):
                     "through a proxy or tunnel. Uploading code and entering "
                     "credentials are refused on anything but a direct local "
                     "connection -- a tunnel to loopback is still a public URL.")})
+
+        if route == "/api/harden/run":
+            # No uploaded code here, but the key is the server's own: a
+            # tunnel to loopback must not be able to spend it. That is the
+            # proxy check above; nothing further is derived from the bind.
+            try:
+                start_harden(body)
+            except ValueError as exc:
+                return self._json(400, {"error": str(exc)})
+            except RuntimeError as exc:
+                return self._json(409, {"error": str(exc)})
+            return self._json(202, {"status": "running"})
 
         if route.startswith("/api/secrets"):
             # Same rule as uploads, for the same reason: a credential

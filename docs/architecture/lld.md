@@ -9,7 +9,7 @@ Dependencies point downward; nothing below imports anything above it.
 ```mermaid
 flowchart TD
     subgraph ui["UI layer — a view, not a second pipeline"]
-        SERVER["<b>server</b> · 724<br/>stdlib http · wizard · arena"]
+        SERVER["<b>server</b> · 982<br/>stdlib http · wizard · arena"]
         RUNNER["<b>runner</b> · 637<br/>project → TaskSpec · policies"]
         USERT["<b>usertools</b> · 397<br/>discover · calibrate · serve"]
         PROJECT["<b>project</b> · 309<br/>Project · blockers"]
@@ -715,7 +715,7 @@ test_explain     the detail view, and the curve that keeps the runs the
                  median has to drop
 test_provenance  where a scenario's world came from, and the board that
                  could not tell an invented one from a traced one
-test_ui          the event stream, intake validation, censoring on the wire
+test_ui          the event stream, intake validation, censoring on the wire, the harden panel
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims
 test_certify     the three verdicts, and catching a real degradation

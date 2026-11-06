@@ -125,6 +125,16 @@ a bill with no finding in it. Both plan and live print the sizing line.
 Experiment [019](experiments/019-harden-preregistered/) pre-registers the
 first live round against that bar.
 
+The same round is in the UI: **Harden an agent** on the `gauntlet ui` page.
+Paste your instructions, tick the tools it is granted (only tools the harness
+serves, for the reason above), pick a task and fault, and **Plan** -- free,
+and it prints the sizing, what could fail, and each candidate with its diff.
+**Run the live round** is lit only when the plan has no blockers (undersized
+round, missing key) and asks you to type `spend`. It is one round, the
+verdict is `harden`'s own with intervals, and an unmeasured figure shows
+`n/a`. The page takes text and tool names, never code, and the live route is
+refused through a proxy or tunnel because the key it spends is the server's.
+
 
 Add `--max-cost-per-run 0.02` to get the constrained answer — the cheapest
 config inside the band this run could not order, beside the unconstrained
