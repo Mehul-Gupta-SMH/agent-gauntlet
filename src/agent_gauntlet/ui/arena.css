@@ -549,3 +549,4 @@ input[type="file"] { font-size: 0.8rem; color: var(--ink-dim); }
 #harden pre { overflow: auto; max-height: 22rem; font-family: var(--mono); font-size: 0.78rem; background: #0d0a07; border: 1px solid #2a2118; padding: 0.7rem; }
 #harden .verdict.hardened { color: var(--parry); }
 #harden .verdict.worse { color: var(--blood); }
+#harden .sample-banner { border: 1px dashed var(--gold); color: var(--gold); padding: 0.6rem 0.8rem; font-size: 0.85rem; }

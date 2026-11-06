@@ -124,7 +124,12 @@ async function pollStatus() {
 }
 
 function renderResult(r) {
-  hq('#h-result').innerHTML = `
+  /* A sample is drawn by the same code as a real result, under a banner the
+   * data itself carries, so it cannot be mistaken for a measurement. */
+  const banner = r.sample
+    ? `<p class="sample-banner"><strong>SAMPLE — not a measurement.</strong>
+       ${hesc(r.sample_note)}</p>` : '';
+  hq('#h-result').innerHTML = banner + `
     <h4 class="sub">Held out</h4>
     <p>chosen on ${r.chosen_on.map(hesc).join(', ') || 'n/a'} · reported on
        ${r.reported_on.map(hesc).join(', ') || 'n/a'}
@@ -145,6 +150,23 @@ function renderResult(r) {
     classes. A failure nobody implemented is not found, and not fixed (#18).</p>`;
 }
 
+/* Fills the form with the pre-registered baseline, runs the REAL (free)
+ * plan on it, then draws the sample result beneath it. */
+async function loadSample() {
+  hshow('');
+  try {
+    const sample = await hapi('/sample-harden.json');
+    hq('#h-fixture').value = 'inventory/audited.yaml';
+    renderFixtureNote();
+    hq('#h-instructions').value = 'You add up stock across inventory records. ' +
+      'Fetch each record, sum the quantities, and report the total. Be quick.';
+    document.querySelectorAll('#h-tools .chip').forEach((b) => b.setAttribute(
+      'aria-pressed', ['fetch_record', 'list_records'].includes(b.dataset.tool) ? 'true' : 'false'));
+    await plan();
+    renderResult(sample);
+  } catch (err) { hshow(err.message); }
+}
+
 (async () => {
   try { H.catalog = await hapi('/api/harden/catalog'); } catch { return; }
   hq('#h-fixture').innerHTML = H.catalog.fixtures
@@ -156,4 +178,5 @@ function renderResult(r) {
   document.querySelectorAll('#h-tools .chip').forEach((b) => b.addEventListener('click', () =>
     b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true')));
   hq('#h-plan').addEventListener('click', plan);
+  hq('#h-sample').addEventListener('click', loadSample);
 })();

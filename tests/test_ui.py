@@ -431,3 +431,35 @@ def test_the_page_scripts_declare_no_top_level_name_twice():
                 js.read_text("utf-8"), flags=re.M):
             assert name not in seen, f"{name} is declared in {seen[name]} and {js.name}"
             seen[name] = js.name
+
+
+def test_the_harden_sample_says_it_is_a_sample_and_its_gate_is_honest():
+    """Sample data is the one place the page shows numbers nobody measured,
+    so the file carries its own label (the page cannot forget it) and its
+    headline must at least be a result the real Wilson test would call
+    shown -- an illustration that `contrast` would have refused teaches the
+    wrong thing. Unmeasured metrics stay null, as on a real board."""
+    from agent_gauntlet import harden
+
+    doc = json.loads((Path(server.__file__).parent / "ui"
+                      / "sample-harden.json").read_text("utf-8"))
+    assert doc["sample"] is True and "no model was called" in doc["sample_note"]
+    gate = next(c for c in doc["changes"] if c["is_gate"])
+    assert [c["metric"] for c in doc["changes"] if c["is_gate"]] == [
+        "propagation_rate"]          # exactly one gate (rule 2d)
+    assert harden.separates(gate["before"], gate["after"], 18)
+    assert [c["before"] for c in doc["changes"]
+            if c["verdict"] == "not_comparable"] == [None, None]
+    assert doc["candidates"][0]["name"] == "cross_check"
+
+
+def test_a_real_result_never_carries_the_sample_flag(tmp_path):
+    from agent_gauntlet import harden
+    from agent_gauntlet.certify import MetricChange, MetricVerdict
+
+    c = harden.Contrast(harden.NOT_SHOWN, metric="propagation_rate", reason="x",
+                        changes=[MetricChange(metric="propagation_rate",
+                                              verdict=MetricVerdict.NOT_COMPARABLE)])
+    view = server.contrast_view(harden.Round(
+        baseline=None, findings=[], found=set(), candidates=[], contrast=c))
+    assert "sample" not in view
