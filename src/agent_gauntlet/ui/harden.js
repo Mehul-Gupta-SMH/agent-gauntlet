@@ -167,7 +167,24 @@ async function loadSample() {
   } catch (err) { hshow(err.message); }
 }
 
+/* The published demo has no server. It marks the section `data-static` with
+ * the recorded plan's file name, and this same script draws the recorded plan
+ * and the labelled sample -- no form, no buttons, no fetch to /api. */
+async function staticMode(section) {
+  const box = hq('#harden-box');
+  box.open = true;
+  section.querySelectorAll('.intake-grid, .step-actions').forEach((n) => { n.style.display = 'none'; });
+  try {
+    const plan = await (await fetch(section.dataset.static)).json();
+    H.plan = plan;
+    renderPlan(plan);
+    renderResult(await (await fetch(section.dataset.sample)).json());
+  } catch (err) { hshow(`could not load the recorded plan: ${err.message}`); }
+}
+
 (async () => {
+  const section = hq('#harden');
+  if (section && section.dataset.static) return staticMode(section);
   try { H.catalog = await hapi('/api/harden/catalog'); } catch { return; }
   hq('#h-fixture').innerHTML = H.catalog.fixtures
     .map((f) => `<option value="${hesc(f.key)}">${hesc(f.key)} — ${hesc(f.fault_kind)}</option>`).join('');
