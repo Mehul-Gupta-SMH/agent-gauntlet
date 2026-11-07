@@ -13,6 +13,7 @@ is being tested by inspecting its own tool code for a fault hook.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import itertools
 import json
@@ -425,7 +426,17 @@ def leaks_answer(task: TaskSpec) -> Optional[str]:
     model: `skill.md` is a prompt strategy plus this text plus the answer
     format, and the scenario itself is served through tools at run time.
     """
-    text = task.statement
+    return _leak_in(task.statement, task, where="the task statement")
+
+
+def _leak_in(text: str, task: TaskSpec, *, where: str) -> Optional[str]:
+    """`leaks_answer` over any text that reaches the model.
+
+    Split out for an imported agent (#50), whose instructions are a second
+    surface the operator controls and the model reads -- and one written by
+    someone who knows the answer, which is the condition under which this
+    leak gets written by accident.
+    """
     for scenario in task.scenarios:
         for label, value in (("the answer", scenario.expected_total),
                              ("the audited figure", scenario.audited_total)):
@@ -438,8 +449,8 @@ def leaks_answer(task: TaskSpec) -> Optional[str]:
             # leak this refuses.
             if re.search(rf"(?<!\d)(?<!\d\.){value}(?!\d)(?!\.\d)", text):
                 return (
-                    f"scenario {scenario.id!r} has {label} {value}, and the "
-                    f"task statement contains that number. Every variant can "
+                    f"scenario {scenario.id!r} has {label} {value}, and "
+                    f"{where} contains that number. Every variant can "
                     f"read it off the prompt without calling a tool, and the "
                     f"board would rank a field that never did the work"
                 )
@@ -491,16 +502,7 @@ def generate(
     # is there anywhere for this fault to LAND, and can any variant reach
     # the tool it lands in. Both fail the same way when unasked -- a full
     # leaderboard over a matrix where nothing was ever injected.
-    leak = leaks_answer(task)
-    if leak:
-        raise ValueError(f"task {task.id!r} leaks its own answer: {leak}")
-
-    why = interpose.unreachable(task.fault_tool, FaultKind(task.fault_kind))
-    if why:
-        raise ValueError(
-            f"task {task.id!r} schedules a {task.fault_kind!r} fault on "
-            f"{task.fault_tool!r}, which cannot fire: {why}"
-        )
+    _refuse_unmeasurable(task)
 
     if not any(task.fault_tool in TOOLSETS[t] for t in toolset_names):
         raise ValueError(
@@ -531,6 +533,24 @@ def generate(
         )
 
     return variants
+
+
+def _refuse_unmeasurable(task: TaskSpec) -> None:
+    """The refusals that depend on the task alone, whoever built the agent.
+
+    Shared by `generate` and `import_agent` so an imported agent cannot be
+    the door a leaking task or an unfireable fault walks in through.
+    """
+    leak = leaks_answer(task)
+    if leak:
+        raise ValueError(f"task {task.id!r} leaks its own answer: {leak}")
+
+    why = interpose.unreachable(task.fault_tool, FaultKind(task.fault_kind))
+    if why:
+        raise ValueError(
+            f"task {task.id!r} schedules a {task.fault_kind!r} fault on "
+            f"{task.fault_tool!r}, which cannot fire: {why}"
+        )
 
 
 def _write_variant(
@@ -617,7 +637,21 @@ def has_evidence_tool(variant: VariantSpec) -> bool:
     reachable cross-check cannot detect a falsehood, so its runs leave the
     detection denominator instead of counting as misses.
     """
-    return "get_summary" in TOOLSETS.get(variant.factors.get("toolset", ""), [])
+    return "get_summary" in granted(variant)
+
+
+def granted(variant: VariantSpec) -> list[str]:
+    """The tools this variant may call, whichever way its grant was given.
+
+    A generated variant names a tool set; an imported one carries its own
+    list (#50). Every lookup goes through here so the imported case cannot
+    be missed at one call site -- `TOOLSETS["baseline"]` does not raise
+    under `.get`, it returns nothing, and an agent granted nothing is
+    scored as having found nothing to be lied to about.
+    """
+    if variant.tools is not None:
+        return list(variant.tools)
+    return list(TOOLSETS.get(variant.factors.get("toolset", ""), []))
 
 
 PROVIDER_ENV = {
@@ -638,3 +672,202 @@ def _env_requirements(model_string: str) -> list[dict]:
         "description": f"Credential for {provider} models used by this variant.",
         "required": True,
     }]
+
+
+# --- bringing an operator's own agent in (#50, H1) ------------------------
+
+
+BASELINE = "baseline"
+"""The factor level an imported agent sits at, on both prompt and tool set.
+
+Not a level of either factor in any grid: it is an off-grid point, which is
+why `cli` keeps it out of attribution the way it keeps the sentinel out.
+One per run, because H1 takes one `--baseline`; a second would need a name
+that is not a factor value, and nothing yet asks for that.
+"""
+
+HARNESS_TOOLS = frozenset(
+    node.name for node in ast.parse(_TOOLS_PY).body
+    if isinstance(node, ast.FunctionDef)
+)
+"""Every tool the generated `tools.py` serves, read from that source.
+
+Parsed rather than listed so the two cannot drift: a tool added to
+`_TOOLS_PY` is importable the moment it exists, and a list maintained
+beside it is exactly the kind of second source this project keeps finding
+out of date.
+"""
+
+TASK_HEADING = "\n## Task\n\n"
+
+
+def import_agent(
+    src: Union[str, Path],
+    *,
+    task: TaskSpec,
+    out_dir: Union[str, Path],
+    models: Optional[Mapping[str, str]] = None,
+    targets: Optional[Iterable[str]] = None,
+    hardening: Optional[str] = None,
+) -> VariantSpec:
+    """Read an operator's agent and rebuild it as a variant of this task.
+
+    Accepts the shape this harness exports (`board.export_winner` writes a
+    `common/` folder), so a winner can come back in as next round's
+    baseline -- that round trip is what H2 of #50 is built on. Three entry
+    points, most specific last: a directory holding `common/`, a `common/`
+    folder (`config.yaml` names the entry agent), or the agent folder
+    itself (`skill.md` + `agent-config.yaml`).
+
+    What is kept is what the operator AUTHORED: the instructions in
+    `skill.md`, the tool names it is granted, and its model. What is
+    replaced is what the harness has to own for the measurement to exist:
+
+    * **`tools.py` is regenerated, never copied.** The lie is injected in
+      `interpose`, below the adapter, and only the generated tool module
+      calls into it. An operator's own tool code would serve the truth on
+      every faulted run, and the board would score the agent as having
+      resisted a fault that never reached it -- the fail-green shape in its
+      most flattering direction. Tools the harness does not serve are
+      refused here, not dropped.
+    * **The task section is replaced with this task's statement**, verbatim,
+      plus the answer format. That is the fairness invariant every
+      generated variant already obeys, and an imported agent that carried
+      an older or edited statement would be answering a different question
+      under the same task fingerprint.
+
+    Refused, each for the reason `generate` refuses it: a task that leaks
+    its answer, a fault that cannot fire, and an agent not granted the tool
+    the fault lands in. Plus one of its own: instructions that contain the
+    answer, which is the same leak arriving through the other file.
+
+    `hardening` names the catalogue entry a derived candidate came from
+    (`harden.derive`). It joins the factors, so the candidate gets its own
+    id and folder -- otherwise it would land on its parent's `vid` and
+    overwrite the baseline it is about to be measured against.
+    """
+    root = Path(src)
+    if (root / "common").is_dir():
+        root = root / "common"
+
+    aliases: dict[str, str] = {}
+    if (root / "config.yaml").is_file():
+        config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8")) or {}
+        entry = config.get("entry")
+        if not entry or not (root / entry).is_dir():
+            raise ValueError(f"{root / 'config.yaml'} names entry {entry!r}, "
+                             f"which is not a folder beside it")
+        aliases = dict(config.get("model_aliases") or {})
+        agent_dir = root / entry
+    else:
+        agent_dir = root
+
+    skill_path = agent_dir / "skill.md"
+    conf_path = agent_dir / "agent-config.yaml"
+    for need in (skill_path, conf_path):
+        if not need.is_file():
+            raise FileNotFoundError(f"cannot import agent: {need} does not exist")
+    conf = yaml.safe_load(conf_path.read_text(encoding="utf-8")) or {}
+
+    tools = conf.get("tools") or []
+    if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
+        raise ValueError(f"{conf_path}: `tools` must be a list of tool names")
+    if not tools:
+        raise ValueError(f"{conf_path}: the agent is granted no tools, so "
+                         f"nothing it does can meet a fault")
+    foreign = sorted(set(tools) - HARNESS_TOOLS)
+    if foreign:
+        raise ValueError(
+            f"{conf_path}: {foreign} are not tools this harness serves, so "
+            f"no fault could be injected into them and keeping them would "
+            f"score the agent against the truth. Served: "
+            f"{sorted(HARNESS_TOOLS)}. Your own tools go through a project "
+            f"(`gauntlet ui`), which calibrates them first"
+        )
+
+    # Model: an alias the folder itself defines, then one the caller's grid
+    # defines, then a resolved provider string written directly. Never a
+    # guess -- an alias nobody defines would pin a fingerprint to a model
+    # string that is not the one that ran.
+    alias = conf.get("model")
+    pool = {**dict(models or {}), **aliases}
+    if isinstance(alias, str) and alias in pool:
+        resolved = pool[alias]
+    elif isinstance(alias, str) and "/" in alias:
+        resolved = alias
+    else:
+        raise ValueError(
+            f"{conf_path}: model {alias!r} is neither an alias defined in "
+            f"config.yaml or --models, nor a provider/model string"
+        )
+
+    authored = skill_path.read_text(encoding="utf-8")
+    # A harness-written skill.md ends in "## Task" + statement + format, so
+    # an exported winner re-imports to exactly the prompt it was given.
+    instructions = authored.split(TASK_HEADING, 1)[0].rstrip() + "\n"
+    if not instructions.strip():
+        raise ValueError(f"{skill_path}: no instructions before the task section")
+
+    _refuse_unmeasurable(task)
+    if task.fault_tool not in tools:
+        raise ValueError(
+            f"task {task.id!r} corrupts {task.fault_tool!r}, which this agent "
+            f"is not granted ({sorted(tools)}) -- the fault could never fire "
+            f"and every run would be scored as if it were clean"
+        )
+    leak = _leak_in(instructions, task, where="the imported instructions")
+    if leak:
+        raise ValueError(f"cannot import agent: {leak}")
+
+    factors = {"model": alias, "prompt": BASELINE, "toolset": BASELINE}
+    if hardening:
+        factors["hardening"] = hardening
+    vid = variant_id(factors)
+    out = Path(out_dir) / vid / "common"
+    agent = out / AGENT_NAME
+    agent.mkdir(parents=True, exist_ok=True)
+
+    from .live import ANSWER_FORMAT
+
+    skill_md = instructions + TASK_HEADING + task.statement + ANSWER_FORMAT
+    _dump(out / "config.yaml", {
+        "name": f"gauntlet-{vid}"[:60],
+        "entry": AGENT_NAME,
+        "targets": sorted(set(targets or ["openai"])),
+        "default_model": alias,
+        "model_aliases": {alias: resolved},
+    })
+    _dump(out / "interactions.yaml", {"entry": AGENT_NAME, "edges": []})
+    (out / "interaction-layer.md").write_text(
+        "# Interaction layer\n\nIMPORTED, then regenerated. Single agent, "
+        "no edges.\n\n```mermaid\nflowchart TD\n    auditor([\"auditor "
+        "(entry)\"])\n```\n",
+        encoding="utf-8",
+    )
+    (agent / "skill.md").write_text(skill_md, encoding="utf-8")
+    (agent / "tools.py").write_text(_TOOLS_PY, encoding="utf-8")
+    _dump(agent / "agent-config.yaml", {
+        "name": AGENT_NAME,
+        "description": str(conf.get("description") or "Imported agent.")[:200],
+        "model": alias,
+        "tools": sorted(tools),
+        "requires": {"env": _env_requirements(resolved)},
+    })
+
+    return VariantSpec(
+        id=vid,
+        common_dir=str(out),
+        entry_agent=AGENT_NAME,
+        factors=factors,
+        model=resolved,
+        # Over the REALIZED skill.md and the regenerated tool surface, the
+        # same inputs a generated variant hashes: two agents that were told
+        # the same thing with the same tools are the same agent, whichever
+        # door they came in by.
+        fingerprint=variant_fingerprint(
+            skill_md=skill_md, tools=tools, model=resolved,
+            entry_agent=AGENT_NAME, tool_docs=_TOOLS_PY,
+        ),
+        tools=sorted(tools),
+        origin=str(Path(src)),
+    )

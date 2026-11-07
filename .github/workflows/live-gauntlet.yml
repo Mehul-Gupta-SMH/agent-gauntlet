@@ -30,6 +30,9 @@ on:
           # its cross-check IS the answer, so the top variants tie at 1.00 and
           # the gate cannot pass however stable the system is.
           - fixtures/inventory/task.yaml
+      baseline:
+        description: "harden only: the agent to harden (a folder with skill.md)"
+        default: experiments/019-harden-preregistered/baseline
       mode:
         description: "How far to go -- escalate one step at a time"
         type: choice
@@ -38,6 +41,7 @@ on:
           - smoke    # one raw API call; proves the credential
           - probe    # one full gauntlet run; proves build->run->trace->parse
           - matrix   # the full run; the only step that costs real money
+          - harden   # one round of `gauntlet harden` (#50 H3); also paid
         # `probe` also runs by itself -- see live-probe.yml, which fires on
         # every code push to main and daily. Dispatching it here is for
         # probing a fixture or target that workflow does not cover.
@@ -66,7 +70,11 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 45 was sized for a matrix. A harden round is a sweep plus a matrix of
+    # baseline+candidates over 4 seeds x 6 repeats (exp 019: 288 runs), so it
+    # gets more room -- a timeout mid-round censors the held-out seed, which
+    # runs last, and that would be the not_shown nobody paid for.
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
 
@@ -138,8 +146,29 @@ jobs:
             --repeats "${{ inputs.repeats }}" \
             --seeds "${{ inputs.seeds }}"
 
+      # Exit 3 (WORSE) is a measurement, not a crash, and exit 2 is a
+      # refusal (e.g. undersized) -- both must still reach the commit step,
+      # and the console must be kept either way. `set +e` is load-bearing.
+      - name: Harden, one round
+        if: ${{ inputs.mode == 'harden' }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set +e
+          mkdir -p runs
+          gauntlet harden "${{ inputs.fixture }}" \
+            --baseline "${{ inputs.baseline }}" \
+            --live \
+            --target "${{ inputs.target }}" \
+            --repeats "${{ inputs.repeats }}" \
+            --seeds "${{ inputs.seeds }}" \
+            --out runs 2>&1 | tee runs/console.txt
+          rc=${PIPESTATUS[0]}
+          echo "harden exited $rc"
+          [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || exit "$rc"
+
       - name: Upload the ledger and the winning config
-        if: ${{ always() && inputs.mode == 'matrix' }}
+        if: ${{ always() && (inputs.mode == 'matrix' || inputs.mode == 'harden') }}
         uses: actions/upload-artifact@v4
         with:
           name: gauntlet-run
@@ -147,18 +176,22 @@ jobs:
             runs/runs.jsonl
             runs/summary.json
             runs/winner/**
+            runs/console.txt
+            runs/hardened.diff
+            runs/hardened/**
           if-no-files-found: warn
 
       # The artifact above expires; this does not (#46). Kept as a separate
       # step rather than folded into the upload so a failure to commit never
       # loses the artifact -- belt and braces, in that order.
       - name: Commit the ledger, because the artifact expires
-        if: ${{ always() && inputs.mode == 'matrix' }}
+        if: ${{ always() && (inputs.mode == 'matrix' || inputs.mode == 'harden') }}
         env:
           FIXTURE: ${{ inputs.fixture }}
           TARGET: ${{ inputs.target }}
           SEEDS: ${{ inputs.seeds }}
           REPEATS: ${{ inputs.repeats }}
+          MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
           test -f runs/runs.jsonl || { echo "no ledger to commit"; exit 0; }
@@ -167,6 +200,11 @@ jobs:
           mkdir -p "$dest"
           cp runs/runs.jsonl "$dest/"
           if [ -f runs/summary.json ]; then cp runs/summary.json "$dest/"; fi
+          # harden: the console IS the verdict, and the diff is what a win
+          # hands over. Both are text this repo's code wrote.
+          for f in console.txt hardened.diff; do
+            if [ -f "runs/$f" ]; then cp "runs/$f" "$dest/"; fi
+          done
 
           # A ledger carries no model output text -- `answer` holds a total,
           # a bool and a confidence, nothing else. The one field whose
@@ -182,6 +220,7 @@ jobs:
             printf 'Committed by `live-gauntlet.yml` because Actions artifacts expire\n'
             printf 'and this one should not (#46).\n\n'
             printf '| | |\n|---|---|\n'
+            printf '| mode | `%s` |\n' "$MODE"
             printf '| fixture | `%s` |\n' "$FIXTURE"
             printf '| target | `%s` |\n' "$TARGET"
             printf '| seeds | %s |\n' "$SEEDS"

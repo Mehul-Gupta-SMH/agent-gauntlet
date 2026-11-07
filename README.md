@@ -68,6 +68,76 @@ That buys a property no number on the board has: the fraction is **exact**,
 because the denominator is the whole space rather than a draw from it. It
 cannot find a fault *class* nobody implemented, and it says so.
 
+### Red-team your own agent (#50)
+
+```bash
+# Your agent, in the arena, beside the generated grid. Live only.
+gauntlet run fixtures/inventory/audited.yaml --live --baseline path/to/my-agent
+gauntlet explore fixtures/inventory/audited.yaml --live --baseline path/to/my-agent
+```
+
+`--baseline` takes an agent folder (`skill.md` + `agent-config.yaml`), a
+`common/` folder, or a directory holding one -- the shape the harness exports,
+so a winner comes back in unchanged and keeps its fingerprint. What you
+authored is kept: the instructions, the tool grant, the model. Two things are
+**replaced**, because the measurement does not exist without them: `tools.py`
+is regenerated (your own tool code would serve the truth below the point
+where the lie is injected, and every faulted run would score as resisted),
+and the task section is rewritten to this task's statement. Tools the harness
+does not serve, a grant missing the faulted tool, and instructions that
+contain the answer are all **refused**, not dropped.
+
+It is **live only**, and refused offline: offline runs a scripted policy
+chosen by prompt name, which never reads your prompt, so every number would
+describe the stand-in. The baseline ranks on the board and competes for the
+held-out winner, but sits at no grid point, so it is left out of attribution.
+
+```bash
+# One round of hardening it. Without --live this is a plan, and says so.
+gauntlet harden fixtures/inventory/audited.yaml --baseline path/to/my-agent
+gauntlet harden fixtures/inventory/audited.yaml --baseline path/to/my-agent --live --seeds 4
+```
+
+`harden` sweeps your agent, maps what got through to a **declared catalogue**
+of fixes -- tool changes first (`cross_check` grants a second source;
+`revoke_annotations` and `revoke_notes` remove a channel), prompt clauses
+after and marked unproven -- and builds one candidate per entry as *your agent
+plus one change*. Baseline and candidates run as one matrix; the winner is
+chosen on some seeds and reported only on the held-out one. It is called
+`HARDENED` only if the gate metric this task can reach improved with
+non-overlapping intervals and nothing regressed beyond budget; otherwise the
+verdict says what the run could not see, and nothing is exported. A win is
+exported with `hardened.diff` -- the change in your own files -- and a lineage
+back to the parent fingerprint.
+
+What it will not do: loop (round two would be chosen by round one's held-out
+runs), ask a model for the fix, or print an improvement offline -- offline
+plans against what *could* fail, writes the candidates, and prints
+`improvement n/a`. A fix that removes the very tool this task faults is
+named and marked not certifiable here, never silently dropped.
+
+A round is **sized before it spends**. `--live` refuses, with exit 2 and
+before preflight, a round whose held-out faulted runs could not separate
+75% -> 25% under Wilson even if the rates landed exactly there (16 per side;
+the default 4 seeds x 6 repeats gives 18 on a three-scenario task). Below
+that the verdict is `not_shown` whatever the agent does, so the run would be
+a bill with no finding in it. Both plan and live print the sizing line.
+Experiment [019](experiments/019-harden-preregistered/) pre-registers the
+first live round against that bar.
+
+The same round is in the UI: **Harden an agent** on the `gauntlet ui` page.
+Paste your instructions, tick the tools it is granted (only tools the harness
+serves, for the reason above), pick a task and fault, and **Plan** -- free,
+and it prints the sizing, what could fail, and each candidate with its diff.
+**Load a sample** fills the form with the pre-registered baseline, runs the
+real plan, and draws an example result under a *SAMPLE — not a measurement*
+banner that the data file itself carries: the candidate and diff are real, the
+rates are illustrative. **Run the live round** is lit only when the plan has no blockers (undersized
+round, missing key) and asks you to type `spend`. It is one round, the
+verdict is `harden`'s own with intervals, and an unmeasured figure shows
+`n/a`. The page takes text and tool names, never code, and the live route is
+refused through a proxy or tunnel because the key it spends is the server's.
+
 
 Add `--max-cost-per-run 0.02` to get the constrained answer — the cheapest
 config inside the band this run could not order, beside the unconstrained

@@ -54,8 +54,27 @@ def offline_executor(variant: VariantSpec, seed: str) -> Answer:
     The seed is threaded through so the policy's occasional slip is
     reproducible: variance without losing determinism.
     """
+    if variant.tools is not None:
+        # An imported agent's prompt was written by its operator, and no
+        # scripted policy reads a prompt -- so there is nothing offline that
+        # could stand in for it. Falling through would have run whichever
+        # policy shares the factor name, or raised an "unknown policy" that
+        # the matrix records as an errored run and the board quietly
+        # excludes. Neither is a measurement of the operator's agent (#50).
+        raise OfflineUnsupported(
+            f"variant {variant.id!r} is an imported agent; its prompt has no "
+            f"scripted stand-in, so it can only run live"
+        )
     policy = variant.factors.get("prompt", "naive")
     return run_policy(policy, seed, variant.factors.get("model"))
+
+
+class OfflineUnsupported(ValueError):
+    """A variant that has no offline behaviour to execute.
+
+    Raised rather than retried: it is a property of the variant, not of the
+    provider, so a second attempt would fail identically.
+    """
 
 
 def _attempt(
@@ -143,6 +162,21 @@ def run_matrix(
             f"task {task.id!r} schedules a {fault_kind.value!r} fault on "
             f"{task.fault_tool!r}, which cannot fire: {why}"
         )
+
+    # Refused before the first run, not left to the executor. Raised inside
+    # a cell, OfflineUnsupported becomes an errored run, and errored runs
+    # are censored from every rate -- so a matrix holding an imported agent
+    # would print a full board with that agent's row simply missing, which
+    # reads as "it was not in the grid" rather than "it could not be run".
+    if executor is None:
+        imported = [v.id for v in variants if v.tools is not None]
+        if imported:
+            raise OfflineUnsupported(
+                f"{len(imported)} imported agent(s) ({', '.join(imported)}) "
+                f"cannot run offline: a scripted policy never reads the "
+                f"prompt, so offline would measure the test double instead "
+                f"of the agent. Run live, or pass an executor"
+            )
 
     execute = executor or offline_executor
     fingerprint = task.fingerprint()
@@ -419,6 +453,8 @@ def _has_evidence(
     has no reachable evidence, and detection is censored for it rather than
     scored as a miss (#16).
     """
+    if variant.tools is not None and override is None:
+        return "get_summary" in variant.tools
     toolset = variant.factors.get("toolset")
     if toolset is None:
         return True
@@ -439,6 +475,11 @@ def _allowed_tools(
     inventory. None (unrestricted) when no toolset factor is declared, so
     variants exercised directly in tests keep working.
     """
+    if variant.tools is not None and override is None:
+        # An imported agent's grant is its own, not a named set: looking
+        # "baseline" up in TOOLSETS returns nothing, and an agent granted
+        # nothing finds nothing and is scored as having resisted (#50).
+        return set(variant.tools)
     toolset = variant.factors.get("toolset")
     if toolset is None:
         return None

@@ -122,6 +122,15 @@ def build_parser() -> argparse.ArgumentParser:
              "running the matrix",
     )
     run.add_argument(
+        "--baseline", type=Path, default=None, metavar="PATH",
+        help="also run YOUR agent beside the generated grid: a common/ "
+             "folder (what this tool exports as a winner) or an agent folder "
+             "holding skill.md and agent-config.yaml. Its instructions, "
+             "tools and model are kept; tools.py and the task section are "
+             "regenerated so the fault can reach it. Live only -- no "
+             "scripted policy reads your prompt (#50)",
+    )
+    run.add_argument(
         "--with-relations", action="store_true",
         help="also check the task's metamorphic relations and put them on "
              "the board. OFF by default because a relation is a second full "
@@ -173,6 +182,39 @@ def build_parser() -> argparse.ArgumentParser:
     expl.add_argument("--models", nargs="*", metavar="ALIAS=MODEL",
                       default=None)
     expl.add_argument("--target", default="claude")
+    expl.add_argument("--baseline", type=Path, default=None, metavar="PATH",
+                      help="red-team YOUR agent instead of the generated "
+                           "grid: a common/ folder or an agent folder. Needs "
+                           "--live, because offline would sweep a scripted "
+                           "stand-in that never reads your prompt (#50)")
+
+    hard = sub.add_parser(
+        "harden",
+        help="one round: red-team YOUR agent, build catalogued fixes, keep "
+             "one only if it holds up on held-out seeds (#50)",
+    )
+    hard.add_argument("task", type=Path)
+    hard.add_argument("--baseline", type=Path, required=True, metavar="PATH",
+                      help="your agent: a common/ folder or an agent folder")
+    hard.add_argument("--scenario", default=None,
+                      help="which scenario's world the sweep red-teams "
+                           "(default: the first)")
+    hard.add_argument("--live", action="store_true",
+                      help="run the round (COSTS MONEY). Without it this is "
+                           "a plan: offline cannot run an imported agent")
+    hard.add_argument("--models", nargs="*", metavar="ALIAS=MODEL",
+                      default=None)
+    hard.add_argument("--target", default="claude")
+    hard.add_argument("--seeds", type=int, default=4,
+                      help="replications; the last is held out and is the "
+                           "only one reported. Default 4 because a live "
+                           "ranking needs k>=4 (experiment 009)")
+    hard.add_argument("--repeats", type=int, default=6,
+                      help="per scenario per seed. Default 6 because one "
+                           "held-out seed x 3 scenarios x 6 is 18 faulted "
+                           "runs, and 75%% -> 25%% needs 16 to separate; "
+                           "a smaller round is refused before it spends")
+    hard.add_argument("--out", type=Path, default=Path("runs-harden"))
 
     canary = sub.add_parser(
         "canary",
@@ -347,6 +389,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _explain(args)
     if args.command == "explore":
         return _explore(args)
+    if args.command == "harden":
+        return _harden(args)
     if args.command == "ui":
         from .server import serve
 
@@ -889,6 +933,30 @@ def _run(args) -> int:
     )
     print(f"variants    {len(variants)} generated "
           f"({sum(v.is_sentinel for v in variants)} sentinel)")
+    if getattr(args, "baseline", None) is not None:
+        if not args.live:
+            # Refused rather than run: offline, every agent is a scripted
+            # policy chosen by its prompt NAME, and an imported prompt has
+            # no name to choose by. Anything printed for it would be a
+            # measurement of the test double (#50).
+            print("\nREFUSED: --baseline needs --live. A scripted policy never "
+                  "reads the")
+            print("prompt, so offline would score a stand-in, not your agent.")
+            return 2
+        try:
+            own = architect.import_agent(
+                args.baseline, task=task, out_dir=out / "variants",
+                models=models, targets=[args.target],
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            print(f"\nREFUSED: {exc}")
+            return 2
+        # Before the sentinel, which `generate` promises is last.
+        variants = ([v for v in variants if not v.is_sentinel] + [own]
+                    + [v for v in variants if v.is_sentinel])
+        print(f"baseline    {own.id}  imported from {own.origin}")
+        print(f"            tools {', '.join(own.tools or [])}; "
+              f"model {own.model}")
     # Printed so a run is reproducible from its console output alone: the
     # task hash pins what was asked, these pin what was asked OF.
     for v in sorted(variants, key=lambda v: v.id):
@@ -913,7 +981,10 @@ def _run(args) -> int:
     # this is a statement about the grid that is about to run.
     grid_toolsets = sorted(
         {v.factors["toolset"] for v in variants
-         if not v.is_sentinel and "toolset" in v.factors}
+         # An imported agent's grant is not a named set, and coverage
+         # looks sets up by name: "baseline" would read as a set with no
+         # cross-check whatever the agent actually holds.
+         if not v.is_sentinel and v.tools is None and "toolset" in v.factors}
     )
     _print_coverage(task, toolsets=grid_toolsets or None, live=bool(args.live))
 
@@ -1112,7 +1183,13 @@ def _run(args) -> int:
                    enabled=args.with_relations, live=args.live)
     _print_paraphrases(task, variants, live=args.live)
     _print_effects(results)
-    _print_attribution(records, [v.id for v in variants if v.is_sentinel])
+    # The baseline joins the sentinel here and nowhere else: it sits at no
+    # level of any factor, so a coalition containing it has no measured
+    # cell and Shapley would refuse the whole design over one off-grid
+    # point. It still ranks, and still competes for the held-out winner --
+    # whether the grid beats it is the question it was brought in to ask.
+    _print_attribution(records, [v.id for v in variants
+                                 if v.is_sentinel or v.tools is not None])
     rc = _print_gate(records, seeds, task)
     held = _export(results, variants, out, records)
 
@@ -2728,7 +2805,24 @@ def _explore(args) -> int:
             out_dir=Path(tmp) / "variants", task=task, models=models,
             targets=[args.target], include_sentinel=False,
         )
-        if args.variant:
+        if args.baseline is not None:
+            if not args.live:
+                print("\nREFUSED: --baseline needs --live. Offline sweeps a "
+                      "scripted policy,")
+                print("which never reads your prompt -- every cell would "
+                      "describe the stand-in.")
+                return 2
+            try:
+                variants = [architect.import_agent(
+                    args.baseline, task=task, out_dir=Path(tmp) / "variants",
+                    models=models, targets=[args.target],
+                )]
+            except (ValueError, FileNotFoundError) as exc:
+                print(f"\nREFUSED: {exc}")
+                return 2
+            print(f"baseline    imported from {variants[0].origin}")
+            print(f"            {variants[0].fingerprint}")
+        elif args.variant:
             variants = [v for v in variants if args.variant in v.id]
             if not variants:
                 print(f"\nno config matches {args.variant!r}")
@@ -2736,9 +2830,18 @@ def _explore(args) -> int:
 
         executor = offline_executor
         if args.live:
-            from .live import live_executor
+            from .live import MissingCredentials, live_executor, preflight
 
-            executor = live_executor(task, scenario)
+            # This used to be `live_executor(task, scenario)`, against a
+            # signature that takes the SDK target -- so every live explore
+            # died before its first cell. It went unnoticed because nothing
+            # ran it, and red-teaming an imported agent is live-only (#50).
+            try:
+                preflight(variants, target=args.target)
+            except MissingCredentials as exc:
+                print(f"\nPREFLIGHT FAILED\n{exc}")
+                return 2
+            executor = live_executor(args.target)
 
         cells = sum(len(explore.space(task, v, scenario,
                                       granted=sorted(_allowed_tools(v))))
@@ -2794,6 +2897,186 @@ def _explore(args) -> int:
         print("subject is one config, so no fairness invariant applies here "
               "(#18).")
     return 0
+
+
+def _harden(args) -> int:
+    """One round of hardening an imported agent (#50, H2).
+
+    Offline this is a PLAN and says so: a scripted policy never reads the
+    prompt, so no offline run could show a clause helping or a grant being
+    used. It still does everything that costs nothing -- import, the
+    reachable space, the proposals, the candidates written to disk -- so an
+    operator sees exactly what a live round would spend money on.
+    """
+    from . import harden
+
+    task = TaskSpec.from_yaml(args.task)
+    scenario = (task.scenario(args.scenario) if args.scenario
+                else task.scenarios[0])
+    models = parse_models(getattr(args, "models", None))
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    print(f"task        {task.id}  (fault {task.fault_kind} @ "
+          f"{task.fault_tool})")
+    print(f"fingerprint {task.fingerprint()}")
+    try:
+        base = architect.import_agent(
+            args.baseline, task=task, out_dir=out / "variants",
+            models=models, targets=[args.target])
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"\nREFUSED: {exc}")
+        return 2
+    print(f"baseline    {base.origin}")
+    print(f"            {base.fingerprint}")
+    print(f"round       {harden.ROUNDS} of {harden.ROUNDS} -- one on purpose: a "
+          f"second round would be")
+    print("            chosen by this round's held-out runs, which would then "
+          "not be held out.")
+    gate = harden.gate_metric(task)
+    print(f"gate        {gate} -- the one gate this task's fault kind can "
+          f"reach (rule 2d)")
+
+    sized = harden.size(task, seeds=args.seeds, repeats=args.repeats)
+    print(f"sizing      {sized.reason()}")
+    print(f"            (assumed effect fixed in advance; an upper bound on "
+          f"the decidable runs)")
+
+    if not args.live:
+        found = harden.reachable(task, base, scenario)
+        header = "could fail (reachable, NOT observed -- offline sweeps nothing)"
+    else:
+        found = None
+        header = "got through (observed)"
+
+    if found is not None:
+        here, elsewhere = harden.measurable(found, task)
+        cands = [harden.derive(base, h, task=task, out_dir=out / "variants")
+                 for h in harden.propose(here)]
+        _print_found(header, here, elsewhere)
+        _print_candidates(cands)
+        print("\nimprovement n/a -- offline cannot run an imported agent: a "
+              "scripted policy")
+        print("never reads the prompt, so no offline run could show a "
+              "change helping.")
+        print(f"candidates written under {out / 'variants'}; rerun with "
+              f"--live to measure them.")
+        if not sized.enough:
+            print(f"--live would be REFUSED at this size: --repeats "
+                  f"{harden.repeats_needed(task)} is the smallest round "
+                  f"that could show the assumed effect.")
+        _print_harden_scope(live=False)
+        return 0
+
+    from .live import MissingCredentials, live_executor, preflight
+
+    if args.seeds < 2:
+        print("\nREFUSED: --seeds must be at least 2. One round chooses on "
+              "some and reports")
+        print("only the others (#20); with one there is nothing to report on.")
+        return 2
+    if not sized.enough:
+        need = harden.repeats_needed(task)
+        print("\nREFUSED: this round cannot return HARDENED whatever the "
+              "agent does, so it")
+        print("would return not_shown at full price. A certain not_shown is "
+              "not a finding.")
+        if need is not None:
+            print(f"  --repeats {need} with one held-out seed is the "
+                  f"smallest round that could.")
+        return 2
+    try:
+        preflight([base], target=args.target)
+    except MissingCredentials as exc:
+        print(f"\nPREFLIGHT FAILED\n{exc}")
+        return 2
+    seeds = [f"seed{i}" for i in range(args.seeds)]
+    rnd = harden.run_round(
+        task=task, baseline=base, scenario=scenario,
+        execute=live_executor(args.target), seeds=seeds,
+        repeats=args.repeats, out_dir=out, ledger=Ledger(out / "runs.jsonl"))
+    _print_found(header, *harden.measurable(rnd.found, task))
+    _print_candidates(rnd.candidates)
+    return _print_contrast(rnd)
+
+
+def _print_found(header: str, found, elsewhere=()) -> None:
+    print(f"\n{header}")
+    if not found:
+        print("  nothing this task's fault can judge. Which is a statement "
+              "about the")
+        print("  registered fault classes only (#18).")
+    for kind, what in sorted(found, key=lambda p: (p[0].value, p[1])):
+        print(f"  {kind.value:16s} {what}")
+    for kind, what in sorted(elsewhere, key=lambda p: (p[0].value, p[1])):
+        # Rule 2d: this task faults one kind, so a fix for another kind's
+        # failure is measured under a fault it was not built for.
+        print(f"  {kind.value:16s} {what}  -- not this task's fault kind; "
+              f"no candidate built")
+
+
+def _print_candidates(cands) -> None:
+    print("\ncandidates  (structural first: a prompt is not shown to harden "
+          "anything, rule 5)")
+    if not cands:
+        print("  none -- nothing in the catalogue answers what was found.")
+    for c in cands:
+        h = c.hardening
+        kind = "tools " if h.structural else "prompt"
+        tag = "" if h.structural else "  [unproven]"
+        if c.variant is not None:
+            print(f"  {h.name:20s} {kind}  {c.variant.fingerprint}{tag}")
+        else:
+            print(f"  {h.name:20s} {kind}  proposed; {c.refused}")
+        print(f"  {'':20s}         {h.why}")
+
+
+def _print_contrast(rnd) -> int:
+    from . import harden
+
+    c = rnd.contrast
+    print("\n--- held out " + "-" * 59)
+    if c.held is not None:
+        print(f"chosen on   {', '.join(c.held.selection_seeds)}")
+        print(f"reported on {', '.join(c.held.holdout_seeds)}  (the only "
+              f"numbers below)")
+    for ch in c.changes:
+        print(f"  {ch.metric:18s} {_pct(ch.before):>5s} -> {_pct(ch.after):>5s}"
+              f"  {ch.verdict.value}"
+              + (f"  ({ch.note})" if ch.note else ""))
+    if c.baseline is not None and c.winner is not None:
+        print(f"  {'cost/run':18s} {_cost(c.baseline.cost_usd):>8s} -> "
+              f"{_cost(c.winner.cost_usd)}")
+    print(f"\nverdict     {c.verdict.upper()}: {c.reason}")
+    if rnd.exported is not None:
+        print(f"exported    {rnd.exported}")
+        print(f"            {rnd.exported.parent / 'hardened.diff'}  "
+              f"(review this, not the score)")
+        win = next(v for v in rnd.measured if v.id == c.held.variant_id)
+        print(f"lineage     {win.parent} -> {win.fingerprint} "
+              f"via {win.hardening}")
+    else:
+        print("exported    nothing -- only a shown improvement is handed over.")
+    _print_harden_scope(live=True)
+    return 3 if c.verdict == harden.WORSE else 0
+
+
+def _cost(value) -> str:
+    return "n/a" if value is None else f"${value:.4f}"
+
+
+def _print_harden_scope(*, live: bool) -> None:
+    if live:
+        print("\nscope       The proposals were chosen by a sweep of the "
+              "same scenario they are")
+        print("            measured on, from a catalogue of registered fault "
+              "classes. A failure")
+    else:
+        print("\nscope       The proposals answer what COULD fail, from a "
+              "catalogue of")
+        print("            registered fault classes. A failure")
+    print("            nobody implemented is not found, and is not fixed "
+          "(#18).")
 
 
 def _coverage(args) -> int:

@@ -542,3 +542,11 @@ input[type="file"] { font-size: 0.8rem; color: var(--ink-dim); }
   40%  { opacity: 1; transform: scale(1); }
   100% { opacity: 0; transform: scale(1.5); }
 }
+
+/* ---- harden ---- */
+#harden summary { cursor: pointer; display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+#harden summary h2 { display: inline; margin: 0; }
+#harden pre { overflow: auto; max-height: 22rem; font-family: var(--mono); font-size: 0.78rem; background: #0d0a07; border: 1px solid #2a2118; padding: 0.7rem; }
+#harden .verdict.hardened { color: var(--parry); }
+#harden .verdict.worse { color: var(--blood); }
+#harden .sample-banner { border: 1px dashed var(--gold); color: var(--gold); padding: 0.6rem 0.8rem; font-size: 0.85rem; }

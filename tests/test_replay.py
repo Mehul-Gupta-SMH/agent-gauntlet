@@ -234,3 +234,24 @@ def test_a_published_recording_is_only_events_the_page_draws(name):
     assert kinds <= {"intake.accepted", "matrix.start", "run.start",
                      "tool.call", "run.end", "matrix.end", "board"}
     assert "board" in kinds
+
+
+def test_the_demo_shows_the_harden_sample_without_a_server():
+    """The published page is the only place most people will ever see the
+    harden panel, so it ships it read-only: the recorded plan and the
+    labelled sample, drawn by the same harden.js the product runs. No fetch
+    may reach /api, the plan records no live-blocker that depends on whose
+    machine rebuilt it, and the sample still says it is one."""
+    import json
+
+    html = (DEMO / "index.html").read_text(encoding="utf-8")
+    assert 'data-static="harden-plan.json"' in html
+    assert 'src="harden.js"' in html and (DEMO / "harden.js").is_file()
+    assert (DEMO / "harden.js").read_bytes() == (UI / "harden.js").read_bytes()
+    plan = json.loads((DEMO / "harden-plan.json").read_text("utf-8"))
+    assert plan["task"]["fingerprint"] == "d11a0b2a6801ee74"
+    assert plan["live_blockers"] == [
+        "This page is static: there is no server behind it, so nothing here "
+        "can run live."]
+    sample = json.loads((DEMO / "sample-harden.json").read_text("utf-8"))
+    assert sample["sample"] is True
