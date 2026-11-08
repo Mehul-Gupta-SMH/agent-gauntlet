@@ -40,6 +40,47 @@
   <div id="project-list" class="project-list"></div>
 </section>
 
+<!-- ---------------------------------------------------------------- harden -->
+<section id="harden" class="panel">
+  <details id="harden-box">
+    <summary><h2>Harden an agent</h2>
+      <span class="muted">one round: red-team it, derive better versions, keep one only if it wins on runs that did not choose it</span></summary>
+    <p class="muted">Paste the agent you already have. The gauntlet lies to it
+    through its own tools, finds what got through, builds candidates from a
+    fixed catalogue (never a model), and measures them on held-out seeds.
+    <strong>One round, on purpose</strong>: a second would be chosen by the
+    first one's held-out runs, which would then not be held out.</p>
+    <div class="intake-grid">
+      <label class="field span2"><span class="label">Task and fault</span>
+        <select id="h-fixture"></select>
+        <small id="h-fixture-note"></small></label>
+      <label class="field span2"><span class="label">The agent's instructions</span>
+        <textarea id="h-instructions" rows="4" placeholder="You add up stock across inventory records. Fetch each record, sum the quantities, and report the total. Be quick."></textarea>
+        <small>Kept verbatim. The task statement is added by the gauntlet, the
+        same text for every contender.</small></label>
+      <div class="field span2"><span class="label">Tools it is granted</span>
+        <div id="h-tools" class="chips"></div>
+        <small>Only tools the harness serves can be lied through. Your own
+        tools go through a project, which calibrates them first.</small></div>
+      <label class="field"><span class="label">Model</span>
+        <input id="h-model" type="text" value="anthropic/claude-haiku-4-5"></label>
+      <label class="field"><span class="label">Target</span>
+        <select id="h-target"><option>claude</option><option>openai</option><option>google-adk</option></select></label>
+      <label class="field"><span class="label">Seeds</span>
+        <input id="h-seeds" type="number" min="2" max="10" value="4"></label>
+      <label class="field"><span class="label">Repeats</span>
+        <input id="h-repeats" type="number" min="1" max="20" value="6"></label>
+    </div>
+    <div class="step-actions">
+      <button id="h-sample" class="ghost" type="button">Load a sample (illustrative, not measured)</button>
+      <button id="h-plan" class="primary">Plan this round (free)</button>
+    </div>
+    <p id="h-error" class="error" hidden></p>
+    <div id="h-plan-out"></div>
+    <div id="h-result"></div>
+  </details>
+</section>
+
 <!-- ---------------------------------------------------------------- wizard -->
 <section id="wizard" class="panel wizard" hidden>
   <nav class="steps-nav" id="steps-nav">
@@ -347,5 +388,6 @@
 
 <script src="arena.js"></script>
 <script src="wizard.js"></script>
+<script src="harden.js"></script>
 </body>
 </html>

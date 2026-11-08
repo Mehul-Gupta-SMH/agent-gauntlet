@@ -280,6 +280,30 @@ instrument rather than a bar worth protecting, and nothing historical was
 attached to the old hash. Re-registering is allowed; doing it quietly is
 not.
 
+**An imported agent keeps what it authored and nothing it would serve (#50).**
+`architect.import_agent` keeps the instructions, the tool grant and the model,
+and regenerates `tools.py` and the task section -- an operator's own tool code
+would answer below `interpose`, so every faulted run would score as resisted.
+Foreign tools are refused, not dropped. It is live-only and refused offline in
+the CLI AND in `run_matrix`: errored runs are censored, so an executor that
+raised per run would make the row vanish silently. Its toolset factor reads
+`baseline`, which names no set, so every grant lookup goes through
+`architect.granted` / `VariantSpec.tools`, never `TOOLSETS[...]`.
+
+**A hardening round is one round, and only a shown win is handed over (#50 H2).**
+`harden` picks fixes from `harden.CATALOGUE`, a table written in advance,
+never a model. One round, because round two would be selected on round one's
+held-out runs. `HARDENED` needs the task's one reachable gate IMPROVED with
+intervals apart AND nothing over budget; "inside noise" is `not_shown`, and
+then nothing is exported -- the fail-green test is the same round with an
+executor that ignores the candidate's files. Candidates are built only for
+the task's own fault kind: a fix for another kind's failure is measured under
+a fault it was not built for and could not win. A round is sized before it
+spends: `harden.size` counts held-out faulted runs (an upper bound on the
+decidable ones) against what 75% -> 25% needs under the same Wilson
+`excludes` `contrast` gates on, and `--live` refuses below it. An undersized
+round can only return `not_shown`, and a certain `not_shown` is not a finding.
+
 **5. Degrade structurally, never attitudinally.**
 You cannot degrade a capable model by asking it to be careless (experiment
 003: the prompt-degraded sentinel ranked 6th of 9). The sentinel is a
@@ -342,7 +366,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 612 tests, ~51s
+.venv/bin/python -m pytest -q                       # 812 tests, ~60s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli canary fixtures/inventory/audited.yaml \

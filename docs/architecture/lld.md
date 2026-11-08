@@ -9,7 +9,7 @@ Dependencies point downward; nothing below imports anything above it.
 ```mermaid
 flowchart TD
     subgraph ui["UI layer — a view, not a second pipeline"]
-        SERVER["<b>server</b> · 724<br/>stdlib http · wizard · arena"]
+        SERVER["<b>server</b> · 982<br/>stdlib http · wizard · arena"]
         RUNNER["<b>runner</b> · 637<br/>project → TaskSpec · policies"]
         USERT["<b>usertools</b> · 397<br/>discover · calibrate · serve"]
         PROJECT["<b>project</b> · 309<br/>Project · blockers"]
@@ -19,15 +19,15 @@ flowchart TD
         REPLAY["<b>replay</b> · 222<br/>row · board_event · capture"]
     end
 
-    CLI["<b>cli</b> · 2855<br/>argparse · board rendering · probe · ui"]
+    CLI["<b>cli</b> · 3511<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 1351<br/>summarize · rank · pareto · depth · curve"]
-    ARCH["<b>architect</b> · 640<br/>PROMPTS · TOOLSETS · generate"]
+    ARCH["<b>architect</b> · 873<br/>PROMPTS · TOOLSETS · generate"]
     SCORE["<b>score</b> · 601<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 583<br/>RunContext · tool surface · notes"]
     OFFLINE["<b>offline</b> · 555<br/>scripted policies"]
-    MATRIX["<b>matrix</b> · 427<br/>run_matrix · _attempt · budget"]
+    MATRIX["<b>matrix</b> · 490<br/>run_matrix · _attempt · budget"]
     FAULTS["<b>faults</b> · 451<br/>FaultKind · FaultSchedule"]
-    SPEC["<b>spec</b> · 593<br/>TaskSpec · VariantSpec · GridSpec"]
+    SPEC["<b>spec</b> · 652<br/>TaskSpec · VariantSpec · GridSpec"]
     LIVE["<b>live</b> · 337<br/>executor · parsing · classification"]
     LEDGER["<b>ledger</b> · 415<br/>RunRecord · rescore"]
     ANALYZE["<b>analyze</b> · 193<br/>kendall_tau · stability"]
@@ -39,7 +39,8 @@ flowchart TD
     CAN["<b>canary</b> · 304<br/>behavioural fingerprint · blind spot"]
     PRICE["<b>pricing</b> · 242<br/>pricing authority · drift"]
     COV["<b>coverage</b> · 390<br/>what a task can measure · audit · separability"]
-    EXPL["<b>explore</b> · 263<br/>fault-space sweep · findings"]
+    EXPL["<b>explore</b> · 269<br/>fault-space sweep · findings"]
+    HARD["<b>harden</b> · 549<br/>catalogue · one round · held-out contrast"]
     CALIB["<b>calibration</b> · 216<br/>Brier · skill · Murphy"]
 
     CLI --> BOARD & MATRIX & ARCH & LIVE & SERVER & CERT & REPLAY & META & ATTR & HYP & CAN & COV & CALIB
@@ -48,6 +49,7 @@ flowchart TD
     ATTR --> LEDGER & STATS
     HYP --> ATTR & SPEC & STATS
     COV --> SPEC & META & FAULTS
+    HARD --> EXPL & ARCH & BOARD & CERT & MATRIX
     BOARD --> CALIB
     ATTR --> CALIB
     CAN --> ATTR & CERT & LEDGER & STATS
@@ -695,6 +697,10 @@ test_reward_hacking  the answer written into the statement it is graded
                  against, refused before a matrix exists
 test_explore     the whole fault space of one config, why that is coverage
                  and not discovery, and the cell that decides nothing
+test_import_agent  an operator's own agent as a baseline, and what is replaced
+test_harden      one round: a fix that reaches the agent wins held out, one
+                 that does not is not hardened, offline is a plan, an
+                 undersized round is refused before it runs
 test_coverage    what a task can measure before it is run, and the audit
                  that catches the prediction being wrong
 test_separability  whether the gating metric is decidable BEFORE the money
@@ -709,7 +715,7 @@ test_explain     the detail view, and the curve that keeps the runs the
                  median has to drop
 test_provenance  where a scenario's world came from, and the board that
                  could not tell an invented one from a traced one
-test_ui          the event stream, intake validation, censoring on the wire
+test_ui          the event stream, intake validation, censoring on the wire, the harden panel
 test_stats       interval behaviour at 0% and 100%, detectable effect
 test_docs        the documentation's checkable claims
 test_certify     the three verdicts, and catching a real degradation

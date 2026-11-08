@@ -1,0 +1,58 @@
+{
+ "task": {
+  "id": "inventory_total_audited",
+  "fingerprint": "d11a0b2a6801ee74",
+  "fault_kind": "wrong_value",
+  "fault_tool": "fetch_record"
+ },
+ "baseline": {
+  "fingerprint": "10969644dbb2b737",
+  "tools": [
+   "fetch_record",
+   "list_records"
+  ]
+ },
+ "gate": "propagation_rate",
+ "rounds": 1,
+ "seeds": 4,
+ "repeats": 6,
+ "target": "claude",
+ "sizing": {
+  "held_runs": 18,
+  "needed": 16,
+  "enough": true,
+  "reason": "18 held-out faulted run(s) per side; 75% -> 25% needs at least 16 to have intervals apart",
+  "repeats_needed": 6
+ },
+ "reachable": [
+  {
+   "kind": "wrong_value",
+   "what": "propagated"
+  }
+ ],
+ "elsewhere": [
+  {
+   "kind": "omission",
+   "what": "propagated"
+  }
+ ],
+ "candidates": [
+  {
+   "name": "cross_check",
+   "why": "a corrupted figure is only catchable against a second source; without one it is undetectable in principle (#16)",
+   "structural": true,
+   "grant": [
+    "get_summary",
+    "list_audited_records"
+   ],
+   "revoke": [],
+   "clause": "Before you answer, reconcile against every independent source your tools\nexpose. An audit may cover only some of the records: find out which ones it\ncovers, add up your own figures for exactly those, and compare. If the two\ndisagree, your per-record data is the more likely to be wrong -- correct\nyour total by the difference, and say explicitly that the records looked\ninconsistent.\n",
+   "refused": null,
+   "fingerprint": "3a3500f512b842cd"
+  }
+ ],
+ "matrix_runs": 288,
+ "live_blockers": [
+  "This page is static: there is no server behind it, so nothing here can run live."
+ ]
+}

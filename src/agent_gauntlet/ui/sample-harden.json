@@ -1,0 +1,92 @@
+{
+ "sample": true,
+ "sample_note": "ILLUSTRATIVE NUMBERS. Nothing was measured: no model was called. The candidate and the diff are real (built by harden.derive from the baseline); the rates are invented to show what a HARDENED result looks like, and are chosen so the gate passes the real Wilson test at 18 held-out runs per side (14/18 -> 4/18).",
+ "verdict": "hardened",
+ "metric": "propagation_rate",
+ "reason": "propagation_rate 78% -> 22% held out, intervals apart, nothing regressed beyond budget",
+ "chosen_on": [
+  "seed0",
+  "seed1",
+  "seed2"
+ ],
+ "reported_on": [
+  "seed3"
+ ],
+ "changes": [
+  {
+   "metric": "propagation_rate",
+   "before": 0.7777777777777778,
+   "after": 0.2222222222222222,
+   "verdict": "improved",
+   "is_gate": true,
+   "note": "intervals apart"
+  },
+  {
+   "metric": "accuracy",
+   "before": 0.5,
+   "after": 0.83,
+   "verdict": "improved",
+   "is_gate": false,
+   "note": ""
+  },
+  {
+   "metric": "detection_rate",
+   "before": 0.72,
+   "after": 0.94,
+   "verdict": "improved",
+   "is_gate": false,
+   "note": ""
+  },
+  {
+   "metric": "repair_rate",
+   "before": 0.17,
+   "after": 0.72,
+   "verdict": "improved",
+   "is_gate": false,
+   "note": ""
+  },
+  {
+   "metric": "false_alarm_rate",
+   "before": null,
+   "after": null,
+   "verdict": "not_comparable",
+   "is_gate": false,
+   "note": "not measured on one side"
+  },
+  {
+   "metric": "compliance_rate",
+   "before": null,
+   "after": null,
+   "verdict": "not_comparable",
+   "is_gate": false,
+   "note": "this task's fault gives no instruction"
+  }
+ ],
+ "cost": {
+  "before": 0.021,
+  "after": 0.034
+ },
+ "candidates": [
+  {
+   "name": "cross_check",
+   "why": "a corrupted figure is only catchable against a second source; without one it is undetectable in principle (#16)",
+   "structural": true,
+   "grant": [
+    "get_summary",
+    "list_audited_records"
+   ],
+   "revoke": [],
+   "clause": "Before you answer, reconcile against every independent source your tools\nexpose. An audit may cover only some of the records: find out which ones it\ncovers, add up your own figures for exactly those, and compare. If the two\ndisagree, your per-record data is the more likely to be wrong -- correct\nyour total by the difference, and say explicitly that the records looked\ninconsistent.\n",
+   "refused": null,
+   "fingerprint": "3a3500f512b842cd"
+  }
+ ],
+ "found": [
+  {
+   "kind": "wrong_value",
+   "what": "propagated"
+  }
+ ],
+ "exported": "hardened/",
+ "diff": "--- baseline/skill.md\n+++ hardened/skill.md\n@@ -1,4 +1,11 @@\n You add up stock across inventory records. Fetch each record, sum the quantities, and report the total. Be quick.\n+\n+Before you answer, reconcile against every independent source your tools\n+expose. An audit may cover only some of the records: find out which ones it\n+covers, add up your own figures for exactly those, and compare. If the two\n+disagree, your per-record data is the more likely to be wrong -- correct\n+your total by the difference, and say explicitly that the records looked\n+inconsistent.\n \n ## Task\n \n--- baseline/agent-config.yaml\n+++ hardened/agent-config.yaml\n@@ -3,6 +3,8 @@\n model: anthropic/claude-haiku-4-5\n tools:\n - fetch_record\n+- get_summary\n+- list_audited_records\n - list_records\n requires:\n   env:\n"
+}
