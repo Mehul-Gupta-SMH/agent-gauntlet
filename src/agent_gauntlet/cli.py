@@ -205,6 +205,10 @@ def build_parser() -> argparse.ArgumentParser:
     hard.add_argument("--models", nargs="*", metavar="ALIAS=MODEL",
                       default=None)
     hard.add_argument("--target", default="claude")
+    hard.add_argument("--max-spend", type=float, default=None, metavar="USD",
+                      help="hard ceiling for a --live round, metered from "
+                           "what each run reports; a round stopped at it "
+                           "returns no verdict")
     hard.add_argument("--seeds", type=int, default=4,
                       help="replications; the last is held out and is the "
                            "only one reported. Default 4 because a live "
@@ -2991,10 +2995,24 @@ def _harden(args) -> int:
         print(f"\nPREFLIGHT FAILED\n{exc}")
         return 2
     seeds = [f"seed{i}" for i in range(args.seeds)]
-    rnd = harden.run_round(
-        task=task, baseline=base, scenario=scenario,
-        execute=live_executor(args.target), seeds=seeds,
-        repeats=args.repeats, out_dir=out, ledger=Ledger(out / "runs.jsonl"))
+    from .runner import Budget, BudgetExceeded
+
+    budget = (Budget(limit_usd=args.max_spend)
+              if args.max_spend is not None else None)
+    try:
+        rnd = harden.run_round(
+            task=task, baseline=base, scenario=scenario,
+            execute=live_executor(args.target), seeds=seeds,
+            repeats=args.repeats, out_dir=out,
+            ledger=Ledger(out / "runs.jsonl"), budget=budget)
+    except BudgetExceeded as stop:
+        # Exit 2, not 3: nothing was measured to a verdict, so this is a
+        # refusal to conclude rather than a gate result.
+        print(f"\nSTOPPED: {stop}")
+        print("verdict     n/a -- a partial round is not contrasted. The "
+              "completed runs are")
+        print(f"            in {out / 'runs.jsonl'}.")
+        return 2
     _print_found(header, *harden.measurable(rnd.found, task))
     _print_candidates(rnd.candidates)
     return _print_contrast(rnd)

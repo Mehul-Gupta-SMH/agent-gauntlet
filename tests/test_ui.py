@@ -354,11 +354,29 @@ def test_an_undersized_round_is_blocked_in_the_plan_and_refused_live(tmp_path):
 
 
 def test_a_live_round_needs_the_spend_sentence_not_a_default():
-    with pytest.raises(ValueError, match="spends real money"):
-        server.start_harden(AGENT)
-    with pytest.raises(ValueError, match="spends real money"):
-        server.start_harden({**AGENT, "confirm": True})
+    """The sentence carries the ceiling, so a stale or defaulted confirm
+    cannot approve a number the operator did not read."""
+    paid = {**AGENT, "budget_usd": 5}
+    for confirm in (None, True, "spend", "spend 9.00"):
+        with pytest.raises(ValueError, match='confirm "spend 5.00"'):
+            server.start_harden({**paid, "confirm": confirm})
     assert not server.HARDEN.running()
+
+
+def test_a_live_round_without_a_ceiling_is_refused_and_blocked_in_the_plan(
+        tmp_path):
+    """`runner.Budget` allows no ceiling only offline (#10). This route is
+    never offline, and it shipped once without one: a browser button that
+    could spend without limit."""
+    for missing in ({}, {"budget_usd": 0}, {"budget_usd": -1},
+                    {"budget_usd": "lots"}, {"budget_usd": None}):
+        with pytest.raises(ValueError, match="spend ceiling"):
+            server.start_harden({**AGENT, **missing, "confirm": "spend 0.00"})
+    assert not server.HARDEN.running()
+    plan = server.harden_plan(AGENT, tmp_path)
+    assert plan["budget_usd"] is None
+    assert any("spend ceiling" in b for b in plan["live_blockers"])
+    assert server.harden_plan({**AGENT, "budget_usd": 5}, tmp_path)["budget_usd"] == 5.0
 
 
 def test_a_harden_round_and_a_matrix_cannot_overlap(monkeypatch):
@@ -367,7 +385,7 @@ def test_a_harden_round_and_a_matrix_cannot_overlap(monkeypatch):
     with pytest.raises(RuntimeError, match="already in progress"):
         server.start_run(server.Session(), {})
     with pytest.raises(RuntimeError, match="already in progress"):
-        server.start_harden({**AGENT, "confirm": "spend"})
+        server.start_harden({**AGENT, "budget_usd": 5, "confirm": "spend 5.00"})
 
 
 def test_an_unmeasured_metric_reaches_the_page_as_null(tmp_path):
@@ -405,7 +423,8 @@ def test_a_live_round_is_refused_through_a_proxy_header(monkeypatch):
     try:
         conn = http.client.HTTPConnection("127.0.0.1", httpd.server_port)
         conn.request("POST", "/api/harden/run",
-                     body=json.dumps({**AGENT, "confirm": "spend"}),
+                     body=json.dumps({**AGENT, "budget_usd": 5,
+                                      "confirm": "spend 5.00"}),
                      headers={"Content-Type": "application/json",
                               "X-Forwarded-For": "203.0.113.9"})
         resp = conn.getresponse()

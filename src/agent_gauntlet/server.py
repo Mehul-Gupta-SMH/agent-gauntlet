@@ -617,6 +617,11 @@ def harden_plan(body: dict[str, Any], work: Path) -> dict[str, Any]:
             f"this round cannot return HARDENED whatever the agent does: "
             f"{sized.reason()}. {harden.repeats_needed(task)} repeats is the "
             f"smallest round that could.")
+    try:
+        ceiling: Optional[float] = _harden_ceiling(body)
+    except ValueError as exc:
+        ceiling = None
+        blockers.append(str(exc))
     from .live import MissingCredentials, preflight
     try:
         preflight([base], target=target)
@@ -639,6 +644,7 @@ def harden_plan(body: dict[str, Any], work: Path) -> dict[str, Any]:
         # without the fault.
         "matrix_runs": ((1 + sum(1 for c in cands if c.variant))
                         * len(task.scenarios) * repeats * seeds * 2),
+        "budget_usd": ceiling,
         "live_blockers": blockers,
     }
 
@@ -700,16 +706,44 @@ def _harden_worker(body: dict[str, Any], work: Path) -> None:
         base = architect.import_agent(agent, task=task, out_dir=work / "out" / "variants",
                                       models=DEFAULT_MODELS, targets=[target])
         preflight([base], target=target)
+        budget = runner.Budget(limit_usd=_harden_ceiling(body))
         rnd = harden.run_round(
             task=task, baseline=base, scenario=task.scenarios[0],
             execute=live_executor(target), seeds=seeds, repeats=repeats,
-            out_dir=work / "out", ledger=Ledger(work / "out" / "runs.jsonl"))
+            out_dir=work / "out", ledger=Ledger(work / "out" / "runs.jsonl"),
+            budget=budget)
+        view = contrast_view(rnd)
+        view["spend"] = {"usd": budget.spent_usd, "limit": budget.limit_usd,
+                         "runs": budget.runs}
         with HARDEN.lock:
-            HARDEN.result, HARDEN.status = contrast_view(rnd), "done"
+            HARDEN.result, HARDEN.status = view, "done"
+    except runner.BudgetExceeded as stop:
+        # Not a failure and not a verdict. The runs that completed are in the
+        # ledger; a round cut short is not contrasted, because whichever
+        # seeds happened to finish would be doing the choosing.
+        with HARDEN.lock:
+            HARDEN.status = "done"
+            HARDEN.result = {
+                "stopped": str(stop), "ledger": str(work / "out" / "runs.jsonl"),
+                "spend": {"usd": budget.spent_usd, "limit": budget.limit_usd,
+                          "runs": budget.runs}}
     except Exception as exc:  # surfaced to the page, not swallowed
         with HARDEN.lock:
             HARDEN.status = "failed"
             HARDEN.error = f"{type(exc).__name__}: {exc}"
+
+
+def _harden_ceiling(body: dict[str, Any]) -> float:
+    """The hard stop, in dollars. Required and positive: `runner.Budget`
+    allows no ceiling only offline, and this route is never offline (#10)."""
+    try:
+        limit = float(body.get("budget_usd"))
+    except (TypeError, ValueError):
+        limit = 0.0
+    if not limit > 0:
+        raise ValueError("a live round needs a spend ceiling: set budget_usd "
+                         "to the most this round may cost")
+    return limit
 
 
 def start_harden(body: dict[str, Any]) -> None:
@@ -721,8 +755,12 @@ def start_harden(body: dict[str, Any]) -> None:
     sized = harden.size(task, seeds=seeds, repeats=repeats)
     if not sized.enough:
         raise ValueError(f"round too small to show anything: {sized.reason()}")
-    if body.get("confirm") != "spend":
-        raise ValueError('a live round spends real money; send confirm "spend"')
+    limit = _harden_ceiling(body)
+    # The ceiling is IN the sentence, so nobody confirms a number they did
+    # not read -- the same shape the project wizard uses.
+    want = f"spend {limit:.2f}"
+    if body.get("confirm") != want:
+        raise ValueError(f'a live round spends real money; send confirm "{want}"')
     with HARDEN.lock, SESSION.lock:
         if HARDEN.running() or SESSION.running():
             raise RuntimeError("a run is already in progress")

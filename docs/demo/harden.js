@@ -43,6 +43,7 @@ function form() {
     target: hq('#h-target').value,
     seeds: Number(hq('#h-seeds').value),
     repeats: Number(hq('#h-repeats').value),
+    budget_usd: hq('#h-budget').value === '' ? null : Number(hq('#h-budget').value),
   };
 }
 
@@ -101,14 +102,18 @@ async function plan() {
 }
 
 async function startLive() {
+  /* The ceiling comes from the plan the server returned, not from the form,
+   * so the sentence names the number the server will enforce. */
+  const want = `spend ${H.plan.budget_usd.toFixed(2)}`;
   const got = prompt(
     `This runs ${H.plan.target} against a real model and spends real money ` +
     `(${H.plan.matrix_runs} matrix runs, no forecast).\n` +
-    'There is one round. It is not rerun to green.\n\nType "spend" to confirm.');
-  if (got !== 'spend') return;
+    `Hard ceiling $${H.plan.budget_usd.toFixed(2)}. There is one round. ` +
+    `It is not rerun to green.\n\nType "${want}" to confirm.`);
+  if (got !== want) return;
   hshow('');
   try {
-    await hapi('/api/harden/run', { ...form(), confirm: 'spend' });
+    await hapi('/api/harden/run', { ...form(), budget_usd: H.plan.budget_usd, confirm: want });
   } catch (err) { hshow(err.message); return; }
   hq('#h-run').disabled = true;
   hq('#h-result').innerHTML = '<p class="muted">Running one round… this page polls.</p>';
@@ -123,7 +128,23 @@ async function pollStatus() {
   if (st.result) renderResult(st.result);
 }
 
+function spendLine(r) {
+  return r.spend
+    ? `<p class="muted">spent ${husd(r.spend.usd)} of a ${husd(r.spend.limit)} ceiling over ${r.spend.runs} metered run(s)</p>`
+    : '';
+}
+
 function renderResult(r) {
+  if (r.stopped) {
+    /* No verdict on purpose: a round cut short is not contrasted. */
+    hq('#h-result').innerHTML = `
+      <h4 class="sub">Stopped at the ceiling — no verdict</h4>
+      <p class="error">${hesc(r.stopped)}</p>${spendLine(r)}
+      <p class="muted">verdict n/a. A partial round is not contrasted: the seeds
+      that happened to finish would be doing the choosing. Ledger:
+      <code>${hesc(r.ledger)}</code></p>`;
+    return;
+  }
   /* A sample is drawn by the same code as a real result, under a banner the
    * data itself carries, so it cannot be mistaken for a measurement. */
   const banner = r.sample
@@ -145,6 +166,7 @@ function renderResult(r) {
       ? `<p>exported <code>${hesc(r.exported)}</code> — review the diff, not the score</p>
          ${r.diff ? `<pre>${hesc(r.diff)}</pre>` : ''}`
       : '<p class="muted">exported nothing — only a shown improvement is handed over.</p>'}
+    ${spendLine(r)}
     <p class="muted">Scope: proposals were chosen by a sweep of the same
     scenario they are measured on, from a catalogue of registered fault
     classes. A failure nobody implemented is not found, and not fixed (#18).</p>`;

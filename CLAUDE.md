@@ -304,6 +304,17 @@ decidable ones) against what 75% -> 25% needs under the same Wilson
 `excludes` `contrast` gates on, and `--live` refuses below it. An undersized
 round can only return `not_shown`, and a certain `not_shown` is not a finding.
 
+**A live round has a ceiling, and it covers the sweep (#54).** The Harden
+panel's live button shipped without one -- `runner.Budget` says no ceiling is
+allowed only offline, and the project path obeyed it while the harden path
+passed none. `run_round(budget=)` meters both halves. The sweep swallows a
+raising executor as an errored cell, so its spend is charged AFTER it returns:
+a ceiling raised from inside would be censored and the round would spend on.
+`BudgetExceeded` propagates with no verdict and no export -- a contrast over
+whichever seeds happened to finish would let the budget do the choosing. The
+UI requires `budget_usd` and puts it in the typed sentence; the CLI takes
+`--max-spend` and exits 2.
+
 **5. Degrade structurally, never attitudinally.**
 You cannot degrade a capable model by asking it to be careless (experiment
 003: the prompt-degraded sentinel ranked 6th of 9). The sentinel is a
@@ -366,7 +377,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 812 tests, ~60s
+.venv/bin/python -m pytest -q                       # 816 tests, ~60s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli canary fixtures/inventory/audited.yaml \

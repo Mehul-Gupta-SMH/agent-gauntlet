@@ -72,6 +72,10 @@
         <input id="h-seeds" type="number" min="2" max="10" value="4"></label>
       <label class="field"><span class="label">Repeats</span>
         <input id="h-repeats" type="number" min="1" max="20" value="6"></label>
+      <label class="field span2"><span class="label">Spend ceiling, USD (live only)</span>
+        <input id="h-budget" type="number" min="0" step="0.5" placeholder="10.00">
+        <small>A hard stop, metered from what each run reports. Required for
+        a live round; a round stopped at the ceiling returns no verdict.</small></label>
     </div>
     <div class="step-actions">
       <button id="h-sample" class="ghost" type="button">Load a sample (illustrative, not measured)</button>

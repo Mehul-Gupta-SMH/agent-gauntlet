@@ -133,7 +133,11 @@ and it prints the sizing, what could fail, and each candidate with its diff.
 real plan, and draws an example result under a *SAMPLE — not a measurement*
 banner that the data file itself carries: the candidate and diff are real, the
 rates are illustrative. **Run the live round** is lit only when the plan has no blockers (undersized
-round, missing key) and asks you to type `spend`. It is one round, the
+round, missing key, no spend ceiling) and asks you to type `spend 10.00` --
+the ceiling you set, in the sentence. It is a hard stop metered from what each
+run reports, sweep included; a round stopped at it returns no verdict and
+exports nothing, and the completed runs stay in the ledger. On the CLI the
+same ceiling is `--max-spend USD`. It is one round, the
 verdict is `harden`'s own with intervals, and an unmeasured figure shows
 `n/a`. The page takes text and tool names, never code, and the live route is
 refused through a proxy or tunnel because the key it spends is the server's.

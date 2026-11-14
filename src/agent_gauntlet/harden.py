@@ -485,12 +485,22 @@ class Round:
 def run_round(*, task: TaskSpec, baseline: VariantSpec, scenario: Scenario,
               execute, seeds: Sequence[str], repeats: int, out_dir: Path,
               ledger, holdout: int = 1,
-              assumed: tuple[float, float] = ASSUMED) -> Round:
+              assumed: tuple[float, float] = ASSUMED,
+              budget=None) -> Round:
     """explore -> catalogue -> held-out matrix -> contrast -> export.
 
     `execute` is one executor for the sweep AND the matrix: a candidate that
     was red-teamed by one model and measured by another would be two
     experiments joined at the label.
+
+    `budget` is a `runner.Budget`, and it meters BOTH halves. The sweep is
+    paid too, and it swallows a raising executor as an errored cell, so its
+    spend is collected and charged after it returns -- a ceiling raised from
+    inside would be censored as one more failed cell and the round would
+    carry on spending. The matrix charges after each ledger append, as it
+    does for a project. `BudgetExceeded` propagates: a round stopped part way
+    has no held-out contrast worth the name, so there is no verdict to
+    return, only a ledger.
     """
     from .matrix import run_matrix
 
@@ -506,7 +516,18 @@ def run_round(*, task: TaskSpec, baseline: VariantSpec, scenario: Scenario,
         # cannot return HARDENED returns not_shown at full price, and a
         # not_shown that was certain in advance is not a finding.
         raise ValueError(f"round too small to show anything: {sized.reason()}")
-    findings = sweep_baseline(task, baseline, scenario, execute)
+    swept: list = []
+
+    def metered(variant, seed):
+        result = execute(variant, seed)
+        if isinstance(result, tuple):
+            swept.append(result[1])
+        return result
+
+    findings = sweep_baseline(task, baseline, scenario,
+                              metered if budget is not None else execute)
+    for rollup in swept:
+        budget.record(rollup)
     found = failures(findings)
     here, _ = measurable(found, task)
     candidates = [derive(baseline, h, task=task, out_dir=Path(out_dir))
@@ -517,7 +538,7 @@ def run_round(*, task: TaskSpec, baseline: VariantSpec, scenario: Scenario,
         rnd.records.extend(run_matrix(
             task=task, variants=rnd.measured, ledger=ledger, base_seed=seed,
             repeats=repeats, fault_kind=FaultKind(task.fault_kind),
-            executor=execute, offline=False,
+            executor=execute, offline=False, budget=budget,
         ))
     rnd.contrast = contrast(rnd.records, baseline=baseline, task=task,
                             holdout=holdout)
