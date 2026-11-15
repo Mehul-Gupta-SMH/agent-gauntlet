@@ -137,7 +137,16 @@ round, missing key, no spend ceiling) and asks you to type `spend 10.00` --
 the ceiling you set, in the sentence. It is a hard stop metered from what each
 run reports, sweep included; a round stopped at it returns no verdict and
 exports nothing, and the completed runs stay in the ledger. On the CLI the
-same ceiling is `--max-spend USD`. It is one round, the
+same ceiling is `--max-spend USD`.
+
+Every board row, and the harden verdict, also carries a **no contract** count:
+replies that held no parseable answer
+([#49](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/49)). Such a
+run scores accuracy 0.00, the same as a wrong answer, and where the fault was
+reached it counts as *not propagated* -- so a config that goes silent under
+fault reads as robust on the propagation column alone. The count is what tells
+the two apart. It is `n/a`, not 0, for a ledger written before answers were
+stored. It is one round, the
 verdict is `harden`'s own with intervals, and an unmeasured figure shows
 `n/a`. The page takes text and tool names, never code, and the live route is
 refused through a proxy or tunnel because the key it spends is the server's.

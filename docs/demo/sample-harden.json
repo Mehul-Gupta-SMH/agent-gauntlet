@@ -66,6 +66,12 @@
   "before": 0.021,
   "after": 0.034
  },
+ "no_contract": {
+  "before": 0,
+  "before_runs": 36,
+  "after": 0,
+  "after_runs": 36
+ },
  "candidates": [
   {
    "name": "cross_check",

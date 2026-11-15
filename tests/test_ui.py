@@ -482,3 +482,27 @@ def test_a_real_result_never_carries_the_sample_flag(tmp_path):
     view = server.contrast_view(harden.Round(
         baseline=None, findings=[], found=set(), candidates=[], contrast=c))
     assert "sample" not in view
+
+
+def test_the_harden_verdict_carries_the_no_contract_counts(tmp_path):
+    """A candidate that stops answering under fault reads as propagating
+    less (#49). The page can only say so if the counts and their
+    denominators arrive with the verdict; None stays None for a ledger that
+    did not store answers."""
+    from agent_gauntlet import board, harden
+
+    def row(n):
+        return board.VariantResult.model_construct(
+            n_runs=36, n_no_contract=n, cost_usd=None)
+
+    c = harden.Contrast(harden.NOT_SHOWN, metric="propagation_rate", reason="x",
+                        baseline=row(0), winner=row(9))
+    view = server.contrast_view(harden.Round(
+        baseline=None, findings=[], found=set(), candidates=[], contrast=c))
+    assert view["no_contract"] == {"before": 0, "before_runs": 36,
+                                   "after": 9, "after_runs": 36}
+    c2 = harden.Contrast(harden.NOT_SHOWN, metric="propagation_rate", reason="x",
+                         baseline=row(None), winner=row(None))
+    view2 = server.contrast_view(harden.Round(
+        baseline=None, findings=[], found=set(), candidates=[], contrast=c2))
+    assert view2["no_contract"]["before"] is None

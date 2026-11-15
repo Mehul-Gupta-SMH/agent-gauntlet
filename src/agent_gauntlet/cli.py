@@ -1330,6 +1330,8 @@ def _print_board(results, records=None) -> None:
                 f"{ttd}{work}{cost}{flag}"
             )
 
+    _print_no_contract(results)
+
     scored = [r for r in results if not r.is_sentinel and r.brier is not None]
     if scored:
         print("\n  calibration -- what their own stated confidences were worth:")
@@ -3065,6 +3067,7 @@ def _print_contrast(rnd) -> int:
     if c.baseline is not None and c.winner is not None:
         print(f"  {'cost/run':18s} {_cost(c.baseline.cost_usd):>8s} -> "
               f"{_cost(c.winner.cost_usd)}")
+        _print_no_contract([c.baseline, c.winner])
     print(f"\nverdict     {c.verdict.upper()}: {c.reason}")
     if rnd.exported is not None:
         print(f"exported    {rnd.exported}")
@@ -3081,6 +3084,22 @@ def _print_contrast(rnd) -> int:
 
 def _cost(value) -> str:
     return "n/a" if value is None else f"${value:.4f}"
+
+
+def _print_no_contract(results) -> None:
+    """Printed only when it happened, so a clean board stays the board it
+    was. Named per config: the rate is not uniform across them (#49)."""
+    hit = [r for r in results if r.n_no_contract]
+    if not hit:
+        return
+    print("\n  NO CONTRACT -- replies with no parseable answer. Each scores "
+          "accuracy 0.00,")
+    print("  the same as a wrong answer, and where the fault was reached it "
+          "counts as")
+    print("  NOT propagated. Not measured is not the same as measured badly "
+          "(#49).")
+    for r in hit:
+        print(f"    {r.label[:44]:<44} {r.n_no_contract} of {r.n_runs} runs")
 
 
 def _print_harden_scope(*, live: bool) -> None:

@@ -663,6 +663,15 @@ def contrast_view(rnd: harden.Round) -> dict[str, Any]:
                     for ch in c.changes],
         "cost": ({"before": c.baseline.cost_usd, "after": c.winner.cost_usd}
                  if c.baseline is not None and c.winner is not None else None),
+        # Counts and their denominators, on the held-out seeds only. A
+        # candidate that stops answering under fault reads as "propagates
+        # less"; this is what lets the page say so (#49).
+        "no_contract": ({"before": c.baseline.n_no_contract,
+                         "before_runs": c.baseline.n_runs,
+                         "after": c.winner.n_no_contract,
+                         "after_runs": c.winner.n_runs}
+                        if c.baseline is not None and c.winner is not None
+                        else None),
         "candidates": [_candidate_view(x) for x in rnd.candidates],
         "found": _pairs(rnd.found),
         "exported": None, "diff": None,

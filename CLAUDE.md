@@ -315,6 +315,18 @@ whichever seeds happened to finish would let the budget do the choosing. The
 UI requires `budget_usd` and puts it in the typed sentence; the CLI takes
 `--max-spend` and exits 2.
 
+**A reply with no answer is counted, and it flatters the gate (#49).**
+`board.no_contract` counts scored runs whose reply had no parseable answer;
+the board, the arena and the harden verdict print it beside the row, and
+`None` (a ledger from before answers were stored) prints `n/a`, never 0.
+Scoring is unchanged: such a run is `accuracy 0.0`. What the count exposes is
+the other half -- where the fault was reached and the agent then answered
+nothing, `_propagated` returns False, so the run sits in the decidable
+denominator as "did not propagate". A config that goes silent under fault
+reads `prop=0%`, the same as one that caught the lie. Pinned by a test as it
+IS; changing it is a scoring decision that would move historical boards, so
+it is not made in passing. Never retry a missing contract (6c).
+
 **5. Degrade structurally, never attitudinally.**
 You cannot degrade a capable model by asking it to be careless (experiment
 003: the prompt-degraded sentinel ranked 6th of 9). The sentinel is a
@@ -377,7 +389,7 @@ happened if it had done nothing.
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q                       # 816 tests, ~60s
+.venv/bin/python -m pytest -q                       # 820 tests, ~60s
 .venv/bin/python -m agent_gauntlet.cli run fixtures/inventory/audited.yaml \
   --repeats 3 --seeds 3 --out /tmp/r                # offline, no spend
 .venv/bin/python -m agent_gauntlet.cli canary fixtures/inventory/audited.yaml \

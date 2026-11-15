@@ -665,3 +665,61 @@ def test_the_refusal_names_what_is_still_in_contention():
     assert verdict.pick is None
     assert "non-dominated" in verdict.basis
     assert {r.variant_id for r in verdict.contenders} == {"a", "b"}
+
+
+# --- a reply with no answer is counted, not folded into a rate (#49) -------
+
+
+def _silent_under_fault(variant, seed):
+    """Answers on the clean run, says nothing parseable on the faulted one."""
+    from agent_gauntlet import interpose
+    from agent_gauntlet.score import Answer
+
+    total = sum(interpose.fetch_quantity(r) for r in interpose.list_record_ids())
+    return Answer() if str(seed).endswith(":faulted") else Answer(total=total)
+
+
+def _silent_board(tmp_path):
+    from pathlib import Path
+
+    from agent_gauntlet import Ledger, TaskSpec, VariantSpec, board, run_matrix
+
+    task = TaskSpec.from_yaml(Path(__file__).resolve().parents[1]
+                              / "fixtures" / "inventory" / "audited.yaml")
+    v = [VariantSpec(id="v", factors={"prompt": "naive", "toolset": "records"})]
+    records = run_matrix(task=task, variants=v, ledger=Ledger(tmp_path / "r.jsonl"),
+                         base_seed="s", repeats=2, executor=_silent_under_fault)
+    return records, board.summarize(records)[0]
+
+
+def test_a_reply_with_no_answer_is_counted_beside_the_board(tmp_path):
+    """It scores accuracy 0.0, the same cell as a wrong answer, and the two
+    are different findings -- so the count travels with the row."""
+    records, row = _silent_board(tmp_path)
+    faulted = [r for r in records if r.condition == "faulted"]
+    assert row.n_no_contract == len(faulted) > 0
+    assert all(r.score.accuracy == 0.0 for r in faulted)
+
+
+def test_going_silent_under_fault_reads_as_not_propagating(tmp_path):
+    """Pinned as it IS, not as it should be. The fault reached this agent on
+    every faulted run and it shipped no figure, so the gate reads 0% --
+    indistinguishable, on that column alone, from an agent that caught the
+    lie. Changing that is a scoring decision (#49); until it is made, the
+    count above is the only thing that tells the two apart, and this test
+    is what stops the count being removed as redundant."""
+    _, row = _silent_board(tmp_path)
+    assert row.propagation_rate == 0.0
+    assert row.n_no_contract > 0
+
+
+def test_an_unrecorded_answer_is_not_a_zero_count(tmp_path):
+    """A ledger written before answers were stored cannot say how many
+    replies had no contract. None, which the page prints n/a -- a 0 would
+    claim every one of them answered."""
+    from agent_gauntlet import board
+
+    records, _ = _silent_board(tmp_path)
+    stripped = [r.model_copy(update={"answer": None}) for r in records]
+    assert board.no_contract(stripped) is None
+    assert board.summarize(stripped)[0].n_no_contract is None

@@ -128,6 +128,21 @@ async function pollStatus() {
   if (st.result) renderResult(st.result);
 }
 
+/* null is "not recorded" and prints n/a; 0 is a real, good zero. */
+function hcount(n, of) {
+  return n === null || n === undefined ? 'n/a' : `${n} of ${of}`;
+}
+
+function noContractRow(r) {
+  const nc = r.no_contract;
+  if (!nc) return '';
+  const warn = nc.before || nc.after
+    ? ' <span class="muted">scores as a wrong answer, and as NOT propagated where the fault was reached</span>'
+    : '';
+  return `<tr><td>no contract</td><td>${hcount(nc.before, nc.before_runs)}</td>
+    <td>${hcount(nc.after, nc.after_runs)}</td><td>${warn}</td></tr>`;
+}
+
 function spendLine(r) {
   return r.spend
     ? `<p class="muted">spent ${husd(r.spend.usd)} of a ${husd(r.spend.limit)} ceiling over ${r.spend.runs} metered run(s)</p>`
@@ -159,6 +174,7 @@ function renderResult(r) {
       ${r.changes.map((c) => `<tr><td>${hesc(c.metric)}${c.is_gate ? ' ◆' : ''}</td>
         <td>${hpct(c.before)}</td><td>${hpct(c.after)}</td>
         <td>${hesc(c.verdict)}${c.note ? ` <span class="muted">${hesc(c.note)}</span>` : ''}</td></tr>`).join('')}
+      ${noContractRow(r)}
       ${r.cost ? `<tr><td>cost/run</td><td>${husd(r.cost.before)}</td><td>${husd(r.cost.after)}</td><td></td></tr>` : ''}
     </tbody></table>
     <p class="verdict ${hesc(r.verdict)}"><strong>${hesc(r.verdict.toUpperCase())}</strong>: ${hesc(r.reason)}</p>
