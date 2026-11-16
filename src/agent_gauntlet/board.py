@@ -30,6 +30,29 @@ from .stats import Interval, bootstrap, ratio_of_means, wilson
 from .spec import VariantSpec
 
 
+def no_contract(runs: Sequence[RunRecord]) -> Optional[int]:
+    """Scored runs whose reply carried no parseable answer (#49).
+
+    Such a run scores `accuracy 0.0`, the same cell as one that did the
+    arithmetic and got it wrong, and they are different findings: one says
+    the config reasons badly, the other that it could not be measured in the
+    shape the harness requires. Counted, never folded into a rate -- the
+    scoring rule ("silence is not partial credit") is unchanged.
+
+    It also meets the propagation gate, in the flattering direction: where
+    the fault was reached and the agent then answered nothing,
+    `score._propagated` returns False, so the run sits in the decidable
+    denominator as "did not propagate". A config that stops answering under
+    fault therefore reads as more robust. This count is how that is seen.
+
+    None when any run predates the stored answer: unknown is not zero.
+    """
+    scored = [r for r in runs if not r.error]
+    if any(r.answer is None for r in scored):
+        return None
+    return sum(1 for r in scored if r.answer.total is None)
+
+
 class VariantResult(BaseModel):
     """One variant's aggregate across the matrix."""
 
@@ -38,6 +61,8 @@ class VariantResult(BaseModel):
     is_sentinel: bool = False
 
     n_runs: int
+    n_no_contract: Optional[int] = None
+    """See `no_contract`. None is "not recorded", never "none"."""
 
     graded: bool = True
     """Whether these runs had a label to be right or wrong against.
@@ -493,6 +518,7 @@ def summarize(
                 variant_id=vid,
                 factors=dict(runs[0].factors),
                 n_runs=len(runs),
+                n_no_contract=no_contract(runs),
                 graded=graded,
                 quality=mean(float(r.score.correct) for r in runs) if graded else None,
                 accuracy=mean(float(r.score.accuracy) for r in runs) if graded else None,

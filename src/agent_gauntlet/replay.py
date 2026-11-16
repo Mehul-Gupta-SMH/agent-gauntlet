@@ -59,6 +59,7 @@ def row(r: board.VariantResult) -> dict[str, Any]:
         "label": r.label,
         "factors": r.factors,
         "n_runs": r.n_runs,
+        "no_contract": r.n_no_contract,
         "graded": r.graded,
         "quality": r.quality,
         "accuracy": r.accuracy,

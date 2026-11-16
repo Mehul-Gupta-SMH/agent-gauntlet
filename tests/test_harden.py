@@ -281,3 +281,69 @@ def test_offline_harden_on_an_instruction_task_proposes_the_revoke_as_unmeasurab
     # Rule 2d: a wrong-value fix cannot be judged under an instruction fault.
     assert "cross_check" not in out
     assert "not this task's fault kind" in out
+
+
+# --- a round has a ceiling, and it covers the sweep too --------------------
+
+
+def _priced(variant, seed):
+    """`_reads_its_files`, but every call reports a dollar of spend the way
+    the live executor does: an `(Answer, rollup)` pair."""
+    return _reads_its_files(variant, seed), {"cost_usd": 1.0}
+
+
+def _metered_round(task, tmp_path, limit):
+    from agent_gauntlet.runner import Budget
+
+    budget = Budget(limit_usd=limit)
+    base = _baseline(task, tmp_path)
+    ledger = Ledger(tmp_path / "runs.jsonl")
+    return budget, ledger, lambda: harden.run_round(
+        task=task, baseline=base, scenario=task.scenarios[0], execute=_priced,
+        seeds=SEEDS, repeats=8, out_dir=tmp_path / "out", ledger=ledger,
+        budget=budget)
+
+
+def test_a_round_under_its_ceiling_charges_the_sweep_as_well_as_the_matrix(
+        task, tmp_path):
+    """The sweep is paid too. A meter that only watched the matrix would
+    under-report every round by the cost of the red-teaming itself."""
+    budget, ledger, run = _metered_round(task, tmp_path, limit=10_000)
+    rnd = run()
+    assert rnd.contrast.verdict == harden.HARDENED
+    assert len(rnd.findings) > 0
+    # Every matrix run, plus the sweep cells that returned. A cell whose
+    # executor raised (a timeout fault does) reported no cost to charge.
+    swept = budget.runs - len(rnd.records)
+    assert 0 < swept <= len(rnd.findings)
+    assert budget.spent_usd == float(budget.runs)
+
+
+def test_a_round_past_its_ceiling_stops_with_no_verdict_and_no_export(
+        task, tmp_path):
+    """The same executor that earns HARDENED above. Stopped part way it must
+    hand over nothing: a contrast over whichever seeds happened to finish
+    would let the budget do the choosing. The paid runs stay in the ledger."""
+    from agent_gauntlet.runner import BudgetExceeded
+
+    budget, ledger, run = _metered_round(task, tmp_path, limit=20)
+    with pytest.raises(BudgetExceeded):
+        run()
+    assert not (tmp_path / "out" / "hardened").exists()
+    assert not (tmp_path / "out" / "hardened.diff").exists()
+    # One run's overshoot at most, and every charged matrix run is recorded.
+    assert 20 < budget.spent_usd <= 21
+    assert len(ledger.records()) > 0
+
+
+def test_a_ceiling_smaller_than_the_sweep_stops_before_the_matrix(
+        task, tmp_path):
+    """The sweep swallows a raising executor as an errored cell, so the
+    ceiling is charged after it returns rather than from inside it -- raised
+    inside, it would be censored and the round would spend on."""
+    from agent_gauntlet.runner import BudgetExceeded
+
+    budget, ledger, run = _metered_round(task, tmp_path, limit=0.5)
+    with pytest.raises(BudgetExceeded):
+        run()
+    assert ledger.records() == []

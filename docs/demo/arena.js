@@ -638,6 +638,9 @@ function renderBoard(rows, winner, errored, total, reason, resolution) {
     return `<tr class="${cls}">
       <td data-flag="${flag}">${r.label}</td>
       <td>${r.n_runs}</td>
+      ${(r.no_contract === null || r.no_contract === undefined)
+        ? '<td class="na" title="not recorded">n/a</td>'
+        : `<td class="${r.no_contract ? 'harm' : ''}" title="replies with no parseable answer: scored as wrong, and as not propagated where the fault was reached">${r.no_contract}</td>`}
       ${cell(r.quality, pct, 'quality')}
       ${cell(r.accuracy, (v) => v.toFixed(2))}
       ${cell(r.clean_quality)}${cell(r.faulted_quality)}

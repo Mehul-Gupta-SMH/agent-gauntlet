@@ -43,6 +43,7 @@ function form() {
     target: hq('#h-target').value,
     seeds: Number(hq('#h-seeds').value),
     repeats: Number(hq('#h-repeats').value),
+    budget_usd: hq('#h-budget').value === '' ? null : Number(hq('#h-budget').value),
   };
 }
 
@@ -101,14 +102,18 @@ async function plan() {
 }
 
 async function startLive() {
+  /* The ceiling comes from the plan the server returned, not from the form,
+   * so the sentence names the number the server will enforce. */
+  const want = `spend ${H.plan.budget_usd.toFixed(2)}`;
   const got = prompt(
     `This runs ${H.plan.target} against a real model and spends real money ` +
     `(${H.plan.matrix_runs} matrix runs, no forecast).\n` +
-    'There is one round. It is not rerun to green.\n\nType "spend" to confirm.');
-  if (got !== 'spend') return;
+    `Hard ceiling $${H.plan.budget_usd.toFixed(2)}. There is one round. ` +
+    `It is not rerun to green.\n\nType "${want}" to confirm.`);
+  if (got !== want) return;
   hshow('');
   try {
-    await hapi('/api/harden/run', { ...form(), confirm: 'spend' });
+    await hapi('/api/harden/run', { ...form(), budget_usd: H.plan.budget_usd, confirm: want });
   } catch (err) { hshow(err.message); return; }
   hq('#h-run').disabled = true;
   hq('#h-result').innerHTML = '<p class="muted">Running one round… this page polls.</p>';
@@ -123,7 +128,38 @@ async function pollStatus() {
   if (st.result) renderResult(st.result);
 }
 
+/* null is "not recorded" and prints n/a; 0 is a real, good zero. */
+function hcount(n, of) {
+  return n === null || n === undefined ? 'n/a' : `${n} of ${of}`;
+}
+
+function noContractRow(r) {
+  const nc = r.no_contract;
+  if (!nc) return '';
+  const warn = nc.before || nc.after
+    ? ' <span class="muted">scores as a wrong answer, and as NOT propagated where the fault was reached</span>'
+    : '';
+  return `<tr><td>no contract</td><td>${hcount(nc.before, nc.before_runs)}</td>
+    <td>${hcount(nc.after, nc.after_runs)}</td><td>${warn}</td></tr>`;
+}
+
+function spendLine(r) {
+  return r.spend
+    ? `<p class="muted">spent ${husd(r.spend.usd)} of a ${husd(r.spend.limit)} ceiling over ${r.spend.runs} metered run(s)</p>`
+    : '';
+}
+
 function renderResult(r) {
+  if (r.stopped) {
+    /* No verdict on purpose: a round cut short is not contrasted. */
+    hq('#h-result').innerHTML = `
+      <h4 class="sub">Stopped at the ceiling — no verdict</h4>
+      <p class="error">${hesc(r.stopped)}</p>${spendLine(r)}
+      <p class="muted">verdict n/a. A partial round is not contrasted: the seeds
+      that happened to finish would be doing the choosing. Ledger:
+      <code>${hesc(r.ledger)}</code></p>`;
+    return;
+  }
   /* A sample is drawn by the same code as a real result, under a banner the
    * data itself carries, so it cannot be mistaken for a measurement. */
   const banner = r.sample
@@ -138,6 +174,7 @@ function renderResult(r) {
       ${r.changes.map((c) => `<tr><td>${hesc(c.metric)}${c.is_gate ? ' ◆' : ''}</td>
         <td>${hpct(c.before)}</td><td>${hpct(c.after)}</td>
         <td>${hesc(c.verdict)}${c.note ? ` <span class="muted">${hesc(c.note)}</span>` : ''}</td></tr>`).join('')}
+      ${noContractRow(r)}
       ${r.cost ? `<tr><td>cost/run</td><td>${husd(r.cost.before)}</td><td>${husd(r.cost.after)}</td><td></td></tr>` : ''}
     </tbody></table>
     <p class="verdict ${hesc(r.verdict)}"><strong>${hesc(r.verdict.toUpperCase())}</strong>: ${hesc(r.reason)}</p>
@@ -145,6 +182,7 @@ function renderResult(r) {
       ? `<p>exported <code>${hesc(r.exported)}</code> — review the diff, not the score</p>
          ${r.diff ? `<pre>${hesc(r.diff)}</pre>` : ''}`
       : '<p class="muted">exported nothing — only a shown improvement is handed over.</p>'}
+    ${spendLine(r)}
     <p class="muted">Scope: proposals were chosen by a sweep of the same
     scenario they are measured on, from a catalogue of registered fault
     classes. A failure nobody implemented is not found, and not fixed (#18).</p>`;

@@ -205,6 +205,10 @@ def build_parser() -> argparse.ArgumentParser:
     hard.add_argument("--models", nargs="*", metavar="ALIAS=MODEL",
                       default=None)
     hard.add_argument("--target", default="claude")
+    hard.add_argument("--max-spend", type=float, default=None, metavar="USD",
+                      help="hard ceiling for a --live round, metered from "
+                           "what each run reports; a round stopped at it "
+                           "returns no verdict")
     hard.add_argument("--seeds", type=int, default=4,
                       help="replications; the last is held out and is the "
                            "only one reported. Default 4 because a live "
@@ -1325,6 +1329,8 @@ def _print_board(results, records=None) -> None:
                 f"{prop}{obey}{det}{rep}{r.false_alarm_rate:>5.0%}"
                 f"{ttd}{work}{cost}{flag}"
             )
+
+    _print_no_contract(results)
 
     scored = [r for r in results if not r.is_sentinel and r.brier is not None]
     if scored:
@@ -2991,10 +2997,24 @@ def _harden(args) -> int:
         print(f"\nPREFLIGHT FAILED\n{exc}")
         return 2
     seeds = [f"seed{i}" for i in range(args.seeds)]
-    rnd = harden.run_round(
-        task=task, baseline=base, scenario=scenario,
-        execute=live_executor(args.target), seeds=seeds,
-        repeats=args.repeats, out_dir=out, ledger=Ledger(out / "runs.jsonl"))
+    from .runner import Budget, BudgetExceeded
+
+    budget = (Budget(limit_usd=args.max_spend)
+              if args.max_spend is not None else None)
+    try:
+        rnd = harden.run_round(
+            task=task, baseline=base, scenario=scenario,
+            execute=live_executor(args.target), seeds=seeds,
+            repeats=args.repeats, out_dir=out,
+            ledger=Ledger(out / "runs.jsonl"), budget=budget)
+    except BudgetExceeded as stop:
+        # Exit 2, not 3: nothing was measured to a verdict, so this is a
+        # refusal to conclude rather than a gate result.
+        print(f"\nSTOPPED: {stop}")
+        print("verdict     n/a -- a partial round is not contrasted. The "
+              "completed runs are")
+        print(f"            in {out / 'runs.jsonl'}.")
+        return 2
     _print_found(header, *harden.measurable(rnd.found, task))
     _print_candidates(rnd.candidates)
     return _print_contrast(rnd)
@@ -3047,6 +3067,7 @@ def _print_contrast(rnd) -> int:
     if c.baseline is not None and c.winner is not None:
         print(f"  {'cost/run':18s} {_cost(c.baseline.cost_usd):>8s} -> "
               f"{_cost(c.winner.cost_usd)}")
+        _print_no_contract([c.baseline, c.winner])
     print(f"\nverdict     {c.verdict.upper()}: {c.reason}")
     if rnd.exported is not None:
         print(f"exported    {rnd.exported}")
@@ -3063,6 +3084,22 @@ def _print_contrast(rnd) -> int:
 
 def _cost(value) -> str:
     return "n/a" if value is None else f"${value:.4f}"
+
+
+def _print_no_contract(results) -> None:
+    """Printed only when it happened, so a clean board stays the board it
+    was. Named per config: the rate is not uniform across them (#49)."""
+    hit = [r for r in results if r.n_no_contract]
+    if not hit:
+        return
+    print("\n  NO CONTRACT -- replies with no parseable answer. Each scores "
+          "accuracy 0.00,")
+    print("  the same as a wrong answer, and where the fault was reached it "
+          "counts as")
+    print("  NOT propagated. Not measured is not the same as measured badly "
+          "(#49).")
+    for r in hit:
+        print(f"    {r.label[:44]:<44} {r.n_no_contract} of {r.n_runs} runs")
 
 
 def _print_harden_scope(*, live: bool) -> None:

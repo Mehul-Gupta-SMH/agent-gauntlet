@@ -52,6 +52,7 @@
   }
  ],
  "matrix_runs": 288,
+ "budget_usd": null,
  "live_blockers": [
   "This page is static: there is no server behind it, so nothing here can run live."
  ]
