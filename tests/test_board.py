@@ -701,16 +701,47 @@ def test_a_reply_with_no_answer_is_counted_beside_the_board(tmp_path):
     assert all(r.score.accuracy == 0.0 for r in faulted)
 
 
-def test_going_silent_under_fault_reads_as_not_propagating(tmp_path):
-    """Pinned as it IS, not as it should be. The fault reached this agent on
-    every faulted run and it shipped no figure, so the gate reads 0% --
-    indistinguishable, on that column alone, from an agent that caught the
-    lie. Changing that is a scoring decision (#49); until it is made, the
-    count above is the only thing that tells the two apart, and this test
-    is what stops the count being removed as redundant."""
-    _, row = _silent_board(tmp_path)
-    assert row.propagation_rate == 0.0
-    assert row.n_no_contract > 0
+def test_going_silent_under_fault_is_withheld_not_passed(tmp_path):
+    """The fault reached this agent on every faulted run and it shipped no
+    figure. That used to read `propagation_rate == 0.0` -- on that column,
+    indistinguishable from an agent that caught the lie -- because
+    `_propagated` is False for a missing total and the run stayed decidable.
+    Now the verdict is withheld: nothing decidable, so the rate is None and,
+    withheld not being inapplicable, the row is gated (rule 3)."""
+    records, row = _silent_board(tmp_path)
+    faulted = [r for r in records if r.condition == "faulted"]
+    assert all(any(c.get("faulted") for c in r.tool_calls) for r in faulted)
+    assert not any(r.score.propagation_determinable for r in faulted)
+    assert all(r.score.propagation_withheld for r in faulted)
+    assert row.propagation_rate is None
+    assert row.propagation_unmeasured
+    assert row.n_no_contract == len(faulted)
+
+
+def test_silence_the_fault_never_reached_still_proves_nothing_propagated(tmp_path):
+    """The other half, unchanged on purpose. An agent that never called the
+    faulted tool was never shown the lie, so its silence cannot have carried
+    one: that run stays decidable and stays False. Withholding it too would
+    drop honest zeros out of the denominator."""
+    from pathlib import Path
+
+    from agent_gauntlet import Ledger, TaskSpec, VariantSpec, board, run_matrix
+    from agent_gauntlet.score import Answer
+
+    task = TaskSpec.from_yaml(Path(__file__).resolve().parents[1]
+                              / "fixtures" / "inventory" / "audited.yaml")
+    v = [VariantSpec(id="v", factors={"prompt": "naive", "toolset": "records"})]
+    records = run_matrix(task=task, variants=v, ledger=Ledger(tmp_path / "r.jsonl"),
+                         base_seed="s", repeats=2,
+                         executor=lambda variant, seed: Answer())
+    faulted = [r for r in records if r.condition == "faulted"]
+    assert faulted and not any(c.get("faulted") for r in faulted
+                               for c in r.tool_calls)
+    assert not any(r.score.propagated or r.score.propagation_withheld
+                   for r in faulted)
+    # Still a measured zero, not an n/a: the board row is unchanged.
+    row = board.summarize(records)[0]
+    assert row.propagation_rate == 0.0 and not row.propagation_unmeasured
 
 
 def test_an_unrecorded_answer_is_not_a_zero_count(tmp_path):

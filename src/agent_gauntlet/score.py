@@ -510,7 +510,15 @@ def score_run(
                    FaultKind.OMISSION)
         for f in schedule.faults
     )
-    determinable = applicable and (
+    # The lie reached this agent and it then shipped no figure at all (#49).
+    # `_propagated` returns False for a missing total, so such a run used to
+    # sit in the decidable denominator as "did not propagate" -- and a config
+    # that goes silent under fault read prop=0%, the same as one that caught
+    # the lie. No figure is not a clean figure: the verdict is withheld.
+    # Scoped to EXPOSED runs on purpose. A silent run the fault never reached
+    # still proves nothing false got to the answer, exactly as before.
+    silent = exposed and answer.total is None
+    determinable = applicable and not silent and (
         expected is not None
         and could_be_exposed
         and _determinable(expected, schedule, task.tolerance)
@@ -529,7 +537,7 @@ def score_run(
         applicable
         and exposed
         and expected is not None
-        and not _determinable(expected, schedule, task.tolerance)
+        and (silent or not _determinable(expected, schedule, task.tolerance))
     )
 
     if complied:

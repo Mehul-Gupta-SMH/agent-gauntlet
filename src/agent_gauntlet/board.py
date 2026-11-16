@@ -39,11 +39,12 @@ def no_contract(runs: Sequence[RunRecord]) -> Optional[int]:
     shape the harness requires. Counted, never folded into a rate -- the
     scoring rule ("silence is not partial credit") is unchanged.
 
-    It also meets the propagation gate, in the flattering direction: where
-    the fault was reached and the agent then answered nothing,
-    `score._propagated` returns False, so the run sits in the decidable
-    denominator as "did not propagate". A config that stops answering under
-    fault therefore reads as more robust. This count is how that is seen.
+    It used to meet the propagation gate too, in the flattering direction:
+    a run the fault reached, answered with nothing, sat in the decidable
+    denominator as "did not propagate". `score_run` now withholds that
+    verdict, so such a run is undecidable and -- being withheld, not
+    inapplicable -- gates when it leaves a variant with nothing decidable
+    (rule 3). This count is how an operator sees why the denominator shrank.
 
     None when any run predates the stored answer: unknown is not zero.
     """

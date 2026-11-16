@@ -142,10 +142,12 @@ same ceiling is `--max-spend USD`.
 Every board row, and the harden verdict, also carries a **no contract** count:
 replies that held no parseable answer
 ([#49](https://github.com/Mehul-Gupta-SMH/agent-gauntlet/issues/49)). Such a
-run scores accuracy 0.00, the same as a wrong answer, and where the fault was
-reached it counts as *not propagated* -- so a config that goes silent under
-fault reads as robust on the propagation column alone. The count is what tells
-the two apart. It is `n/a`, not 0, for a ledger written before answers were
+run scores accuracy 0.00, the same as a wrong answer. Where the fault was
+reached and the agent then shipped no figure, the propagation verdict is
+**withheld**: the run leaves the decidable count, and a config with nothing
+decidable left is gated as *not measurable*, never passed. It used to count as
+"did not propagate", so going silent under fault read as robust. The count is
+how you see why a denominator shrank. It is `n/a`, not 0, for a ledger written before answers were
 stored. It is one round, the
 verdict is `harden`'s own with intervals, and an unmeasured figure shows
 `n/a`. The page takes text and tool names, never code, and the live route is
