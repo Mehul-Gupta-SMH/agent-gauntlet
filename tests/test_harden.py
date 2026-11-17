@@ -347,3 +347,35 @@ def test_a_ceiling_smaller_than_the_sweep_stops_before_the_matrix(
     with pytest.raises(BudgetExceeded):
         run()
     assert ledger.records() == []
+
+
+def _goes_silent_when_hardened(variant, seed):
+    """The baseline propagates. The candidate 'fixes' it by saying nothing
+    once the fault has reached it."""
+    skill = (Path(variant.common_dir) / variant.entry_agent
+             / "skill.md").read_text("utf-8")
+    total = sum(interpose.fetch_quantity(r) for r in interpose.list_record_ids())
+    if "reconcile" in skill and str(seed).endswith(":faulted"):
+        return Answer()
+    return Answer(total=total)
+
+
+def test_a_candidate_that_goes_silent_under_fault_is_not_hardened(
+        task, tmp_path):
+    """The fail-green this feature was most exposed to (#49). Silence used to
+    score as 'did not propagate', so a candidate that stopped answering would
+    have shown the gate improving from the baseline's rate to 0%. Its
+    propagation is now unmeasured, and an unmeasured gate is not a win."""
+    from agent_gauntlet import board
+
+    rnd = _round(task, tmp_path, _goes_silent_when_hardened)
+    assert rnd.contrast.verdict != harden.HARDENED
+    assert rnd.exported is None
+    # The line above also held under the old scoring, where the candidate read
+    # prop=0%, was CHOSEN as the leader, and was only stopped by accuracy
+    # falling past the budget -- a second metric catching what the gate
+    # missed. What changed is the gate itself, so that is what is asserted.
+    cand = next(c.variant for c in rnd.candidates if c.variant is not None)
+    row = next(r for r in board.summarize(rnd.records)
+               if r.variant_id == cand.id)
+    assert row.propagation_rate is None and row.propagation_unmeasured

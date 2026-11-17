@@ -137,7 +137,7 @@ function noContractRow(r) {
   const nc = r.no_contract;
   if (!nc) return '';
   const warn = nc.before || nc.after
-    ? ' <span class="muted">scores as a wrong answer, and as NOT propagated where the fault was reached</span>'
+    ? ' <span class="muted">scores as a wrong answer; where the fault was reached, propagation is withheld, not passed</span>'
     : '';
   return `<tr><td>no contract</td><td>${hcount(nc.before, nc.before_runs)}</td>
     <td>${hcount(nc.after, nc.after_runs)}</td><td>${warn}</td></tr>`;

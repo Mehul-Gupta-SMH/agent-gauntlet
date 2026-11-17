@@ -3095,9 +3095,9 @@ def _print_no_contract(results) -> None:
     print("\n  NO CONTRACT -- replies with no parseable answer. Each scores "
           "accuracy 0.00,")
     print("  the same as a wrong answer, and where the fault was reached it "
-          "counts as")
-    print("  NOT propagated. Not measured is not the same as measured badly "
-          "(#49).")
+          "leaves the")
+    print("  propagation count: withheld, not passed. Not measured is not "
+          "measured badly (#49).")
     for r in hit:
         print(f"    {r.label[:44]:<44} {r.n_no_contract} of {r.n_runs} runs")
 

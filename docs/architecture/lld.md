@@ -22,7 +22,7 @@ flowchart TD
     CLI["<b>cli</b> · 3511<br/>argparse · board rendering · probe · ui"]
     BOARD["<b>board</b> · 1351<br/>summarize · rank · pareto · depth · curve"]
     ARCH["<b>architect</b> · 873<br/>PROMPTS · TOOLSETS · generate"]
-    SCORE["<b>score</b> · 601<br/>Outcome · score_run"]
+    SCORE["<b>score</b> · 711<br/>Outcome · score_run"]
     INTER["<b>interpose</b> · 583<br/>RunContext · tool surface · notes"]
     OFFLINE["<b>offline</b> · 555<br/>scripted policies"]
     MATRIX["<b>matrix</b> · 490<br/>run_matrix · _attempt · budget"]
