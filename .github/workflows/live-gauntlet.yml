@@ -33,6 +33,9 @@ on:
       baseline:
         description: "harden only: the agent to harden (a folder with skill.md)"
         default: experiments/019-harden-preregistered/baseline
+      max_spend:
+        description: "harden only: hard ceiling in USD (#54). A round stopped at it has NO verdict"
+        default: "12"
       mode:
         description: "How far to go -- escalate one step at a time"
         type: choice
@@ -162,6 +165,7 @@ jobs:
             --target "${{ inputs.target }}" \
             --repeats "${{ inputs.repeats }}" \
             --seeds "${{ inputs.seeds }}" \
+            --max-spend "${{ inputs.max_spend }}" \
             --out runs 2>&1 | tee runs/console.txt
           rc=${PIPESTATUS[0]}
           echo "harden exited $rc"

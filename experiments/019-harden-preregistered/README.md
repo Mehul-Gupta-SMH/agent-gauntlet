@@ -87,6 +87,16 @@ decide leaves it, so the real round could land under 16 and come back
 `not_shown` for that reason alone. If that happens, the board's decidable
 count will show it, and it will be reported as such.
 
+## The spend ceiling
+
+Added after pre-registration (#54), and it is operational, not part of the
+bar: the workflow's `max_spend` input defaults to $12, twice the estimate
+below, so a round that runs to completion is never cut short by it. If the
+ceiling is hit the round stops with **no verdict** and exits 2 -- a partial
+round is not contrasted -- and the completed runs stay in the committed
+ledger. A stopped round is not a result and is not a reason to lower the
+bar; it is a reason to raise the ceiling and say so.
+
 ## What it costs, estimated
 
 There are 2 variants × 3 scenarios × 6 repeats × 2 conditions × 4 seeds =
