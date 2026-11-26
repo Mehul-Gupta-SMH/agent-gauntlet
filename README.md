@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="agent-gauntlet — search agent configurations under deliberate tool failure" width="100%">
+  <img src="docs/assets/banner.svg" alt="agent-gauntlet — run agent configurations against deliberate tool failure" width="100%">
 </p>
 
-**Search the space of agent configurations under deliberate tool failure, and
+**Run every agent configuration in a declared grid against deliberate tool failure, and
 ship the one that survives.**
 
 You have a task and a dozen plausible ways to build an agent for it — which
@@ -963,7 +963,7 @@ writes, so this is the source of truth until it is pasted across.
 Description:
 
 ```
-Search the space of agent configurations under deliberate tool failure, and ship the one that survives — a ranked, cost-aware leaderboard plus the winning config as a runnable project.
+Run every agent configuration in a declared grid against deliberate tool failure, and ship the one that survives — a ranked, cost-aware leaderboard plus the winning config as a runnable project.
 ```
 
 Topics:

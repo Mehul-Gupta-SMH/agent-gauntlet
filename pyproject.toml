@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "agent-gauntlet"
 version = "0.0.0.dev0"
-description = "Search the space of agent configurations under adversarial fault injection, and return the config."
+description = "Run every agent configuration in a declared grid under adversarial fault injection, and return the one that survives."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"

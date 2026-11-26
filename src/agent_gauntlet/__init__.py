@@ -1,4 +1,4 @@
-"""agent-gauntlet -- search agent configurations under adversarial fault injection.
+"""agent-gauntlet -- run agent configurations under adversarial fault injection.
 
 Design stage. See plan.md and the issue tracker; M0 (the measurement gate)
 is the only milestone with code behind it.

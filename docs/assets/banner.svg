@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" width="1200" height="330" role="img" aria-label="agent-gauntlet: search agent configurations under deliberate tool failure">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" width="1200" height="330" role="img" aria-label="agent-gauntlet: run agent configurations against deliberate tool failure">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#11161d"/>
@@ -18,7 +18,7 @@
   <!-- ============ left column: keep everything under x=740 ============ -->
   <text x="60" y="104" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="46" font-weight="bold" fill="#e8eef6">agent<tspan fill="#4ec9d9">-</tspan>gauntlet</text>
 
-  <text x="62" y="140" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="19" fill="#9fb0c4">Search agent configurations under deliberate tool failure.</text>
+  <text x="62" y="140" font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="19" fill="#9fb0c4">Run agent configurations against deliberate tool failure.</text>
 
   <!-- the central trick -->
   <g font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="16">
